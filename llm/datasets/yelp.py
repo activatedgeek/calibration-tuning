@@ -16,7 +16,7 @@ def get_yelp_reviews(root=None, seed=None, tokenize_fn=None, **_):
         "yelp_review_full", cache_dir=os.environ.get("DATADIR", root)
     )
 
-    tokenized_dataset = dataset.map(tokenize_fn, batched=True)
+    tokenized_dataset = dataset.map(tokenize_fn, batched=True, num_proc=4)
 
     train_data = tokenized_dataset["train"].shuffle(seed=seed).select(range(1000))
     test_data = tokenized_dataset["test"].shuffle(seed=seed).select(range(1000))

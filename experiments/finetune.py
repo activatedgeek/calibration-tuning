@@ -1,9 +1,9 @@
-import os
 import logging
 from tqdm.auto import tqdm
 import torch.optim as optim
 from accelerate import Accelerator
-from transformers import LlamaTokenizer, get_scheduler
+from transformers import get_scheduler
+from peft import LoraConfig, TaskType, get_peft_model, prepare_model_for_int8_training
 
 from llm.logging import set_logging
 from llm.datasets import get_dataset, get_dataset_attrs, get_loader
@@ -38,16 +38,15 @@ def main(
     dataset=None,
     batch_size=8,
     model_name=None,
+    fp8=True,
+    lora_rank=8,
+    lora_alpha=32,
+    lora_dropout=0.1,
     lr=5e-2,
     weight_decay=2e-5,
     epochs=0,
 ):
-    ## @FIXME: parametrize.
-    tokenizer = LlamaTokenizer.from_pretrained(
-        "openlm-research/open_llama_13b", cache_dir=os.environ.get("MODELDIR")
-    )
-    tokenizer.pad_token = tokenizer.eos_token
-
+    tokenizer = create_model(model_name=f"{model_name}_tokenizer")
     train_data, _, test_data = get_dataset(
         dataset,
         root=data_dir,
@@ -64,32 +63,40 @@ def main(
     model = create_model(
         num_classes=get_dataset_attrs(dataset).get("num_classes"),
         model_name=model_name,
-        model_kwargs=dict(device_map={"": accelerator.local_process_index}),
+        model_kwargs=dict(
+            device_map={"": accelerator.local_process_index}, load_in_8bit=fp8
+        ),
     )
+    if fp8:
+        model = prepare_model_for_int8_training(model)
+    if lora_rank:
+        peft_config = LoraConfig(
+            task_type=TaskType.SEQ_CLS,
+            bias="none",
+            inference_mode=False,
+            r=lora_rank,
+            lora_alpha=lora_alpha,
+            lora_dropout=lora_dropout,
+        )
+        model = get_peft_model(model, peft_config)
 
     optimizer = optim.AdamW(model.parameters(), lr=lr, weight_decay=weight_decay)
+    ## TODO: parametrize?
     optim_scheduler = get_scheduler(
-        name="linear",
+        name="cosine",
         optimizer=optimizer,
-        num_warmup_steps=0,
+        num_warmup_steps=1000,
         num_training_steps=epochs * len(train_loader),
     )
 
-    # model, optimizer, optim_scheduler = accelerator.prepare(model, optimizer, optim_scheduler)
+    model, optimizer, optim_scheduler = accelerator.prepare(
+        model, optimizer, optim_scheduler
+    )
 
     for e in tqdm(range(epochs)):
         train_epoch(accelerator, model, train_loader, optimizer, epoch=e)
 
         optim_scheduler.step()
-
-    #### @FIXME: old HF docs copy.
-
-    # metric = evaluate.load("accuracy")
-
-    # def compute_metrics(eval_pred):
-    #     logits, labels = eval_pred
-    #     predictions = np.argmax(logits, axis=-1)
-    #     return metric.compute(predictions=predictions, references=labels)
 
 
 def entrypoint(seed=None, log_dir=None, **kwargs):
