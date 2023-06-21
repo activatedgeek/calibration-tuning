@@ -17,3 +17,17 @@ And finally, run
 ```
 pip install -e .
 ```
+
+## Run
+
+Set `CUDA_VISIBLE_DEVICES` to limit the number of GPUs used.
+
+```shell
+CUDA_VISIBLE_DEVICES=0,1,2,3 ./scripts/finetune.sh --epochs=1 <...args>
+```
+
+**NOTE**: If `CUDA_VISIBLE_DEVICES` is not set, then all GPUs available will be used.
+
+# LICENSE
+
+Apache 2.0
