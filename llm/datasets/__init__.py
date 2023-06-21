@@ -16,6 +16,8 @@ def __setup():
     from importlib import import_module
 
     for n in [
+        "trivia_qa",
+        "truthful_qa",
         "yelp",
     ]:
         import_module(f".{n}", __name__)

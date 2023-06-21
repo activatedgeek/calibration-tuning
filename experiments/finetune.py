@@ -2,7 +2,7 @@ import logging
 from tqdm.auto import tqdm
 import torch.optim as optim
 from accelerate import Accelerator
-from transformers import get_scheduler
+from transformers import get_scheduler, DataCollatorForLanguageModeling
 from peft import LoraConfig, TaskType, get_peft_model, prepare_model_for_int8_training
 
 from llm.logging import set_logging
@@ -35,6 +35,7 @@ def main(
     seed=None,
     log_dir=None,
     data_dir=None,
+    model_dir=None,
     dataset=None,
     batch_size=8,
     model_name=None,
@@ -46,19 +47,26 @@ def main(
     weight_decay=2e-5,
     epochs=0,
 ):
-    tokenizer = create_model(model_name=f"{model_name}_tokenizer")
+    tokenizer = create_model(model_name=f"{model_name}_tokenizer", cache_dir=model_dir)
     train_data, _, test_data = get_dataset(
         dataset,
         root=data_dir,
-        tokenize_fn=lambda x: tokenizer(
-            x["text"], padding="max_length", truncation=True
-        ),
+        tokenizer=tokenizer,
         seed=seed,
     )
     train_loader = get_loader(
-        train_data, batch_size=batch_size, shuffle=True, accelerator=accelerator
+        train_data,
+        batch_size=batch_size,
+        shuffle=True,
+        accelerator=accelerator,
+        collate_fn=DataCollatorForLanguageModeling(tokenizer=tokenizer, mlm=False),
     )
-    test_loader = get_loader(test_data, batch_size=batch_size, accelerator=accelerator)
+    test_loader = get_loader(
+        test_data,
+        batch_size=batch_size,
+        accelerator=accelerator,
+        collate_fn=DataCollatorForLanguageModeling(tokenizer=tokenizer, mlm=False),
+    )
 
     model = create_model(
         num_classes=get_dataset_attrs(dataset).get("num_classes"),

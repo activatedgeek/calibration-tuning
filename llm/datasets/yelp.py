@@ -9,13 +9,14 @@ __all__ = [
 __YELP_ATTRS = dict(num_classes=5)
 
 
-def get_yelp_reviews(root=None, seed=None, tokenize_fn=None, **_):
+def get_yelp_reviews(root=None, seed=None, tokenizer=None, **_):
     from datasets import load_dataset
 
     dataset = load_dataset(
         "yelp_review_full", cache_dir=os.environ.get("DATADIR", root)
     )
 
+    tokenize_fn = lambda x: tokenizer(x["text"], padding="max_length", truncation=True)
     tokenized_dataset = dataset.map(tokenize_fn, batched=True, num_proc=4)
 
     train_data = tokenized_dataset["train"].shuffle(seed=seed).select(range(1000))
