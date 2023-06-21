@@ -19,8 +19,8 @@ def get_yelp_reviews(root=None, seed=None, tokenizer=None, **_):
     tokenize_fn = lambda x: tokenizer(x["text"], padding="max_length", truncation=True)
     tokenized_dataset = dataset.map(tokenize_fn, batched=True, num_proc=4)
 
-    train_data = tokenized_dataset["train"].shuffle(seed=seed).select(range(1000))
-    test_data = tokenized_dataset["test"].shuffle(seed=seed).select(range(1000))
+    train_data = tokenized_dataset["train"].shuffle(seed=seed)
+    test_data = tokenized_dataset["test"].shuffle(seed=seed)
 
     return train_data, None, test_data
 

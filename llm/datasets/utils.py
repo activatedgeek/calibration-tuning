@@ -108,10 +108,13 @@ def train_test_split(dataset, test_size=0.2, seed=None):
     return train, test
 
 
-def get_loader(dataset, batch_size=128, num_workers=4, accelerator=None, **kwargs):
+def get_num_workers(num_workers=4):
     num_gpus_per_host = torch.cuda.device_count()
-    num_workers = (num_workers + num_gpus_per_host - 1) // num_gpus_per_host
+    return (num_workers + num_gpus_per_host - 1) // num_gpus_per_host
 
+
+def get_loader(dataset, batch_size=128, num_workers=4, accelerator=None, **kwargs):
+    num_workers = get_num_workers(num_workers=num_workers)
     loader = DataLoader(
         dataset, batch_size=batch_size, num_workers=num_workers, **kwargs
     )

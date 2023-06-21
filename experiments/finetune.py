@@ -1,33 +1,11 @@
 import logging
-from tqdm.auto import tqdm
-import torch.optim as optim
 from accelerate import Accelerator
-from transformers import get_scheduler, DataCollatorForLanguageModeling
+from transformers import DataCollatorForLanguageModeling, TrainingArguments, Trainer
 from peft import LoraConfig, TaskType, get_peft_model, prepare_model_for_int8_training
 
 from llm.logging import set_logging
-from llm.datasets import get_dataset, get_dataset_attrs, get_loader
+from llm.datasets import get_dataset, get_num_workers
 from llm.models import create_model
-
-
-def train_epoch(accelerator, model, loader, optimizer, epoch=None):
-    device = accelerator.device
-
-    model.train()
-
-    for i, B in tqdm(enumerate(loader), leave=False):
-        optimizer.zero_grad()
-
-        loss = model(**{k: v.to(device) for k, v in B.items()})
-
-        accelerator.backward(loss)
-
-        optimizer.step()
-
-        if accelerator.is_main_process and i % 100 == 0:
-            metrics = {"epoch": epoch, "mini_loss": loss.detach().item()}
-            logging.info(metrics, extra=dict(metrics=True, prefix="train"))
-            logging.debug(metrics)
 
 
 def main(
@@ -37,7 +15,7 @@ def main(
     data_dir=None,
     model_dir=None,
     dataset=None,
-    batch_size=8,
+    batch_size=1,
     model_name=None,
     fp8=True,
     lora_rank=8,
@@ -45,66 +23,69 @@ def main(
     lora_dropout=0.1,
     lr=5e-2,
     weight_decay=2e-5,
+    warmup_steps=0,
     epochs=0,
 ):
-    tokenizer = create_model(model_name=f"{model_name}_tokenizer", cache_dir=model_dir)
+    tokenizer = create_model(
+        model_name=f"{model_name}_tokenizer", model_kwargs=dict(cache_dir=model_dir)
+    )
     train_data, _, test_data = get_dataset(
         dataset,
         root=data_dir,
         tokenizer=tokenizer,
         seed=seed,
     )
-    train_loader = get_loader(
-        train_data,
-        batch_size=batch_size,
-        shuffle=True,
-        accelerator=accelerator,
-        collate_fn=DataCollatorForLanguageModeling(tokenizer=tokenizer, mlm=False),
-    )
-    test_loader = get_loader(
-        test_data,
-        batch_size=batch_size,
-        accelerator=accelerator,
-        collate_fn=DataCollatorForLanguageModeling(tokenizer=tokenizer, mlm=False),
-    )
 
     model = create_model(
-        num_classes=get_dataset_attrs(dataset).get("num_classes"),
         model_name=model_name,
         model_kwargs=dict(
-            device_map={"": accelerator.local_process_index}, load_in_8bit=fp8
+            device_map={"": accelerator.local_process_index},
+            load_in_8bit=fp8,
+            cache_dir=model_dir,
         ),
     )
     if fp8:
         model = prepare_model_for_int8_training(model)
     if lora_rank:
         peft_config = LoraConfig(
-            task_type=TaskType.SEQ_CLS,
+            task_type=TaskType.CAUSAL_LM,
             bias="none",
-            inference_mode=False,
             r=lora_rank,
             lora_alpha=lora_alpha,
             lora_dropout=lora_dropout,
         )
         model = get_peft_model(model, peft_config)
 
-    optimizer = optim.AdamW(model.parameters(), lr=lr, weight_decay=weight_decay)
-    ## TODO: parametrize?
-    optim_scheduler = get_scheduler(
-        name="cosine",
-        optimizer=optimizer,
-        num_warmup_steps=1000,
-        num_training_steps=epochs * len(train_loader),
+    training_args = TrainingArguments(
+        fsdp=False,
+        fp16=not fp8,
+        bf16=False,
+        gradient_checkpointing=False,
+        ddp_find_unused_parameters=False,
+        num_train_epochs=epochs,
+        eval_steps=1000,
+        save_steps=1000,
+        logging_steps=10,
+        evaluation_strategy="steps",
+        per_device_train_batch_size=batch_size,
+        per_device_eval_batch_size=batch_size,
+        learning_rate=lr,
+        lr_scheduler_type="cosine",
+        warmup_steps=warmup_steps,
+        weight_decay=weight_decay,
+        gradient_accumulation_steps=1,
+        output_dir=log_dir,
+        report_to="wandb",
+        dataloader_num_workers=get_num_workers(),
     )
-
-    model, optimizer, optim_scheduler = accelerator.prepare(
-        model, optimizer, optim_scheduler
+    trainer = Trainer(
+        model=model,
+        args=training_args,
+        train_dataset=train_data,
+        eval_dataset=test_data,
+        data_collator=DataCollatorForLanguageModeling(tokenizer=tokenizer, mlm=False),
     )
-
-    for e in tqdm(range(epochs)):
-        train_epoch(accelerator, model, train_loader, optimizer, epoch=e)
-
-        optim_scheduler.step()
+    trainer.train()
 
 
 def entrypoint(seed=None, log_dir=None, **kwargs):
