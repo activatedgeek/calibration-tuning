@@ -39,7 +39,7 @@ def main(
     model = create_model(
         model_name=model_name,
         model_kwargs=dict(
-            device_map={"": accelerator.local_process_index},
+            device_map={ "": accelerator.local_process_index },
             load_in_8bit=fp8,
             cache_dir=model_dir,
         ),
@@ -57,6 +57,7 @@ def main(
         model = get_peft_model(model, peft_config)
 
     training_args = TrainingArguments(
+        local_rank=accelerator.local_process_index,
         fsdp=False,
         fp16=not fp8,
         bf16=False,
@@ -66,9 +67,10 @@ def main(
         eval_steps=1000,
         save_steps=1000,
         logging_steps=10,
-        evaluation_strategy="steps",
+        evaluation_strategy="epoch",
         per_device_train_batch_size=batch_size,
         per_device_eval_batch_size=batch_size,
+        optim="adamw_torch",
         learning_rate=lr,
         lr_scheduler_type="cosine",
         warmup_steps=warmup_steps,
@@ -84,6 +86,7 @@ def main(
         train_dataset=train_data,
         eval_dataset=test_data,
         data_collator=DataCollatorForLanguageModeling(tokenizer=tokenizer, mlm=False),
+        tokenizer=tokenizer,
     )
     trainer.train()
 
