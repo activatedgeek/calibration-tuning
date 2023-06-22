@@ -14,7 +14,9 @@ def get_truthful_qa(root=None, instance=None, seed=None, tokenizer=None, **_):
         "truthful_qa", instance, cache_dir=os.environ.get("DATADIR", root)
     )
 
-    tokenize_fn = lambda x: tokenizer(x["question"], padding="max_length", truncation=True)
+    tokenize_fn = lambda x: tokenizer(
+        x["question"], padding="max_length", truncation=True
+    )
     tokenized_dataset = dataset.map(tokenize_fn, batched=True, num_proc=4)
 
     val_data = tokenized_dataset["validation"].shuffle(seed=seed)
