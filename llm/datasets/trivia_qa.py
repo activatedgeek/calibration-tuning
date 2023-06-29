@@ -14,6 +14,7 @@ def get_trivia_qa(root=None, subset=None, seed=None, tokenizer=None, **_):
         "trivia_qa", subset, cache_dir=os.environ.get("DATADIR", root)
     )
 
+    ## FIXME: just question is not enough.
     tokenize_fn = lambda x: tokenizer(
         x["question"], padding="max_length", truncation=True
     )

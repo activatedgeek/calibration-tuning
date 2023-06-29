@@ -39,7 +39,7 @@ def main(
     model = create_model(
         model_name=model_name,
         model_kwargs=dict(
-            device_map={ "": accelerator.local_process_index },
+            device_map={"": accelerator.device},
             load_in_8bit=fp8,
             cache_dir=model_dir,
         ),
