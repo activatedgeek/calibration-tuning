@@ -15,16 +15,19 @@ def main(
     data_dir=None,
     model_dir=None,
     dataset=None,
+    dataset_instance=None,
     batch_size=1,
     model_name=None,
-    max_new_tokens=20,
-    top_p=0.95,
+    sample=False,
+    max_new_tokens=1,
+    top_p=1.0,
 ):
     tokenizer = create_model(
         model_name=f"{model_name}_tokenizer", model_kwargs=dict(cache_dir=model_dir)
     )
     _, val_data, test_data = get_dataset(
         dataset,
+        instance=dataset_instance,
         root=data_dir,
         tokenizer=tokenizer,
         seed=seed,
@@ -47,7 +50,7 @@ def main(
     )
     for inputs in tqdm(val_loader):
         outputs = accelerator.unwrap_model(model).generate(
-            **inputs, max_new_tokens=max_new_tokens, do_sample=True, top_p=top_p
+            **inputs, max_new_tokens=max_new_tokens, do_sample=sample, top_p=top_p
         )
         responses = tokenizer.batch_decode(
             outputs, skip_special_tokens=True, clean_up_tokenization_spaces=True

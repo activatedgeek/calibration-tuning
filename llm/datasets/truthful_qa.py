@@ -9,7 +9,7 @@ __all__ = [
 
 
 def __format_prompt(sample, style):
-    if style == "mc1":
+    if style == "mcq":
         question = sample["question"]
         choices = sample["mc1_targets.choices"]
 
@@ -59,14 +59,12 @@ def get_truthful_qa(
                 "mc2_targets.labels",
             ],
             num_proc=4,
+        ).map(
+            lambda x: tokenizer(x["prompt"], padding=True, truncation=True),
+            batched=True,
+            num_proc=4,
+            remove_columns=["prompt"],
         )
-
-        if tokenizer is not None:
-            dataset = dataset.map(
-                lambda x: tokenizer(x["prompt"], padding=True, truncation=True),
-                batched=True,
-                num_proc=4,
-            ).remove_columns(["prompt"])
     else:
         raise NotImplementedError
 
@@ -75,8 +73,13 @@ def get_truthful_qa(
     return None, val_data, None
 
 
+## NOTE: Some arguments ignored to avoid conflict.
 @register_dataset
-def truthful_qa_mc1(*args, **kwargs):
+def truthful_qa_mc1(*args, instance=None, prompt_style="mcq", **kwargs):
     return get_truthful_qa(
-        *args, **kwargs, instance="multiple_choice", mode="mc1", prompt_style="mc1"
+        *args,
+        **kwargs,
+        instance="multiple_choice",
+        mode="mc1",
+        prompt_style=prompt_style,
     )
