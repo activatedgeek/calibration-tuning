@@ -14,6 +14,7 @@ tensorflow<2.12
 tensorflow-datasets
 torch<1.14
 torchvision
+timm
 transformers
 sentencepiece
 datasets
