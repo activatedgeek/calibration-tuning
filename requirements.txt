@@ -19,6 +19,7 @@ transformers
 sentencepiece
 datasets
 accelerate
+tensor_parallel
 evaluate
 peft
 bitsandbytes

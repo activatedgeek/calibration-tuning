@@ -2,6 +2,7 @@ import logging
 from tqdm.auto import tqdm
 import torch
 from accelerate import Accelerator
+import tensor_parallel as tp
 from transformers import DataCollatorWithPadding
 
 from llm.logging import set_logging
@@ -60,8 +61,6 @@ def main(
     sample=False,
     max_new_tokens=1,
 ):
-    assert batch_size == 1, "batch_size must be 1, uneven batch sizes not supported"
-
     tokenizer = create_model(
         model_name=f"{model_name}_tokenizer", model_kwargs=dict(cache_dir=model_dir)
     )
@@ -82,10 +81,11 @@ def main(
     model = create_model(
         model_name=model_name,
         model_kwargs=dict(
-            device_map={"": accelerator.device},
             cache_dir=model_dir,
         ),
-    ).eval()
+    )
+    ## FIXME: not all models need this.
+    model = tp.tensor_parallel(model, [accelerator.device])
 
     label2char = get_dataset_attrs(dataset).get("label2char")
     metrics = evaluate(
