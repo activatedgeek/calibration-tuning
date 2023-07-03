@@ -16,7 +16,8 @@ def get_trivia_qa(root=None, subset=None, seed=None, tokenizer=None, **_):
 
     ## FIXME: just question is not enough.
     tokenize_fn = lambda x: tokenizer(
-        x["question"], padding="max_length", truncation=True
+        x["question"],
+        padding="max_length",
     )
     tokenized_dataset = dataset.map(tokenize_fn, batched=True, num_proc=4)
 

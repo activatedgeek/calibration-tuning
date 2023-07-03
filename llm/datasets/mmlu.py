@@ -7,7 +7,10 @@ __all__ = [
     "get_mmlu",
 ]
 
+__ATTRS = dict(label2char=lambda idx: string.ascii_lowercase[idx])
 
+
+## TODO: add few-shot prompts.
 def __format_prompt(sample, style):
     if style == "mcq":
         question = sample["question"]
@@ -19,7 +22,7 @@ def __format_prompt(sample, style):
                 "Choices:",
                 *[
                     f"  ({n}): {c}"
-                    for n, c in zip(string.ascii_uppercase[: len(choices)], choices)
+                    for n, c in zip(string.ascii_lowercase[: len(choices)], choices)
                 ],
                 "Answer: ",
             ]
@@ -56,7 +59,7 @@ def get_mmlu(
         ],
         num_proc=4,
     ).map(
-        lambda x: tokenizer(x["prompt"], padding=True, truncation=True),
+        lambda x: tokenizer(x["prompt"], padding=True),
         batched=True,
         num_proc=4,
         remove_columns=["prompt"],
@@ -69,7 +72,7 @@ def get_mmlu(
     return dev_data, val_data, test_data
 
 
-@register_dataset
+@register_dataset(attrs=__ATTRS)
 def mmlu(*args, instance=None, prompt_style="mcq", **kwargs):
     return get_mmlu(
         *args,

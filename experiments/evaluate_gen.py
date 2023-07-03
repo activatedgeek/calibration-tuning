@@ -1,11 +1,50 @@
 import logging
 from tqdm.auto import tqdm
+import torch
 from accelerate import Accelerator
 from transformers import DataCollatorWithPadding
 
 from llm.logging import set_logging
-from llm.datasets import get_dataset, get_loader
+from llm.datasets import get_dataset, get_dataset_attrs, get_loader
 from llm.models import create_model
+
+
+@torch.no_grad()
+def evaluate(
+    accelerator, model, tokenizer, label2char, loader, do_sample=False, max_new_tokens=1
+):
+    device = accelerator.device
+
+    N = torch.tensor(0).long().to(device)
+    N_acc = torch.tensor(0).long().to(device)
+
+    for inputs in tqdm(loader, leave=False):
+        labels = [label2char(l) for l in inputs.pop("labels")]
+
+        outputs = model.generate(
+            **inputs,
+            max_new_tokens=max_new_tokens,
+            do_sample=do_sample,
+        )
+        responses = tokenizer.batch_decode(
+            outputs[:, inputs["input_ids"].shape[-1] :],
+            skip_special_tokens=True,
+            clean_up_tokenization_spaces=True,
+        )
+
+        _N = torch.tensor(len(labels)).long().to(accelerator.device)
+        _N_acc = (
+            torch.tensor(sum([r == l for r, l in zip(responses, labels)]))
+            .long()
+            .to(accelerator.device)
+        )
+
+        N += accelerator.gather(_N).sum()
+        N_acc += accelerator.gather(_N_acc).sum()
+
+    metrics = {"exact_match_acc": N_acc.item() / N.item(), "N": N.item()}
+
+    return metrics
 
 
 def main(
@@ -20,8 +59,9 @@ def main(
     model_name=None,
     sample=False,
     max_new_tokens=1,
-    top_p=1.0,
 ):
+    assert batch_size == 1, "batch_size must be 1, uneven batch sizes not supported"
+
     tokenizer = create_model(
         model_name=f"{model_name}_tokenizer", model_kwargs=dict(cache_dir=model_dir)
     )
@@ -32,6 +72,12 @@ def main(
         tokenizer=tokenizer,
         seed=seed,
     )
+    val_loader = get_loader(
+        val_data,
+        batch_size=batch_size,
+        accelerator=accelerator,
+        collate_fn=DataCollatorWithPadding(tokenizer),
+    )
 
     model = create_model(
         model_name=model_name,
@@ -40,22 +86,20 @@ def main(
             cache_dir=model_dir,
         ),
     ).eval()
-    model = accelerator.prepare(model)
 
-    val_loader = get_loader(
-        val_data,
-        batch_size=batch_size,
-        accelerator=accelerator,
-        collate_fn=DataCollatorWithPadding(tokenizer),
+    label2char = get_dataset_attrs(dataset).get("label2char")
+    metrics = evaluate(
+        accelerator,
+        model,
+        tokenizer,
+        label2char,
+        val_loader,
+        do_sample=sample,
+        max_new_tokens=max_new_tokens,
     )
-    for inputs in tqdm(val_loader):
-        outputs = accelerator.unwrap_model(model).generate(
-            **inputs, max_new_tokens=max_new_tokens, do_sample=sample, top_p=top_p
-        )
-        responses = tokenizer.batch_decode(
-            outputs, skip_special_tokens=True, clean_up_tokenization_spaces=True
-        )
-        logging.debug(f"{len(responses)} responses")
+
+    if accelerator.is_main_process:
+        logging.info(metrics, extra=dict(metrics=True))
 
 
 def entrypoint(seed=None, log_dir=None, **kwargs):
