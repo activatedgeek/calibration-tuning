@@ -20,13 +20,19 @@ pip install -e .
 
 ## Run
 
-Set `CUDA_VISIBLE_DEVICES` to limit the number of GPUs used.
+**NOTE**: Use `CUDA_VISIBLE_DEVICES` to limit the GPUs used.
+
+### Evaluate
+
+An example command for evaluation.
 
 ```shell
-CUDA_VISIBLE_DEVICES=0,1,2,3 ./scripts/finetune.sh --epochs=1 <...args>
+python experiments/evaluate_gen.py \
+    --seed=137 \
+    --model-name=open_llama_13b \
+    --dataset=mmlu \
+    --dataset-instance=business_ethics
 ```
-
-**NOTE**: If `CUDA_VISIBLE_DEVICES` is not set, then all GPUs available will be used.
 
 # LICENSE
 
