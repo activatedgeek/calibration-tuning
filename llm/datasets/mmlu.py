@@ -11,10 +11,11 @@ __ATTRS = dict(label2char=lambda idx: string.ascii_lowercase[idx])
 
 
 ## TODO: add few-shot prompts.
-def __format_prompt(sample, style):
+def __format_prompt(sample, style, with_answer=False):
     if style == "mcq":
         question = sample["question"]
         choices = sample["choices"]
+        answer = string.ascii_lowercase[sample["answer"]] + "\n"
 
         prompt = "\n".join(
             [
@@ -24,7 +25,7 @@ def __format_prompt(sample, style):
                     f"  ({n}): {c}"
                     for n, c in zip(string.ascii_lowercase[: len(choices)], choices)
                 ],
-                "Answer: ",
+                f"Answer: {answer if with_answer else ''}",
             ]
         )
 
@@ -37,6 +38,7 @@ def get_mmlu(
     root=None,
     instance=None,
     prompt_style=None,
+    kshot=1,
     seed=None,
     tokenizer=None,
     **_,
@@ -47,9 +49,23 @@ def get_mmlu(
         "cais/mmlu", instance, cache_dir=os.environ.get("DATADIR", root)
     )
 
+    if kshot:
+        fewshot_prompt = "\n".join(
+            [
+                f"The following are multiple choice questions (with answers) about {' '.join(instance.split('_'))}.\n",
+                *[
+                    __format_prompt(dataset["dev"][idx], prompt_style, with_answer=True)
+                    for idx in range(kshot)
+                ],
+                "Now please answer the following question with the correct choice letter only.\n",
+            ]
+        )
+    else:
+        fewshot_prompt = ""
+
     dataset = dataset.map(
         lambda x: {
-            "prompt": __format_prompt(x, prompt_style),
+            "prompt": fewshot_prompt + __format_prompt(x, prompt_style),
             "label": x["answer"],
         },
         remove_columns=[

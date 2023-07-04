@@ -5,6 +5,7 @@ __all__ = [
     "save_model",
 ]
 
+
 def __setup():
     from importlib import import_module
 
@@ -12,5 +13,6 @@ def __setup():
         "llama",
     ]:
         import_module(f".{n}", __name__)
+
 
 __setup()

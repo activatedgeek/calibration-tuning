@@ -16,7 +16,7 @@ def create_tokenizer(size, cache_dir=None, padding_side="left", **_):
         padding_side=padding_side,
     )
     tokenizer.pad_token = tokenizer.eos_token
-    
+
     return tokenizer
 
 
@@ -24,7 +24,7 @@ def create_tokenizer(size, cache_dir=None, padding_side="left", **_):
 def create_model(size, cache_dir=None, torch_dtype=torch.float16, **kwargs):
     assert size in ["7b", "13b", "30b", "65b"]
 
-    kwargs = { k: v for k, v in kwargs.items() if not k.startswith("pretrained")}
+    kwargs = {k: v for k, v in kwargs.items() if not k.startswith("pretrained")}
 
     return LlamaForCausalLM.from_pretrained(
         f"openlm-research/open_llama_{size}",
@@ -33,17 +33,21 @@ def create_model(size, cache_dir=None, torch_dtype=torch.float16, **kwargs):
         **kwargs,
     )
 
+
 @register_model
 def open_llama_7b_tokenizer(**kwargs):
     return create_tokenizer("7b", **kwargs)
+
 
 @register_model
 def open_llama_7b(**kwargs):
     return create_model("7b", **kwargs)
 
+
 @register_model
 def open_llama_13b_tokenizer(**kwargs):
     return create_tokenizer("13b", **kwargs)
+
 
 @register_model
 def open_llama_13b(**kwargs):
