@@ -65,24 +65,13 @@ def main(
         model_name=f"{model_name}_tokenizer", model_kwargs=dict(cache_dir=model_dir)
     )
 
+    label2char = get_dataset_attrs(dataset).get("label2char")
     _, val_data, test_data = get_dataset(
         dataset,
         instance=dataset_instance,
         root=data_dir,
         tokenizer=tokenizer,
         seed=seed,
-    )
-    val_loader = get_loader(
-        val_data,
-        batch_size=batch_size,
-        accelerator=accelerator,
-        collate_fn=DataCollatorWithPadding(tokenizer),
-    )
-    test_loader = get_loader(
-        test_data,
-        batch_size=batch_size,
-        accelerator=accelerator,
-        collate_fn=DataCollatorWithPadding(tokenizer),
     )
 
     model = create_model(
@@ -94,14 +83,16 @@ def main(
     ## NOTE: move inside create_model since all models may not work with this.
     model = tp.tensor_parallel(model, range(torch.cuda.device_count()))
 
-    label2char = get_dataset_attrs(dataset).get("label2char")
-
     val_metrics = evaluate(
         accelerator,
         model,
         tokenizer,
         label2char,
-        val_loader,
+        get_loader(
+            val_data,
+            batch_size=batch_size,
+            collate_fn=DataCollatorWithPadding(tokenizer),
+        ),
         do_sample=sample,
         max_new_tokens=max_new_tokens,
     )
@@ -112,11 +103,15 @@ def main(
         model,
         tokenizer,
         label2char,
-        test_loader,
+        get_loader(
+            test_data,
+            batch_size=batch_size,
+            collate_fn=DataCollatorWithPadding(tokenizer),
+        ),
         do_sample=sample,
         max_new_tokens=max_new_tokens,
     )
-    logging.info(test_metrics, extra=dict(metrics=True, prefix="test"))    
+    logging.info(test_metrics, extra=dict(metrics=True, prefix="test"))
 
 
 def entrypoint(seed=None, log_dir=None, **kwargs):

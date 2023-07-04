@@ -7,7 +7,68 @@ __all__ = [
     "get_mmlu",
 ]
 
-__ATTRS = dict(label2char=lambda idx: string.ascii_lowercase[idx])
+
+__TASKS = [
+    "abstract_algebra",
+    "anatomy",
+    "astronomy",
+    "business_ethics",
+    "clinical_knowledge",
+    "college_biology",
+    "college_chemistry",
+    "college_computer_science",
+    "college_mathematics",
+    "college_medicine",
+    "college_physics",
+    "computer_security",
+    "conceptual_physics",
+    "econometrics",
+    "electrical_engineering",
+    "elementary_mathematics",
+    "formal_logic",
+    "global_facts",
+    "high_school_biology",
+    "high_school_chemistry",
+    "high_school_computer_science",
+    "high_school_european_history",
+    "high_school_geography",
+    "high_school_government_and_politics",
+    "high_school_macroeconomics",
+    "high_school_mathematics",
+    "high_school_microeconomics",
+    "high_school_physics",
+    "high_school_psychology",
+    "high_school_statistics",
+    "high_school_us_history",
+    "high_school_world_history",
+    "human_aging",
+    "human_sexuality",
+    "international_law",
+    "jurisprudence",
+    "logical_fallacies",
+    "machine_learning",
+    "management",
+    "marketing",
+    "medical_genetics",
+    "miscellaneous",
+    "moral_disputes",
+    "moral_scenarios",
+    "nutrition",
+    "philosophy",
+    "prehistory",
+    "professional_accounting",
+    "professional_law",
+    "professional_medicine",
+    "professional_psychology",
+    "public_relations",
+    "security_studies",
+    "sociology",
+    "us_foreign_policy",
+    "virology",
+    "world_religions",
+]
+
+__ATTRS = dict(label2char=lambda idx: string.ascii_lowercase[idx], tasks=__TASKS)
 
 
 ## TODO: add few-shot prompts.
@@ -38,7 +99,7 @@ def get_mmlu(
     root=None,
     instance=None,
     prompt_style=None,
-    kshot=1,
+    kshot=5,
     seed=None,
     tokenizer=None,
     **_,
@@ -49,7 +110,7 @@ def get_mmlu(
         "cais/mmlu", instance, cache_dir=os.environ.get("DATADIR", root)
     )
 
-    if kshot:
+    if kshot > 0:
         fewshot_prompt = "\n".join(
             [
                 f"The following are multiple choice questions (with answers) about {' '.join(instance.split('_'))}.\n",
@@ -57,7 +118,6 @@ def get_mmlu(
                     __format_prompt(dataset["dev"][idx], prompt_style, with_answer=True)
                     for idx in range(kshot)
                 ],
-                "Now please answer the following question with the correct choice letter only.\n",
             ]
         )
     else:
@@ -65,7 +125,7 @@ def get_mmlu(
 
     dataset = dataset.map(
         lambda x: {
-            "prompt": fewshot_prompt + __format_prompt(x, prompt_style),
+            "prompt": fewshot_prompt + "\n" + __format_prompt(x, prompt_style),
             "label": x["answer"],
         },
         remove_columns=[
