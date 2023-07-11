@@ -53,7 +53,7 @@ def __tokenize_fn(tokenizer, sample):
 
     labels = torch.Tensor(final_dict["input_ids"]).long()
     labels[:source_len] = IGNORE_LABEL
-    final_dict["labels"] = labels.tolist()
+    final_dict["label_ids"] = labels.tolist()
 
     return final_dict
 
