@@ -34,6 +34,13 @@ python experiments/evaluate_gen.py \
     --dataset-instance=business_ethics
 ```
 
+### Fine-Tuning
+
+An example command to run fine-tuning on the Alpaca dataset:
+```shell
+./scripts/finetune.sh --seed=137 --epochs=1
+```
+
 # LICENSE
 
 Apache 2.0

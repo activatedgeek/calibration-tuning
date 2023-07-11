@@ -1,5 +1,5 @@
 import os
-import numpy as np
+import torch
 
 from .registry import register_dataset
 
@@ -41,11 +41,17 @@ def __tokenize_fn(tokenizer, sample):
         sample["source"] + sample["target"], padding=True, truncation=True
     )
 
-    source_len = len(
-        tokenizer(sample["source"], padding=True, truncation=True).input_ids
+    source_len = (
+        torch.Tensor(
+            tokenizer(sample["source"], padding=True, truncation=True).input_ids
+        )
+        .long()
+        .ne(tokenizer.pad_token_id)
+        .sum()
+        .item()
     )
 
-    labels = np.array(final_dict["input_ids"])
+    labels = torch.Tensor(final_dict["input_ids"]).long()
     labels[:source_len] = IGNORE_LABEL
     final_dict["labels"] = labels.tolist()
 
