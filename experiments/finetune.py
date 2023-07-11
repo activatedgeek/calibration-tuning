@@ -5,7 +5,7 @@ from peft import LoraConfig, TaskType, get_peft_model, prepare_model_for_int8_tr
 
 from llm.logging import set_logging
 from llm.datasets import get_dataset, get_num_workers
-from llm.models import create_model
+from llm.models import create_model, get_special_tokens
 
 
 def main(
@@ -29,6 +29,8 @@ def main(
     tokenizer = create_model(
         model_name=f"{model_name}_tokenizer", model_kwargs=dict(cache_dir=model_dir)
     )
+    special_token_count = tokenizer.add_special_tokens(get_special_tokens(tokenizer))
+
     train_data, _, test_data = get_dataset(
         dataset,
         root=data_dir,
@@ -44,6 +46,19 @@ def main(
             cache_dir=model_dir,
         ),
     )
+    model.resize_token_embeddings(len(tokenizer))
+    ## Mean init new embeddings.
+    if special_token_count:
+        input_embeddings = model.get_input_embeddings().weight.data
+        output_embeddings = model.get_output_embeddings().weight.data
+
+        input_embeddings[-special_token_count:] = input_embeddings[
+            :-special_token_count
+        ].mean(dim=0, keepdim=True)
+        output_embeddings[-special_token_count:] = output_embeddings[
+            :-special_token_count
+        ].mean(dim=0, keepdim=True)
+
     if fp8:
         model = prepare_model_for_int8_training(model)
     if lora_rank:
@@ -89,6 +104,9 @@ def main(
         tokenizer=tokenizer,
     )
     trainer.train()
+    if accelerator.is_main_process:
+        trainer.save_state()
+        trainer.save_model(output_dir=log_dir)
 
 
 def entrypoint(seed=None, log_dir=None, **kwargs):

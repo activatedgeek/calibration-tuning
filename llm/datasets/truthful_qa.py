@@ -76,7 +76,6 @@ def get_truthful_qa(
     return None, val_data, None
 
 
-## NOTE: Some arguments ignored to avoid conflict.
 @register_dataset(attrs=__ATTRS)
 def truthful_qa_mc1(*args, instance=None, prompt_style="mcq", **kwargs):
     return get_truthful_qa(

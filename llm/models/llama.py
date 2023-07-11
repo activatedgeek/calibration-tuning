@@ -7,20 +7,23 @@ from transformers import (
 )
 
 
-def create_tokenizer(size, cache_dir=None, padding_side="left", **_):
+__all__ = ["create_tokenizer", "create_model"]
+
+
+def create_tokenizer(size, cache_dir=None, padding_side="right", use_fast=False, **_):
     assert size in ["7b", "13b", "30b", "65b"]
 
     tokenizer = LlamaTokenizer.from_pretrained(
         f"openlm-research/open_llama_{size}",
         cache_dir=os.environ.get("MODELDIR", cache_dir),
         padding_side=padding_side,
+        use_fast=use_fast,
+        ## TODO: do we need this?
+        # model_max_length=2048,
     )
-    tokenizer.pad_token = tokenizer.eos_token
-
     return tokenizer
 
 
-## NOTE: no fp32 on 24GB GPU?
 def create_model(size, cache_dir=None, torch_dtype=torch.float16, **kwargs):
     assert size in ["7b", "13b", "30b", "65b"]
 
