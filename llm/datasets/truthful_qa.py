@@ -24,7 +24,7 @@ def __format_prompt(sample, style):
                     f"  ({n}): {c}"
                     for n, c in zip(string.ascii_lowercase[: len(choices)], choices)
                 ],
-                "Answer: ",
+                "Answer:",
             ]
         )
 
