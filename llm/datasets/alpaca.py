@@ -8,7 +8,7 @@ __all__ = [
 ]
 
 
-## HF Convention. See https://huggingface.co/docs/transformers/v4.30.0/en/tasks/token_classification#preprocess.
+## NOTE: HF Convention. See https://huggingface.co/docs/transformers/v4.30.0/en/tasks/token_classification#preprocess.
 IGNORE_LABEL = -100
 
 
@@ -53,7 +53,7 @@ def __tokenize_fn(tokenizer, sample):
 
     labels = torch.Tensor(final_dict["input_ids"]).long()
     labels[:source_len] = IGNORE_LABEL
-    final_dict["label_ids"] = labels.tolist()
+    final_dict["labels"] = labels.tolist()
 
     return final_dict
 

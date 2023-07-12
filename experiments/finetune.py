@@ -1,10 +1,11 @@
 import logging
 from accelerate import Accelerator
-from transformers import DataCollatorWithPadding, TrainingArguments, Trainer
+from transformers import TrainingArguments, Trainer
 from peft import LoraConfig, TaskType, get_peft_model, prepare_model_for_int8_training
 
 from llm.logging import set_logging
 from llm.datasets import get_dataset, get_num_workers
+from llm.datasets.llm_utils import DataCollatorForSupervisedDataset
 from llm.models import create_model, get_special_tokens
 
 
@@ -100,7 +101,7 @@ def main(
         args=training_args,
         train_dataset=train_data,
         eval_dataset=val_data,
-        data_collator=DataCollatorWithPadding(tokenizer=tokenizer),
+        data_collator=DataCollatorForSupervisedDataset(tokenizer=tokenizer),
         tokenizer=tokenizer,
     )
     trainer.train()
