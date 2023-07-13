@@ -1,15 +1,11 @@
 import os
-import torch
 
 from .registry import register_dataset
+from .llm_utils import tokenize_for_causal_lm
 
 __all__ = [
     "get_alpaca_dataset",
 ]
-
-
-## NOTE: HF Convention. See https://huggingface.co/docs/transformers/v4.30.0/en/tasks/token_classification#preprocess.
-IGNORE_LABEL = -100
 
 
 def __format_prompt(sample, style):
@@ -34,28 +30,6 @@ def __format_prompt(sample, style):
         return prompt
 
     raise NotImplementedError
-
-
-def __tokenize_fn(tokenizer, sample):
-    final_dict = tokenizer(
-        sample["source"] + sample["target"], padding=True, truncation=True
-    )
-
-    source_len = (
-        torch.Tensor(
-            tokenizer(sample["source"], padding=True, truncation=True).input_ids
-        )
-        .long()
-        .ne(tokenizer.pad_token_id)
-        .sum()
-        .item()
-    )
-
-    labels = torch.Tensor(final_dict["input_ids"]).long()
-    labels[:source_len] = IGNORE_LABEL
-    final_dict["labels"] = labels.tolist()
-
-    return final_dict
 
 
 def get_alpaca_dataset(
@@ -84,7 +58,7 @@ def get_alpaca_dataset(
             "text",
         ],
     ).map(
-        lambda x: __tokenize_fn(tokenizer, x),
+        lambda x: tokenize_for_causal_lm(tokenizer, x),
         num_proc=4,
         remove_columns=[
             "source",

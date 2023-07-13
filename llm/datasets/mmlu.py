@@ -2,6 +2,8 @@ import os
 import string
 
 from .registry import register_dataset
+from .llm_utils import tokenize_for_causal_lm
+
 
 __all__ = [
     "get_mmlu",
@@ -71,7 +73,6 @@ __TASKS = [
 __ATTRS = dict(label2char=lambda idx: string.ascii_lowercase[idx], tasks=__TASKS)
 
 
-## TODO: add few-shot prompts.
 def __format_prompt(sample, style, with_answer=False):
     if style == "mcq":
         question = sample["question"]
@@ -120,39 +121,39 @@ def get_mmlu(
                 ],
             ]
         )
+        fewshot_prompt = fewshot_prompt + "\nNow, answer the next "
     else:
         fewshot_prompt = ""
 
     dataset = dataset.map(
         lambda x: {
-            "prompt": fewshot_prompt + "\n" + __format_prompt(x, prompt_style),
-            "label": x["answer"],
+            "source": fewshot_prompt + __format_prompt(x, prompt_style),
+            "target": f"{string.ascii_lowercase[x['answer']]}{tokenizer.eos_token}",
         },
+        num_proc=4,
         remove_columns=[
             "question",
             "choices",
             "answer",
         ],
-        num_proc=4,
     ).map(
-        lambda x: tokenizer(x["prompt"], padding=True),
-        batched=True,
+        lambda x: tokenize_for_causal_lm(tokenizer, x),
         num_proc=4,
-        remove_columns=["prompt"],
+        remove_columns=["source", "target"],
     )
 
-    dev_data = dataset["dev"].shuffle(seed=seed)
+    train_data = dataset["auxiliary_train"].shuffle(seed=seed)
     val_data = dataset["validation"].shuffle(seed=seed)
     test_data = dataset["test"].shuffle(seed=seed)
 
-    return dev_data, val_data, test_data
+    return train_data, val_data, test_data
 
 
 @register_dataset(attrs=__ATTRS)
-def mmlu(*args, instance=None, prompt_style="mcq", **kwargs):
+def mmlu(*args, instance=None, **kwargs):
     return get_mmlu(
         *args,
         **kwargs,
         instance=instance,
-        prompt_style=prompt_style,
+        prompt_style="mcq",
     )

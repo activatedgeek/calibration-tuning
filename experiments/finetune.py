@@ -1,12 +1,80 @@
 import logging
+import torch
 from accelerate import Accelerator
 from transformers import TrainingArguments, Trainer
 from peft import LoraConfig, TaskType, get_peft_model, prepare_model_for_int8_training
+from transformers.training_args import TrainingArguments
 
 from llm.logging import set_logging
 from llm.datasets import get_dataset, get_num_workers
-from llm.datasets.llm_utils import DataCollatorForSupervisedDataset
+from llm.datasets.llm_utils import (
+    DataCollatorForSupervisedDataset,
+    tokenize_for_causal_lm,
+)
 from llm.models import create_model, get_special_tokens
+
+
+class CalibrationTrainer(Trainer):
+    def __init__(self, *args, tokenizer=None, beta=1.0, **kwargs):
+        super().__init__(
+            *args,
+            **kwargs,
+            tokenizer=tokenizer,
+            data_collator=DataCollatorForSupervisedDataset(tokenizer),
+        )
+        self.beta = beta
+
+    def compute_unc_loss(self, model, inputs, outputs):
+        ## Aligned labels and outputs by one-shift.
+        ## TODO: Use sampling for output generation?
+        input_ids, labels, output_ids = (
+            inputs["input_ids"],
+            inputs["labels"][..., 1:],
+            outputs.logits[..., :-1, :].argmax(dim=-1),
+        )
+
+        ##  Assumes all inputs end with answer + EOS.
+        eos_idx = labels.eq(self.tokenizer.eos_token_id).nonzero()[
+            labels.eq(self.tokenizer.eos_token_id).sum(dim=-1).cumsum(dim=0) - 1
+        ][:, -1]
+        response_matches = (
+            labels[torch.arange(labels.size(0)), eos_idx - 1]
+            == output_ids[torch.arange(output_ids.size(0)), eos_idx - 1]
+        )
+
+        response_ids = input_ids.clone()
+        response_ids[torch.arange(input_ids.size(0)), eos_idx] = output_ids[
+            torch.arange(output_ids.size(0)), eos_idx - 1
+        ]
+        unc_prompts = self.tokenizer.batch_decode(
+            response_ids,
+            skip_special_tokens=True,
+            clean_up_tokenization_spaces=True,
+        )
+        unc_samples = [
+            {
+                "source": u + "\n" + "Is the proposed answer correct? ",
+                "target": f"{'yes' if r else 'no'}{self.tokenizer.eos_token}",
+            }
+            for u, r in zip(unc_prompts, response_matches)
+        ]
+        tokenized_unc_samples = [
+            tokenize_for_causal_lm(self.tokenizer, sample) for sample in unc_samples
+        ]
+        unc_inputs = self.data_collator(tokenized_unc_samples)
+
+        unc_loss = super().compute_loss(model, unc_inputs)
+
+        return unc_loss
+
+    def compute_loss(self, model, inputs, return_outputs=False):
+        loss, outputs = super().compute_loss(model, inputs, return_outputs=True)
+
+        if self.beta > 0.0:
+            unc_loss = self.compute_unc_loss(model, inputs, outputs)
+            loss = loss + self.beta * unc_loss
+
+        return (loss, outputs) if return_outputs else loss
 
 
 def main(
@@ -16,6 +84,7 @@ def main(
     data_dir=None,
     model_dir=None,
     dataset=None,
+    dataset_instance=None,
     batch_size=1,
     model_name=None,
     fp8=True,
@@ -34,6 +103,7 @@ def main(
 
     train_data, val_data, test_data = get_dataset(
         dataset,
+        instance=dataset_instance,
         root=data_dir,
         tokenizer=tokenizer,
         seed=seed,
@@ -96,18 +166,16 @@ def main(
         report_to="wandb",
         dataloader_num_workers=get_num_workers(),
     )
-    trainer = Trainer(
+    trainer = CalibrationTrainer(
         model=model,
         args=training_args,
         train_dataset=train_data,
         eval_dataset=val_data,
-        data_collator=DataCollatorForSupervisedDataset(tokenizer=tokenizer),
         tokenizer=tokenizer,
     )
     trainer.train()
-    if accelerator.is_main_process:
-        trainer.save_state()
-        trainer.save_model(output_dir=log_dir)
+    trainer.save_state()
+    trainer.save_model(output_dir=log_dir)
 
 
 def entrypoint(seed=None, log_dir=None, **kwargs):
