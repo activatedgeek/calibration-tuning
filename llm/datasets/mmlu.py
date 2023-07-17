@@ -101,7 +101,6 @@ def get_mmlu(
     instance=None,
     prompt_style=None,
     kshot=5,
-    seed=None,
     tokenizer=None,
     **_,
 ):
@@ -142,9 +141,9 @@ def get_mmlu(
         remove_columns=["source", "target"],
     )
 
-    train_data = dataset["auxiliary_train"].shuffle(seed=seed)
-    val_data = dataset["validation"].shuffle(seed=seed)
-    test_data = dataset["test"].shuffle(seed=seed)
+    train_data = dataset["auxiliary_train"]
+    val_data = dataset["validation"]
+    test_data = dataset["test"]
 
     return train_data, val_data, test_data
 

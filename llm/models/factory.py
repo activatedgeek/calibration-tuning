@@ -44,7 +44,7 @@ def create_model(
         model_cfg["num_classes"] = num_classes
         logging.info(f"Reset classifier for {num_classes} classes.")
 
-    logging.info(f'Loaded model "{model_name}".')
+    logging.info(f'Loaded "{model_name}".')
 
     return model
 
