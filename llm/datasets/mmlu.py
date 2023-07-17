@@ -70,7 +70,7 @@ __TASKS = [
     "world_religions",
 ]
 
-__ATTRS = dict(label2char=lambda idx: string.ascii_lowercase[idx], tasks=__TASKS)
+__ATTRS = dict(tasks=__TASKS)
 
 
 def __format_prompt(sample, style, with_answer=False):
