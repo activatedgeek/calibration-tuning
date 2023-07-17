@@ -1,6 +1,5 @@
 import logging
 from accelerate import Accelerator
-from transformers import DataCollatorWithPadding
 
 from llm.logging import set_logging
 from llm.datasets import get_dataset, get_loader
@@ -9,6 +8,7 @@ from llm.models import create_model, get_special_tokens
 from llm.utils.evaluation import evaluate_via_eos
 
 
+## FIXME: load from checkpoint.
 def main(
     accelerator,
     seed=None,
@@ -26,7 +26,7 @@ def main(
     )
     tokenizer.add_special_tokens(get_special_tokens(tokenizer))
 
-    train_data, val_data, test_data = get_dataset(
+    _, val_data, test_data = get_dataset(
         dataset,
         instance=dataset_instance,
         root=data_dir,

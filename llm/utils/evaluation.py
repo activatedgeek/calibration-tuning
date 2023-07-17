@@ -1,5 +1,8 @@
-import torch
 from tqdm.auto import tqdm
+import torch
+import torch.nn.functional as F
+
+from .third_party.calibration import calibration
 
 
 def extract_eos_pos(tokenizer, labels):
@@ -21,7 +24,7 @@ def evaluate_via_eos(accelerator, model, tokenizer, loader):
     """
     device = accelerator.device
 
-    acc = []
+    Y, P_hat = [], []
 
     for inputs in tqdm(loader, leave=False):
         inputs = {k: v.to(device) for k, v in inputs.items()}
@@ -29,17 +32,23 @@ def evaluate_via_eos(accelerator, model, tokenizer, loader):
         labels = inputs.pop("labels")[..., 1:]
 
         logits = model(**inputs).logits[..., :-1, :]
-        outputs = logits.argmax(dim=-1)
 
         eos_idx = extract_eos_pos(tokenizer, labels)
-        targets = labels[torch.arange(labels.size(0)), eos_idx - 1]
-        responses = outputs[torch.arange(outputs.size(0)), eos_idx - 1]
+        y = labels[torch.arange(labels.size(0)), eos_idx - 1]
+        p_hat = logits[torch.arange(logits.size(0)), eos_idx - 1]
 
-        (__acc,) = accelerator.gather_for_metrics((targets == responses,))
-        acc.append(__acc)
-    
-    acc = torch.cat(acc)
+        (__y, __p_hat) = accelerator.gather_for_metrics((y, p_hat))
+        Y.append(__y), P_hat.append(__p_hat)
 
-    metrics = {"match_acc": acc.float().mean().item(), "N": acc.size(0)}
+    Y, P_hat = torch.cat(Y, dim=0), torch.cat(P_hat, dim=0).softmax(dim=-1)
 
-    return metrics
+    acc = (Y == P_hat.argmax(dim=-1)).float().mean()
+    ece, _ = calibration(
+        F.one_hot(Y, num_classes=P_hat.size(-1)).cpu().numpy(), P_hat.cpu().numpy()
+    )
+
+    return {
+        "acc": acc.item(),
+        "N": Y.size(0),
+        "ece": ece,
+    }
