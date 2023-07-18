@@ -11,7 +11,7 @@ from ..datasets.utils import get_loader
 
 class CalibrationTrainer(Trainer):
     def __init__(
-        self, *args, test_dataset=None, tokenizer=None, unc_decay=0.1, **kwargs
+        self, *args, test_dataset=None, tokenizer=None, unc_decay=0.5, **kwargs
     ):
         super().__init__(
             *args,
@@ -21,6 +21,8 @@ class CalibrationTrainer(Trainer):
         )
         self.test_dataset = test_dataset
         self.unc_decay = unc_decay
+
+        assert 0.0 <= unc_decay < 1.0, "unc_decay should be a fraction."
 
     def compute_unc_loss(self, model, inputs, outputs):
         input_ids, labels, output_ids = (
@@ -66,7 +68,7 @@ class CalibrationTrainer(Trainer):
 
         if self.unc_decay > 0.0:
             unc_loss = self.compute_unc_loss(model, inputs, outputs)
-            loss = loss + self.unc_decay * unc_loss
+            loss = (1 - self.unc_decay) * loss + self.unc_decay * unc_loss
 
         return (loss, outputs) if return_outputs else loss
 

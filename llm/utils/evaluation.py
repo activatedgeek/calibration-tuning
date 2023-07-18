@@ -7,8 +7,7 @@ from .third_party.calibration import calibration
 
 def extract_eos_pos(tokenizer, labels):
     """
-    Assumes labels are for CausalLM, shifted by 1 to the right.
-    and extracts the position of the last EOS token.
+    Extracts the position of the last EOS token from each row.
     """
     eos_idx = labels.eq(tokenizer.eos_token_id).nonzero()[
         labels.eq(tokenizer.eos_token_id).sum(dim=-1).cumsum(dim=0) - 1

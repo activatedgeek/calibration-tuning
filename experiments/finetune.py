@@ -20,7 +20,7 @@ class ArgsTrain:
     dataset_instance: str = field(default=None)
     batch_size: int = field(default=1)
     lr: float = field(default=5e-2)
-    unc_decay: float = field(default=1.0)
+    unc_decay: float = field(default=0.5)
     weight_decay: float = field(default=2e-5)
     warmup_steps: int = field(default=0)
     epochs: int = field(default=0)
@@ -51,7 +51,7 @@ def main(
     lora_alpha=32,
     lora_dropout=0.1,
     lr=5e-2,
-    unc_decay=1.0,
+    unc_decay=0.5,
     weight_decay=2e-5,
     warmup_steps=0,
     epochs=0,
@@ -61,13 +61,21 @@ def main(
     )
     special_token_count = tokenizer.add_special_tokens(get_special_tokens(tokenizer))
 
+    if accelerator and not accelerator.is_main_process:
+        accelerator.wait_for_everyone()
+
     train_data, val_data, test_data = get_dataset(
         dataset,
         instance=dataset_instance,
         root=data_dir,
         tokenizer=tokenizer,
         seed=seed,
+        accelerator=accelerator,
     )
+    train_data = train_data.shuffle(seed=seed)
+
+    if accelerator and accelerator.is_main_process:
+        accelerator.wait_for_everyone()
 
     model = create_model(
         model_name=model_name,
@@ -109,7 +117,7 @@ def main(
         ddp_find_unused_parameters=False,
         num_train_epochs=epochs,
         eval_steps=1000,
-        save_steps=1000, ## FIXME: saving leads to OOM.
+        save_steps=1000,  ## FIXME: saving leads to OOM.
         logging_steps=100,
         evaluation_strategy="steps",
         per_device_train_batch_size=batch_size,
@@ -141,15 +149,13 @@ def entrypoint():
     parser = transformers.HfArgumentParser((ArgsModel, ArgsTrain))
     model_args, train_args = parser.parse_args_into_dataclasses()
 
-    kwargs = dict(**asdict(model_args), **asdict(train_args))
-
     set_logging(log_dir=train_args.log_dir, use_wandb=False)
 
     accelerator = Accelerator()
     if accelerator.is_main_process:
         logging.info(f"Working with {accelerator.num_processes} process(es).")
 
-    main(accelerator, **kwargs)
+    main(accelerator, **asdict(model_args), **asdict(train_args))
 
 
 if __name__ == "__main__":

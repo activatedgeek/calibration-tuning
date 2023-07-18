@@ -1,5 +1,6 @@
 import os
 import string
+import torch
 
 from .registry import register_dataset
 from .llm_utils import tokenize_for_causal_lm
@@ -124,21 +125,29 @@ def get_mmlu(
     else:
         fewshot_prompt = ""
 
-    dataset = dataset.map(
-        lambda x: {
-            "source": fewshot_prompt + __format_prompt(x, prompt_style),
-            "target": f"{string.ascii_lowercase[x['answer']]}{tokenizer.eos_token}",
-        },
-        num_proc=4,
-        remove_columns=[
-            "question",
-            "choices",
-            "answer",
-        ],
-    ).map(
-        lambda x: tokenize_for_causal_lm(tokenizer, x),
-        num_proc=4,
-        remove_columns=["source", "target"],
+    dataset = (
+        dataset.map(
+            lambda x: {
+                "source": fewshot_prompt + __format_prompt(x, prompt_style),
+                "target": f"{string.ascii_lowercase[x['answer']]}{tokenizer.eos_token}",
+            },
+            num_proc=4,
+            remove_columns=[
+                "question",
+                "choices",
+                "answer",
+            ],
+        )
+        .map(
+            lambda x: tokenize_for_causal_lm(tokenizer, x),
+            num_proc=4,
+            remove_columns=["source", "target"],
+        )
+        .filter(
+            lambda x: torch.tensor(x["labels"]).eq(tokenizer.eos_token_id).sum(dim=-1)
+            > 0,
+            num_proc=4,
+        )
     )
 
     train_data = dataset["auxiliary_train"]
