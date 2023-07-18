@@ -5,31 +5,34 @@ from ..datasets.llm_utils import (
     DataCollatorForSupervisedDataset,
     tokenize_for_causal_lm,
 )
-from .evaluation import extract_aligned_eos_pos, evaluate
+from .evaluation import extract_eos_pos, evaluate_via_eos
+from ..datasets.utils import get_loader
 
 
 class CalibrationTrainer(Trainer):
-    def __init__(self, *args, tokenizer=None, beta=0.1, **kwargs):
+    def __init__(
+        self, *args, test_dataset=None, tokenizer=None, unc_decay=0.1, **kwargs
+    ):
         super().__init__(
             *args,
             **kwargs,
             tokenizer=tokenizer,
             data_collator=DataCollatorForSupervisedDataset(tokenizer),
         )
-        self.beta = beta
+        self.test_dataset = test_dataset
+        self.unc_decay = unc_decay
 
     def compute_unc_loss(self, model, inputs, outputs):
-        ## TODO: Use sampling for output generation?
-        input_ids, shifted_labels, output_ids = (
+        input_ids, labels, output_ids = (
             inputs.get("input_ids"),
             inputs.get("labels")[..., 1:],
             outputs.logits[..., :-1, :].argmax(dim=-1),
         )
 
-        eos_idx = extract_aligned_eos_pos(self.tokenizer, shifted_labels)
+        eos_idx = extract_eos_pos(self.tokenizer, labels)
 
-        target_matches = (
-            shifted_labels[torch.arange(shifted_labels.size(0)), eos_idx - 1]
+        targets = (
+            labels[torch.arange(labels.size(0)), eos_idx - 1]
             == output_ids[torch.arange(output_ids.size(0)), eos_idx - 1]
         )
 
@@ -47,7 +50,7 @@ class CalibrationTrainer(Trainer):
                 "source": u + "\n" + "Is the proposed answer correct? ",
                 "target": f"{'yes' if r else 'no'}{self.tokenizer.eos_token}",
             }
-            for u, r in zip(unc_prompts, target_matches)
+            for u, r in zip(unc_prompts, targets)
         ]
         tokenized_unc_samples = [
             tokenize_for_causal_lm(self.tokenizer, sample) for sample in unc_samples
@@ -61,25 +64,43 @@ class CalibrationTrainer(Trainer):
     def compute_loss(self, model, inputs, return_outputs=False):
         loss, outputs = super().compute_loss(model, inputs, return_outputs=True)
 
-        if self.beta > 0.0:
+        if self.unc_decay > 0.0:
             unc_loss = self.compute_unc_loss(model, inputs, outputs)
-            loss = loss + self.beta * unc_loss
+            loss = loss + self.unc_decay * unc_loss
 
         return (loss, outputs) if return_outputs else loss
 
     def evaluate(self, eval_dataset=None, ignore_keys=None, metric_key_prefix="eval"):
         metrics = super().evaluate(eval_dataset, ignore_keys, metric_key_prefix)
 
-        custom_metrics = evaluate(
+        val_metrics = evaluate_via_eos(
             self.accelerator,
             self.model,
             self.tokenizer,
-            self.get_eval_dataloader(eval_dataset),
+            get_loader(
+                eval_dataset or self.eval_dataset,
+                batch_size=self.args.per_device_eval_batch_size,
+                collate_fn=self.data_collator,
+                accelerator=self.accelerator,
+            ),
         )
-        custom_metrics = {
-            f"{metric_key_prefix}_{k}": v for k, v in custom_metrics.items()
-        }
-        self.log(custom_metrics)
+        val_metrics = {f"{metric_key_prefix}_{k}": v for k, v in val_metrics.items()}
+        self.log(val_metrics)
+        metrics.update(val_metrics)
 
-        metrics.update(custom_metrics)
+        test_metrics = evaluate_via_eos(
+            self.accelerator,
+            self.model,
+            self.tokenizer,
+            get_loader(
+                self.test_dataset,
+                batch_size=self.args.per_device_eval_batch_size,
+                collate_fn=self.data_collator,
+                accelerator=self.accelerator,
+            ),
+        )
+        test_metrics = {f"test_{k}": v for k, v in test_metrics.items()}
+        self.log(test_metrics)
+        metrics.update(test_metrics)
+
         return metrics

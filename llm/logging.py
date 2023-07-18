@@ -53,13 +53,14 @@ def get_log_dir(log_dir=None):
     return log_dir
 
 
-def set_logging(log_dir=None, metrics_extra_key="metrics"):
-    ## Set other properties using environment variables: https://docs.wandb.ai/guides/track/environment-variables.
-    wandb.init(
-        mode=os.environ.get("WANDB_MODE", default="offline"),
-        # settings=wandb.Settings(start_method="fork"),
-    )
-    log_dir = Path(wandb.run.dir)
+def set_logging(log_dir=None, metrics_extra_key="metrics", use_wandb=True):
+    if use_wandb:
+        ## Set other properties using environment variables: https://docs.wandb.ai/guides/track/environment-variables.
+        wandb.init(
+            mode=os.environ.get("WANDB_MODE", default="offline"),
+            # settings=wandb.Settings(start_method="fork"),
+        )
+        log_dir = Path(wandb.run.dir)
 
     _CONFIG = {
         "version": 1,
@@ -93,7 +94,7 @@ def set_logging(log_dir=None, metrics_extra_key="metrics"):
         },
         "loggers": {
             "": {
-                "handlers": ["stdout", "wandb_file"],
+                "handlers": ["stdout"] + ["wandb_file"] if use_wandb else [],
                 "level": os.environ.get("LOGLEVEL", "INFO"),
             },
         },
@@ -104,6 +105,7 @@ def set_logging(log_dir=None, metrics_extra_key="metrics"):
     logging.info(f'Files stored in "{log_dir}".')
 
     def finish_logging():
-        wandb.finish()
+        if use_wandb:
+            wandb.finish()
 
     return log_dir, finish_logging

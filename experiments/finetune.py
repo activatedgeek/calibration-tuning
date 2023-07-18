@@ -1,13 +1,39 @@
 import logging
+from dataclasses import dataclass, field, asdict
 from accelerate import Accelerator
+import transformers
 from transformers import TrainingArguments
 from peft import LoraConfig, TaskType, get_peft_model, prepare_model_for_int8_training
-from transformers.training_args import TrainingArguments
 
 from llm.logging import set_logging
 from llm.datasets import get_dataset, get_num_workers
 from llm.models import create_model, get_special_tokens
 from llm.utils import CalibrationTrainer
+
+
+@dataclass
+class ArgsTrain:
+    seed: int = field(default=None)
+    log_dir: str = field(default=None)
+    data_dir: str = field(default=None)
+    dataset: str = field(default=None)
+    dataset_instance: str = field(default=None)
+    batch_size: int = field(default=1)
+    lr: float = field(default=5e-2)
+    unc_decay: float = field(default=1.0)
+    weight_decay: float = field(default=2e-5)
+    warmup_steps: int = field(default=0)
+    epochs: int = field(default=0)
+
+
+@dataclass
+class ArgsModel:
+    model_dir: str = field(default=None)
+    model_name: str = field(default=None)
+    fp8: bool = field(default=True)
+    lora_rank: int = field(default=8)
+    lora_alpha: int = field(default=32)
+    lora_dropout: float = field(default=0.1)
 
 
 def main(
@@ -25,6 +51,7 @@ def main(
     lora_alpha=32,
     lora_dropout=0.1,
     lr=5e-2,
+    unc_decay=1.0,
     weight_decay=2e-5,
     warmup_steps=0,
     epochs=0,
@@ -82,7 +109,7 @@ def main(
         ddp_find_unused_parameters=False,
         num_train_epochs=epochs,
         eval_steps=1000,
-        save_steps=1000,
+        save_steps=1000, ## FIXME: saving leads to OOM.
         logging_steps=100,
         evaluation_strategy="steps",
         per_device_train_batch_size=batch_size,
@@ -102,30 +129,28 @@ def main(
         args=training_args,
         train_dataset=train_data,
         eval_dataset=val_data,
+        test_dataset=test_data,
         tokenizer=tokenizer,
+        unc_decay=unc_decay,
     )
     trainer.train()
     trainer.save_state()
-    trainer.save_model(output_dir=log_dir)
 
 
-def entrypoint(seed=None, log_dir=None, **kwargs):
+def entrypoint():
+    parser = transformers.HfArgumentParser((ArgsModel, ArgsTrain))
+    model_args, train_args = parser.parse_args_into_dataclasses()
+
+    kwargs = dict(**asdict(model_args), **asdict(train_args))
+
+    set_logging(log_dir=train_args.log_dir, use_wandb=False)
+
     accelerator = Accelerator()
-
-    ## Only setup logging from one process.
-    log_dir, finish_logging = (
-        set_logging(log_dir=log_dir) if accelerator.is_main_process else [None, None]
-    )
     if accelerator.is_main_process:
         logging.info(f"Working with {accelerator.num_processes} process(es).")
 
-    main(accelerator, **kwargs, seed=seed, log_dir=log_dir)
-
-    if accelerator.is_main_process:
-        finish_logging()
+    main(accelerator, **kwargs)
 
 
 if __name__ == "__main__":
-    import fire
-
-    fire.Fire(entrypoint)
+    entrypoint()

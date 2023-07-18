@@ -4,8 +4,8 @@ __PORT=$(shuf -i 10000-65500 -n 1)
 
 accelerate launch --multi_gpu --main_process_port=${__PORT} \
 experiments/evaluate.py \
-    --model-name=open_llama_13b \
+    --model_name=open_llama_13b \
     --dataset=mmlu \
-    --dataset-instance=business_ethics \
+    --dataset_instance=business_ethics \
     "${@}"
     
