@@ -1,3 +1,4 @@
+import os
 import logging
 from dataclasses import dataclass, field, asdict
 from accelerate import Accelerator
@@ -23,7 +24,7 @@ class ArgsTrain:
     unc_decay: float = field(default=0.5)
     weight_decay: float = field(default=2e-5)
     warmup_steps: int = field(default=0)
-    epochs: int = field(default=0)
+    epochs: int = field(default=1)
 
 
 @dataclass
@@ -54,14 +55,14 @@ def main(
     unc_decay=0.5,
     weight_decay=2e-5,
     warmup_steps=0,
-    epochs=0,
+    epochs=1,
 ):
     tokenizer = create_model(
         model_name=f"{model_name}_tokenizer", model_kwargs=dict(cache_dir=model_dir)
     )
     special_token_count = tokenizer.add_special_tokens(get_special_tokens(tokenizer))
 
-    if accelerator and not accelerator.is_main_process:
+    if not accelerator.is_main_process:
         accelerator.wait_for_everyone()
 
     train_data, val_data, test_data = get_dataset(
@@ -74,7 +75,7 @@ def main(
     )
     train_data = train_data.shuffle(seed=seed)
 
-    if accelerator and accelerator.is_main_process:
+    if accelerator.is_main_process:
         accelerator.wait_for_everyone()
 
     model = create_model(
@@ -148,6 +149,7 @@ def main(
 def entrypoint():
     parser = transformers.HfArgumentParser((ArgsModel, ArgsTrain))
     model_args, train_args = parser.parse_args_into_dataclasses()
+    train_args.log_dir = os.environ.get("WANDB_DIR", train_args.log_dir)
 
     set_logging(log_dir=train_args.log_dir, use_wandb=False)
 
