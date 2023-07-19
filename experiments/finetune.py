@@ -118,7 +118,7 @@ def main(
         ddp_find_unused_parameters=False,
         num_train_epochs=epochs,
         eval_steps=1000,
-        save_steps=1000,  ## FIXME: saving leads to OOM.
+        save_steps=100000,  ## FIXME: saving leads to OOM.
         logging_steps=100,
         evaluation_strategy="steps",
         per_device_train_batch_size=batch_size,
