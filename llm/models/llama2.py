@@ -17,6 +17,7 @@ def create_tokenizer(size, cache_dir=None, padding_side="right", use_fast=False,
         cache_dir=os.environ.get("MODELDIR", cache_dir),
         padding_side=padding_side,
         use_fast=use_fast,
+        use_auth_token=True,
         ## TODO: do we need this?
         # model_max_length=2048,
     )
@@ -31,6 +32,7 @@ def create_model(size, cache_dir=None, **kwargs):
     return LlamaForCausalLM.from_pretrained(
         f"meta-llama/Llama-2-{size}",
         cache_dir=os.environ.get("MODELDIR", cache_dir),
+        use_auth_token=True,
         **kwargs,
     )
 

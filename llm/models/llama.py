@@ -53,3 +53,12 @@ def open_llama_13b_tokenizer(**kwargs):
 @register_model
 def open_llama_13b(**kwargs):
     return create_model("13b", **kwargs)
+
+@register_model
+def open_llama_13b_tokenizer(**kwargs):
+    return create_tokenizer("30b", **kwargs)
+
+
+@register_model
+def open_llama_13b(**kwargs):
+    return create_model("30b", **kwargs)
