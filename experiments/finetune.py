@@ -6,7 +6,6 @@ import transformers
 from transformers import TrainingArguments
 from peft import LoraConfig, TaskType, get_peft_model, prepare_model_for_int8_training
 
-from llm.logging import set_logging
 from llm.datasets import get_dataset, get_num_workers
 from llm.models import create_model, get_special_tokens
 from llm.utils import CalibrationTrainer
@@ -41,12 +40,12 @@ def main(
     accelerator,
     seed=None,
     log_dir=None,
-    data_dir=None,
-    model_dir=None,
     dataset=None,
     dataset_instance=None,
+    data_dir=None,
     batch_size=1,
     model_name=None,
+    model_dir=None,
     fp8=True,
     lora_rank=8,
     lora_alpha=32,
@@ -58,7 +57,7 @@ def main(
     epochs=1,
 ):
     tokenizer = create_model(
-        model_name=f"{model_name}_tokenizer", model_kwargs=dict(cache_dir=model_dir)
+        model_name=f"{model_name}_tokenizer", model_kwargs=dict(model_dir=model_dir)
     )
     special_token_count = tokenizer.add_special_tokens(get_special_tokens(tokenizer))
 
@@ -83,7 +82,7 @@ def main(
         model_kwargs=dict(
             device_map={"": accelerator.device},
             load_in_8bit=fp8,
-            cache_dir=model_dir,
+            model_dir=model_dir,
         ),
     )
     model.resize_token_embeddings(len(tokenizer))
@@ -151,7 +150,7 @@ def entrypoint():
     model_args, train_args = parser.parse_args_into_dataclasses()
     train_args.log_dir = os.environ.get("WANDB_DIR", train_args.log_dir)
 
-    set_logging(log_dir=train_args.log_dir, use_wandb=False)
+    # set_logging(log_dir=train_args.log_dir, use_wandb=False)
 
     accelerator = Accelerator()
     if accelerator.is_main_process:
