@@ -13,7 +13,7 @@ def create_tokenizer(
     size=None, model_dir=None, cache_dir=None, padding_side="right", use_fast=False, **_
 ):
     if size is not None:
-        assert size in ["7b", "13b", "7b-chat", "13b-chat"]
+        assert size in ["7b", "13b", "70b", "7b-chat", "13b-chat", "70b-chat"]
 
     tokenizer = LlamaTokenizer.from_pretrained(
         model_dir or f"meta-llama/Llama-2-{size}",
@@ -27,7 +27,7 @@ def create_tokenizer(
 
 def create_model(size=None, model_dir=None, cache_dir=None, **kwargs):
     if size is not None:
-        assert size in ["7b", "13b", "7b-chat", "13b-chat"]
+        assert size in ["7b", "13b", "70b", "7b-chat", "13b-chat", "70b-chat"]
 
     kwargs = {k: v for k, v in kwargs.items() if not k.startswith("pretrained")}
 
@@ -57,3 +57,13 @@ def llama2_13b_tokenizer(**kwargs):
 @register_model
 def llama2_13b(**kwargs):
     return create_model("13b", **kwargs)
+
+
+@register_model
+def llama2_70b_tokenizer(**kwargs):
+    return create_tokenizer("70b", **kwargs)
+
+
+@register_model
+def llama2_70b(**kwargs):
+    return create_model("70b", **kwargs)

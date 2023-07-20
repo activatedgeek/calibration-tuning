@@ -22,7 +22,7 @@ class CalibrationTrainer(Trainer):
         self.test_dataset = test_dataset
         self.unc_decay = unc_decay
 
-        assert 0.0 <= unc_decay < 1.0, "unc_decay should be a fraction."
+        assert 0.0 <= unc_decay <= 1.0, "unc_decay should be a fraction."
 
     def compute_unc_loss(self, model, inputs, outputs):
         input_ids, labels, output_ids = (
@@ -68,9 +68,15 @@ class CalibrationTrainer(Trainer):
 
         if self.unc_decay > 0.0:
             unc_loss = self.compute_unc_loss(model, inputs, outputs)
-            loss = (1 - self.unc_decay) * loss + self.unc_decay * unc_loss
 
-        return (loss, outputs) if return_outputs else loss
+            total_loss = (1 - self.unc_decay) * loss + self.unc_decay * unc_loss
+
+            ## FIXME: respect logging intervals.
+            self.log({"unc_loss": unc_loss.detach().item(), "lm_loss": unc_loss.detach().item()})
+        else:
+            total_loss = loss
+
+        return (total_loss, outputs) if return_outputs else total_loss
 
     def evaluate(self, eval_dataset=None, ignore_keys=None, metric_key_prefix="eval"):
         metrics = super().evaluate(eval_dataset, ignore_keys, metric_key_prefix)
