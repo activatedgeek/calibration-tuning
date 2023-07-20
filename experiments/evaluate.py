@@ -6,6 +6,7 @@ from llm.logging import set_logging, wandb
 from llm.datasets import get_dataset, get_loader
 from llm.datasets.llm_utils import DataCollatorForSupervisedDataset
 from llm.models import create_model, get_special_tokens
+from llm.utils.distributed import WaitForMainProcess
 from llm.utils.evaluation import evaluate_via_eos
 
 
@@ -39,19 +40,14 @@ def main(
     )
     tokenizer.add_special_tokens(get_special_tokens(tokenizer))
 
-    if not accelerator.is_main_process:
-        accelerator.wait_for_everyone()
-
-    _, val_data, test_data = get_dataset(
-        dataset,
-        instance=dataset_instance,
-        root=data_dir,
-        tokenizer=tokenizer,
-        seed=seed,
-    )
-
-    if accelerator.is_main_process:
-        accelerator.wait_for_everyone()
+    with WaitForMainProcess(accelerator):
+        _, val_data, test_data = get_dataset(
+            dataset,
+            instance=dataset_instance,
+            root=data_dir,
+            tokenizer=tokenizer,
+            seed=seed,
+        )
 
     model = create_model(
         model_name=model_name,

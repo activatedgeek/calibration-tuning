@@ -45,7 +45,7 @@ def get_truthful_qa(
     from datasets import load_dataset
 
     dataset = load_dataset(
-        "truthful_qa", instance, cache_dir=os.environ.get("DATADIR", root)
+        "truthful_qa", instance, cache_dir=os.environ.get("HF_DATASETS_CACHE", root)
     ).flatten()
 
     if mode == "mc1":

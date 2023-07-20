@@ -42,7 +42,7 @@ def get_alpaca_dataset(
     from datasets import load_dataset
 
     dataset = load_dataset(
-        "tatsu-lab/alpaca", cache_dir=os.environ.get("DATADIR", root)
+        "tatsu-lab/alpaca", cache_dir=os.environ.get("HF_DATASETS_CACHE", root)
     )
 
     dataset = dataset.map(

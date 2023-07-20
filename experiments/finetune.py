@@ -9,6 +9,7 @@ from peft import LoraConfig, TaskType, get_peft_model, prepare_model_for_int8_tr
 from llm.datasets import get_dataset, get_num_workers
 from llm.models import create_model, get_special_tokens
 from llm.utils import CalibrationTrainer
+from llm.utils.distributed import WaitForMainProcess
 
 
 @dataclass
@@ -19,7 +20,7 @@ class ArgsTrain:
     dataset: str = field(default=None)
     dataset_instance: str = field(default=None)
     batch_size: int = field(default=1)
-    lr: float = field(default=5e-2)
+    lr: float = field(default=1e-3)
     unc_decay: float = field(default=0.5)
     weight_decay: float = field(default=2e-5)
     warmup_steps: int = field(default=0)
@@ -50,7 +51,7 @@ def main(
     lora_rank=8,
     lora_alpha=32,
     lora_dropout=0.1,
-    lr=5e-2,
+    lr=1e-3,
     unc_decay=0.5,
     weight_decay=2e-5,
     warmup_steps=0,
@@ -61,21 +62,16 @@ def main(
     )
     special_token_count = tokenizer.add_special_tokens(get_special_tokens(tokenizer))
 
-    if not accelerator.is_main_process:
-        accelerator.wait_for_everyone()
-
-    train_data, val_data, test_data = get_dataset(
-        dataset,
-        instance=dataset_instance,
-        root=data_dir,
-        tokenizer=tokenizer,
-        seed=seed,
-        accelerator=accelerator,
-    )
-    train_data = train_data.shuffle(seed=seed)
-
-    if accelerator.is_main_process:
-        accelerator.wait_for_everyone()
+    with WaitForMainProcess(accelerator):
+        train_data, val_data, test_data = get_dataset(
+            dataset,
+            instance=dataset_instance,
+            root=data_dir,
+            tokenizer=tokenizer,
+            seed=seed,
+            accelerator=accelerator,
+        )
+        train_data = train_data.shuffle(seed=seed)
 
     model = create_model(
         model_name=model_name,

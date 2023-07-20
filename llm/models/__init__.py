@@ -33,7 +33,6 @@ def __setup():
     for n in [
         "llama",
         "llama2",
-        "open_llama",
     ]:
         import_module(f".{n}", __name__)
 
