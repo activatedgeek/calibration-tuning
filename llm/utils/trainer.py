@@ -15,14 +15,13 @@ class TrainingArguments(TrainingArguments):
 
 
 class CalibrationTrainer(Trainer):
-    def __init__(self, *args, test_dataset=None, tokenizer=None, **kwargs):
+    def __init__(self, *args, tokenizer=None, **kwargs):
         super().__init__(
             *args,
             **kwargs,
             tokenizer=tokenizer,
             data_collator=DataCollatorForSupervisedDataset(tokenizer),
         )
-        self.test_dataset = test_dataset
 
     def compute_unc_loss(self, model, inputs, outputs):
         input_ids, labels, output_ids = (
@@ -85,28 +84,28 @@ class CalibrationTrainer(Trainer):
 
         return (total_loss, outputs) if return_outputs else total_loss
 
-    ## NOTE: Skip custom evaluation.
-    def __custom_evaluate(self, eval_dataset=None, ignore_keys=None, metric_key_prefix="eval"):
-        metrics = super().evaluate(eval_dataset, ignore_keys, metric_key_prefix)
+    ## FIXME: Skip custom evaluation for now.
+    # def __custom_evaluate(self, eval_dataset=None, ignore_keys=None, metric_key_prefix="eval"):
+    #     metrics = super().evaluate(eval_dataset, ignore_keys, metric_key_prefix)
 
-        val_metrics = evaluate_via_eos(
-            self.accelerator,
-            self.model,
-            self.tokenizer,
-            self.get_eval_dataloader(eval_dataset),
-        )
-        val_metrics = {f"{metric_key_prefix}_{k}": v for k, v in val_metrics.items()}
-        self.log(val_metrics)
-        metrics.update(val_metrics)
+    #     val_metrics = evaluate_via_eos(
+    #         self.accelerator,
+    #         self.model,
+    #         self.tokenizer,
+    #         self.get_eval_dataloader(eval_dataset),
+    #     )
+    #     val_metrics = {f"{metric_key_prefix}_{k}": v for k, v in val_metrics.items()}
+    #     self.log(val_metrics)
+    #     metrics.update(val_metrics)
 
-        test_metrics = evaluate_via_eos(
-            self.accelerator,
-            self.model,
-            self.tokenizer,
-            self.get_test_dataloader(self.test_dataset),
-        )
-        test_metrics = {f"test_{k}": v for k, v in test_metrics.items()}
-        self.log(test_metrics)
-        metrics.update(test_metrics)
+    #     test_metrics = evaluate_via_eos(
+    #         self.accelerator,
+    #         self.model,
+    #         self.tokenizer,
+    #         self.get_test_dataloader(self.test_dataset),
+    #     )
+    #     test_metrics = {f"test_{k}": v for k, v in test_metrics.items()}
+    #     self.log(test_metrics)
+    #     metrics.update(test_metrics)
 
-        return metrics
+    #     return metrics
