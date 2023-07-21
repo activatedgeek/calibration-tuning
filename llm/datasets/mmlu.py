@@ -111,7 +111,7 @@ def __generate_fewshot_prompts(dataset, instance, prompt_style, kshot=5):
         ]
     )
     fewshot_prompt = fewshot_prompt + "\nNow, answer the next "
-    
+
     return fewshot_prompt
 
 
@@ -144,8 +144,7 @@ def get_mmlu(
                 "choices",
                 "answer",
             ],
-        )
-        .map(
+        ).map(
             lambda x: tokenize_for_causal_lm(tokenizer, x),
             num_proc=4,
             remove_columns=["source", "target"],
