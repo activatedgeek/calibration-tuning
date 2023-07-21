@@ -74,10 +74,10 @@ class CalibrationTrainer(Trainer):
                 1 - self.args.unc_decay
             ) * loss + self.args.unc_decay * unc_loss
 
-            ## FIXME: respect logging intervals.
-            self.log(
-                {"unc_loss": unc_loss.detach().item(), "lm_loss": loss.detach().item()}
-            )
+            if (self.state.global_step + 1) % self.args.logging_steps == 0:
+                self.log(
+                    {"unc_loss": unc_loss.detach().item(), "lm_loss": loss.detach().item()}
+                )
         else:
             total_loss = loss
 
