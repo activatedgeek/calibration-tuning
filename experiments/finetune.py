@@ -13,6 +13,7 @@ class ArgsData:
     data_dir: str = field(default=None)
     dataset: str = field(default=None)
     dataset_instance: str = field(default=None)
+    num_workers: int = field(default=8)
 
 
 @dataclass
@@ -43,6 +44,7 @@ def main(
     dataset=None,
     dataset_instance=None,
     data_dir=None,
+    num_workers=8,
     batch_size=1,
     model_name=None,
     model_dir=None,
@@ -93,8 +95,8 @@ def main(
         root=data_dir,
         tokenizer=tokenizer,
         seed=seed,
+        num_workers=num_workers,
     )
-    train_data = train_data.shuffle(seed=seed)
 
     model = create_model(
         model_name=model_name,

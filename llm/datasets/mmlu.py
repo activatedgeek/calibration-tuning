@@ -121,6 +121,7 @@ def get_mmlu(
     prompt_style=None,
     kshot=5,
     tokenizer=None,
+    num_workers=8,
     **_,
 ):
     from datasets import load_dataset
@@ -138,7 +139,7 @@ def get_mmlu(
                 + __format_prompt(x, prompt_style),
                 "target": f"{string.ascii_lowercase[x['answer']]}{tokenizer.eos_token}",
             },
-            num_proc=4,
+            num_proc=num_workers,
             remove_columns=[
                 "question",
                 "choices",
@@ -146,14 +147,14 @@ def get_mmlu(
             ],
         ).map(
             lambda x: tokenize_for_causal_lm(tokenizer, x),
-            num_proc=4,
+            num_proc=num_workers,
             remove_columns=["source", "target"],
         )
         # .filter(
         #     ## NOTE: filter out samples without eos_token, sometimes due to truncation.
         #     lambda x: torch.tensor(x["labels"]).eq(tokenizer.eos_token_id).sum(dim=-1)
         #     > 0,
-        #     num_proc=4,
+        #     num_proc=num_workers,
         # )
     )
 
