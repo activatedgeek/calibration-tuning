@@ -31,20 +31,19 @@ class DataCollatorForSupervisedDataset(object):
 
 def tokenize_for_causal_lm(tokenizer, sample):
     tokenize_dict = tokenizer(
-        sample["source"] + sample["target"], padding=True, truncation=True
+        sample["source"] + sample["target"],
+        padding="longest",
+        truncation=True,
+        max_length=tokenizer.model_max_length,
     )
 
+    labels = torch.tensor(tokenize_dict["input_ids"])
     source_len = (
-        torch.Tensor(
-            tokenizer(sample["source"], padding=True, truncation=True).input_ids
-        )
-        .long()
-        .ne(tokenizer.pad_token_id)
-        .sum()
+        labels.eq(tokenizer.eos_token_id)
+        .nonzero()[labels.eq(tokenizer.eos_token_id).sum(dim=-1).cumsum(dim=0) - 1]
         .item()
+        - 1
     )
-
-    labels = torch.Tensor(tokenize_dict["input_ids"]).long()
     labels[:source_len] = IGNORE_LABEL
     tokenize_dict["labels"] = labels.tolist()
 

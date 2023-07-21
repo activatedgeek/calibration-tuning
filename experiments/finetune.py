@@ -3,13 +3,12 @@ import logging
 from dataclasses import dataclass, field, asdict
 from accelerate import Accelerator
 import transformers
-from transformers import TrainingArguments
 from peft import LoraConfig, TaskType, get_peft_model, prepare_model_for_int8_training
 
-from llm.logging import set_logging
 from llm.datasets import get_dataset, get_num_workers
 from llm.models import create_model, get_special_tokens
-from llm.utils import CalibrationTrainer
+from llm.utils import TrainingArguments, CalibrationTrainer
+from llm.utils.distributed import WaitForMainProcess
 
 
 @dataclass
@@ -19,9 +18,9 @@ class ArgsTrain:
     data_dir: str = field(default=None)
     dataset: str = field(default=None)
     dataset_instance: str = field(default=None)
-    batch_size: int = field(default=8)
-    lr: float = field(default=5e-2)
-    unc_decay: float = field(default=0.5)
+    batch_size: int = field(default=1)
+    lr: float = field(default=1e-3)
+    unc_decay: float = field(default=0.1)
     weight_decay: float = field(default=2e-5)
     warmup_steps: int = field(default=0)
     epochs: int = field(default=1)
@@ -41,49 +40,44 @@ def main(
     accelerator,
     seed=None,
     log_dir=None,
-    data_dir=None,
-    model_dir=None,
     dataset=None,
     dataset_instance=None,
-    batch_size=8,
+    data_dir=None,
+    batch_size=1,
     model_name=None,
+    model_dir=None,
     fp8=True,
     lora_rank=8,
     lora_alpha=32,
     lora_dropout=0.1,
-    lr=0.001,
-    unc_decay=0.5,
+    lr=1e-3,
+    unc_decay=0.1,
     weight_decay=2e-5,
     warmup_steps=0,
     epochs=1,
 ):
     tokenizer = create_model(
-        model_name=f"{model_name}_tokenizer", model_kwargs=dict(cache_dir=model_dir)
+        model_name=f"{model_name}_tokenizer", model_kwargs=dict(model_dir=model_dir)
     )
     special_token_count = tokenizer.add_special_tokens(get_special_tokens(tokenizer))
 
-    if not accelerator.is_main_process:
-        accelerator.wait_for_everyone()
-
-    train_data, val_data, test_data = get_dataset(
-        dataset,
-        instance=dataset_instance,
-        root=data_dir,
-        tokenizer=tokenizer,
-        seed=seed,
-        accelerator=accelerator,
-    )
-    train_data = train_data.shuffle(seed=seed)
-
-    if accelerator.is_main_process:
-        accelerator.wait_for_everyone()
+    with WaitForMainProcess(accelerator):
+        train_data, val_data, test_data = get_dataset(
+            dataset,
+            instance=dataset_instance,
+            root=data_dir,
+            tokenizer=tokenizer,
+            seed=seed,
+            accelerator=accelerator,
+        )
+        train_data = train_data.shuffle(seed=seed)
 
     model = create_model(
         model_name=model_name,
         model_kwargs=dict(
             device_map={"": accelerator.device},
             load_in_8bit=fp8,
-            cache_dir=model_dir,
+            model_dir=model_dir,
         ),
     )
     model.resize_token_embeddings(len(tokenizer))
@@ -128,7 +122,8 @@ def main(
         lr_scheduler_type="cosine",
         warmup_steps=warmup_steps,
         weight_decay=weight_decay,
-        gradient_accumulation_steps=3,
+        unc_decay=unc_decay,
+        gradient_accumulation_steps=1,
         output_dir=log_dir,
         report_to="wandb",
         dataloader_num_workers=get_num_workers(),
@@ -140,7 +135,6 @@ def main(
         eval_dataset=val_data,
         test_dataset=test_data,
         tokenizer=tokenizer,
-        unc_decay=unc_decay,
     )
     trainer.train()
     trainer.save_state()
@@ -151,7 +145,7 @@ def entrypoint():
     model_args, train_args = parser.parse_args_into_dataclasses()
     train_args.log_dir = os.environ.get("WANDB_DIR", train_args.log_dir)
 
-    # set_logging(log_dir=train_args.log_dir, use_wandb=True)
+    # set_logging(log_dir=train_args.log_dir, use_wandb=False)
 
     accelerator = Accelerator()
     if accelerator.is_main_process:

@@ -11,7 +11,7 @@ def get_trivia_qa(root=None, subset=None, seed=None, tokenizer=None, **_):
     from datasets import load_dataset
 
     dataset = load_dataset(
-        "trivia_qa", subset, cache_dir=os.environ.get("DATADIR", root)
+        "trivia_qa", subset, cache_dir=os.environ.get("HF_DATASETS_CACHE", root)
     )
 
     ## FIXME: just question is not enough.
