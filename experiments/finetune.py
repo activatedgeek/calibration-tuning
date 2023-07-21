@@ -3,25 +3,16 @@ from dataclasses import dataclass, field, asdict
 import transformers
 from peft import LoraConfig, TaskType, get_peft_model, prepare_model_for_int8_training
 
-from llm.datasets import get_dataset, get_num_workers
+from llm.datasets import get_dataset
 from llm.models import create_model, get_special_tokens
 from llm.utils import TrainingArguments, CalibrationTrainer
 
 
 @dataclass
-class ArgsTrain:
-    seed: int = field(default=137)
-    log_dir: str = field(default=None)
+class ArgsData:
     data_dir: str = field(default=None)
     dataset: str = field(default=None)
     dataset_instance: str = field(default=None)
-    batch_size: int = field(default=1)
-    lr: float = field(default=1e-3)
-    unc_decay: float = field(default=0.1)
-    weight_decay: float = field(default=0.0)
-    warmup_steps: int = field(default=100)
-    warmup_ratio: float = field(default=0.03)
-    epochs: int = field(default=1)
 
 
 @dataclass
@@ -32,6 +23,18 @@ class ArgsModel:
     lora_rank: int = field(default=8)
     lora_alpha: int = field(default=32)
     lora_dropout: float = field(default=0.1)
+
+
+@dataclass
+class ArgsTrain:
+    log_dir: str = field(default=None)
+    seed: int = field(default=137)
+    batch_size: int = field(default=1)
+    lr: float = field(default=1e-4)
+    weight_decay: float = field(default=0.0)
+    unc_decay: float = field(default=0.1)
+    warmup_steps: int = field(default=100)
+    epochs: int = field(default=1)
 
 
 def main(
@@ -51,7 +54,6 @@ def main(
     unc_decay=0.1,
     weight_decay=2e-5,
     warmup_steps=100,
-    warmup_ratio=0.03,
     epochs=1,
 ):
     training_args = TrainingArguments(
@@ -72,13 +74,12 @@ def main(
         learning_rate=lr,
         lr_scheduler_type="cosine",
         warmup_steps=warmup_steps,
-        warmup_ratio=warmup_ratio,
         weight_decay=weight_decay,
         unc_decay=unc_decay,
         gradient_accumulation_steps=1,
         output_dir=log_dir,
         report_to="wandb",
-        dataloader_num_workers=get_num_workers(),
+        dataloader_num_workers=4,
     )
 
     tokenizer = create_model(
@@ -139,11 +140,11 @@ def main(
 
 
 def entrypoint():
-    parser = transformers.HfArgumentParser((ArgsModel, ArgsTrain))
-    model_args, train_args = parser.parse_args_into_dataclasses()
+    parser = transformers.HfArgumentParser((ArgsData, ArgsModel, ArgsTrain))
+    data_args, model_args, train_args = parser.parse_args_into_dataclasses()
     train_args.log_dir = os.environ.get("WANDB_DIR", train_args.log_dir)
 
-    main(**asdict(model_args), **asdict(train_args))
+    main(**asdict(data_args), **asdict(model_args), **asdict(train_args))
 
 
 if __name__ == "__main__":

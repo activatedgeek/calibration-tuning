@@ -7,7 +7,6 @@ from ..datasets.llm_utils import (
     tokenize_for_causal_lm,
 )
 from .evaluation import extract_eos_pos, evaluate_via_eos
-from ..datasets.utils import get_loader
 
 
 @dataclass
@@ -86,19 +85,15 @@ class CalibrationTrainer(Trainer):
 
         return (total_loss, outputs) if return_outputs else total_loss
 
-    def evaluate(self, eval_dataset=None, ignore_keys=None, metric_key_prefix="eval"):
+    ## NOTE: Skip custom evaluation.
+    def __custom_evaluate(self, eval_dataset=None, ignore_keys=None, metric_key_prefix="eval"):
         metrics = super().evaluate(eval_dataset, ignore_keys, metric_key_prefix)
 
         val_metrics = evaluate_via_eos(
             self.accelerator,
             self.model,
             self.tokenizer,
-            get_loader(
-                eval_dataset or self.eval_dataset,
-                batch_size=self.args.per_device_eval_batch_size,
-                collate_fn=self.data_collator,
-                accelerator=self.accelerator,
-            ),
+            self.get_eval_dataloader(eval_dataset),
         )
         val_metrics = {f"{metric_key_prefix}_{k}": v for k, v in val_metrics.items()}
         self.log(val_metrics)
@@ -108,12 +103,7 @@ class CalibrationTrainer(Trainer):
             self.accelerator,
             self.model,
             self.tokenizer,
-            get_loader(
-                self.test_dataset,
-                batch_size=self.args.per_device_eval_batch_size,
-                collate_fn=self.data_collator,
-                accelerator=self.accelerator,
-            ),
+            self.get_test_dataloader(self.test_dataset),
         )
         test_metrics = {f"test_{k}": v for k, v in test_metrics.items()}
         self.log(test_metrics)
