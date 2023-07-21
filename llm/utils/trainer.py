@@ -76,7 +76,10 @@ class CalibrationTrainer(Trainer):
 
             if (self.state.global_step + 1) % self.args.logging_steps == 0:
                 self.log(
-                    {"unc_loss": unc_loss.detach().item(), "lm_loss": loss.detach().item()}
+                    {
+                        "unc_loss": unc_loss.detach().item(),
+                        "lm_loss": loss.detach().item(),
+                    }
                 )
         else:
             total_loss = loss
