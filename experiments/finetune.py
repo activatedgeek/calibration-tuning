@@ -1,19 +1,16 @@
 import os
-import logging
 from dataclasses import dataclass, field, asdict
-from accelerate import Accelerator
 import transformers
 from peft import LoraConfig, TaskType, get_peft_model, prepare_model_for_int8_training
 
 from llm.datasets import get_dataset, get_num_workers
 from llm.models import create_model, get_special_tokens
 from llm.utils import TrainingArguments, CalibrationTrainer
-from llm.utils.distributed import WaitForMainProcess
 
 
 @dataclass
 class ArgsTrain:
-    seed: int = field(default=None)
+    seed: int = field(default=137)
     log_dir: str = field(default=None)
     data_dir: str = field(default=None)
     dataset: str = field(default=None)
@@ -21,8 +18,9 @@ class ArgsTrain:
     batch_size: int = field(default=1)
     lr: float = field(default=1e-3)
     unc_decay: float = field(default=0.1)
-    weight_decay: float = field(default=2e-5)
-    warmup_steps: int = field(default=0)
+    weight_decay: float = field(default=0.0)
+    warmup_steps: int = field(default=100)
+    warmup_ratio: float = field(default=0.03)
     epochs: int = field(default=1)
 
 
@@ -37,7 +35,6 @@ class ArgsModel:
 
 
 def main(
-    accelerator,
     seed=None,
     log_dir=None,
     dataset=None,
@@ -53,29 +50,55 @@ def main(
     lr=1e-3,
     unc_decay=0.1,
     weight_decay=2e-5,
-    warmup_steps=0,
+    warmup_steps=100,
+    warmup_ratio=0.03,
     epochs=1,
 ):
+    training_args = TrainingArguments(
+        fsdp=False,
+        fp16=not fp8,
+        bf16=False,
+        gradient_checkpointing=False,
+        ddp_find_unused_parameters=False,
+        num_train_epochs=epochs,
+        eval_steps=1000,
+        save_steps=1000,
+        logging_steps=100,
+        log_on_each_node=False,
+        evaluation_strategy="steps",
+        per_device_train_batch_size=batch_size,
+        per_device_eval_batch_size=batch_size,
+        optim="adamw_torch",
+        learning_rate=lr,
+        lr_scheduler_type="cosine",
+        warmup_steps=warmup_steps,
+        warmup_ratio=warmup_ratio,
+        weight_decay=weight_decay,
+        unc_decay=unc_decay,
+        gradient_accumulation_steps=1,
+        output_dir=log_dir,
+        report_to="wandb",
+        dataloader_num_workers=get_num_workers(),
+    )
+
     tokenizer = create_model(
         model_name=f"{model_name}_tokenizer", model_kwargs=dict(model_dir=model_dir)
     )
     special_token_count = tokenizer.add_special_tokens(get_special_tokens(tokenizer))
 
-    with WaitForMainProcess(accelerator):
-        train_data, val_data, test_data = get_dataset(
-            dataset,
-            instance=dataset_instance,
-            root=data_dir,
-            tokenizer=tokenizer,
-            seed=seed,
-            accelerator=accelerator,
-        )
-        train_data = train_data.shuffle(seed=seed)
+    train_data, val_data, test_data = get_dataset(
+        dataset,
+        instance=dataset_instance,
+        root=data_dir,
+        tokenizer=tokenizer,
+        seed=seed,
+    )
+    train_data = train_data.shuffle(seed=seed)
 
     model = create_model(
         model_name=model_name,
         model_kwargs=dict(
-            device_map={"": accelerator.device},
+            device_map={"": training_args.local_rank},
             load_in_8bit=fp8,
             model_dir=model_dir,
         ),
@@ -103,31 +126,6 @@ def main(
     )
     model = get_peft_model(model, peft_config)
 
-    training_args = TrainingArguments(
-        local_rank=accelerator.local_process_index,
-        fsdp=False,
-        fp16=not fp8,
-        bf16=False,
-        gradient_checkpointing=False,
-        ddp_find_unused_parameters=False,
-        num_train_epochs=epochs,
-        eval_steps=1000,
-        save_steps=100000,  ## FIXME: saving leads to OOM.
-        logging_steps=100,
-        evaluation_strategy="steps",
-        per_device_train_batch_size=batch_size,
-        per_device_eval_batch_size=batch_size,
-        optim="adamw_torch",
-        learning_rate=lr,
-        lr_scheduler_type="cosine",
-        warmup_steps=warmup_steps,
-        weight_decay=weight_decay,
-        unc_decay=unc_decay,
-        gradient_accumulation_steps=1,
-        output_dir=log_dir,
-        report_to="wandb",
-        dataloader_num_workers=get_num_workers(),
-    )
     trainer = CalibrationTrainer(
         model=model,
         args=training_args,
@@ -145,13 +143,7 @@ def entrypoint():
     model_args, train_args = parser.parse_args_into_dataclasses()
     train_args.log_dir = os.environ.get("WANDB_DIR", train_args.log_dir)
 
-    # set_logging(log_dir=train_args.log_dir, use_wandb=False)
-
-    accelerator = Accelerator()
-    if accelerator.is_main_process:
-        logging.info(f"Working with {accelerator.num_processes} process(es).")
-
-    main(accelerator, **asdict(model_args), **asdict(train_args))
+    main(**asdict(model_args), **asdict(train_args))
 
 
 if __name__ == "__main__":

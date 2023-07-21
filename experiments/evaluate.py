@@ -10,7 +10,6 @@ from llm.utils.distributed import WaitForMainProcess
 from llm.utils.evaluation import evaluate_via_eos
 
 
-## FIXME: load from checkpoint.
 def main(
     accelerator,
     seed=None,
