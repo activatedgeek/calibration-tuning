@@ -97,6 +97,24 @@ def __format_prompt(sample, style, with_answer=False):
     raise NotImplementedError
 
 
+def __generate_fewshot_prompts(dataset, instance, prompt_style, kshot=5):
+    if kshot <= 0:
+        return ""
+
+    fewshot_prompt = "\n".join(
+        [
+            f"The following are multiple choice questions (with answers) about {' '.join(instance.split('_'))}.\n",
+            *[
+                __format_prompt(dataset[idx], prompt_style, with_answer=True)
+                for idx in torch.randperm(len(dataset))[:kshot].tolist()
+            ],
+        ]
+    )
+    fewshot_prompt = fewshot_prompt + "\nNow, answer the next "
+    
+    return fewshot_prompt
+
+
 def get_mmlu(
     root=None,
     instance=None,
@@ -111,24 +129,13 @@ def get_mmlu(
         "cais/mmlu", instance, cache_dir=os.environ.get("HF_DATASETS_CACHE", root)
     )
 
-    if kshot > 0:
-        fewshot_prompt = "\n".join(
-            [
-                f"The following are multiple choice questions (with answers) about {' '.join(instance.split('_'))}.\n",
-                *[
-                    __format_prompt(dataset["dev"][idx], prompt_style, with_answer=True)
-                    for idx in range(kshot)
-                ],
-            ]
-        )
-        fewshot_prompt = fewshot_prompt + "\nNow, answer the next "
-    else:
-        fewshot_prompt = ""
-
     dataset = (
         dataset.map(
             lambda x: {
-                "source": fewshot_prompt + __format_prompt(x, prompt_style),
+                "source": __generate_fewshot_prompts(
+                    dataset["dev"], instance, prompt_style, kshot=kshot
+                )
+                + __format_prompt(x, prompt_style),
                 "target": f"{string.ascii_lowercase[x['answer']]}{tokenizer.eos_token}",
             },
             num_proc=4,
@@ -143,11 +150,12 @@ def get_mmlu(
             num_proc=4,
             remove_columns=["source", "target"],
         )
-        .filter(
-            lambda x: torch.tensor(x["labels"]).eq(tokenizer.eos_token_id).sum(dim=-1)
-            > 0,
-            num_proc=4,
-        )
+        # .filter(
+        #     ## NOTE: filter out samples without eos_token, sometimes due to truncation.
+        #     lambda x: torch.tensor(x["labels"]).eq(tokenizer.eos_token_id).sum(dim=-1)
+        #     > 0,
+        #     num_proc=4,
+        # )
     )
 
     train_data = dataset["auxiliary_train"]
