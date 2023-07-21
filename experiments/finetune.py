@@ -3,7 +3,7 @@ from dataclasses import dataclass, field, asdict
 import transformers
 from peft import LoraConfig, TaskType, get_peft_model, prepare_model_for_int8_training
 
-from llm.datasets import get_dataset, get_num_workers
+from llm.datasets import get_dataset
 from llm.models import create_model, get_special_tokens
 from llm.utils import TrainingArguments, CalibrationTrainer
 
@@ -79,7 +79,7 @@ def main(
         gradient_accumulation_steps=1,
         output_dir=log_dir,
         report_to="wandb",
-        dataloader_num_workers=get_num_workers(),
+        dataloader_num_workers=4,
     )
 
     tokenizer = create_model(
