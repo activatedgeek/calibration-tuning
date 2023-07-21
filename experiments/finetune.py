@@ -3,12 +3,11 @@ import logging
 from dataclasses import dataclass, field, asdict
 from accelerate import Accelerator
 import transformers
-from transformers import TrainingArguments
 from peft import LoraConfig, TaskType, get_peft_model, prepare_model_for_int8_training
 
 from llm.datasets import get_dataset, get_num_workers
 from llm.models import create_model, get_special_tokens
-from llm.utils import CalibrationTrainer
+from llm.utils import TrainingArguments, CalibrationTrainer
 from llm.utils.distributed import WaitForMainProcess
 
 
@@ -21,7 +20,7 @@ class ArgsTrain:
     dataset_instance: str = field(default=None)
     batch_size: int = field(default=1)
     lr: float = field(default=1e-3)
-    unc_decay: float = field(default=0.5)
+    unc_decay: float = field(default=0.1)
     weight_decay: float = field(default=2e-5)
     warmup_steps: int = field(default=0)
     epochs: int = field(default=1)
@@ -52,7 +51,7 @@ def main(
     lora_alpha=32,
     lora_dropout=0.1,
     lr=1e-3,
-    unc_decay=0.5,
+    unc_decay=0.1,
     weight_decay=2e-5,
     warmup_steps=0,
     epochs=1,
@@ -123,6 +122,7 @@ def main(
         lr_scheduler_type="cosine",
         warmup_steps=warmup_steps,
         weight_decay=weight_decay,
+        unc_decay=unc_decay,
         gradient_accumulation_steps=1,
         output_dir=log_dir,
         report_to="wandb",
@@ -135,7 +135,6 @@ def main(
         eval_dataset=val_data,
         test_dataset=test_data,
         tokenizer=tokenizer,
-        unc_decay=unc_decay,
     )
     trainer.train()
     trainer.save_state()

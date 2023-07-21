@@ -1,5 +1,6 @@
+from dataclasses import dataclass, field
 import torch
-from transformers import Trainer
+from transformers import Trainer, TrainingArguments
 
 from ..datasets.llm_utils import (
     DataCollatorForSupervisedDataset,
@@ -9,10 +10,13 @@ from .evaluation import extract_eos_pos, evaluate_via_eos
 from ..datasets.utils import get_loader
 
 
+@dataclass
+class TrainingArguments(TrainingArguments):
+    unc_decay: float = field(default=0.1)
+
+
 class CalibrationTrainer(Trainer):
-    def __init__(
-        self, *args, test_dataset=None, tokenizer=None, unc_decay=0.5, **kwargs
-    ):
+    def __init__(self, *args, test_dataset=None, tokenizer=None, **kwargs):
         super().__init__(
             *args,
             **kwargs,
@@ -20,15 +24,12 @@ class CalibrationTrainer(Trainer):
             data_collator=DataCollatorForSupervisedDataset(tokenizer),
         )
         self.test_dataset = test_dataset
-        self.unc_decay = unc_decay
-
-        assert 0.0 <= unc_decay <= 1.0, "unc_decay should be a fraction."
 
     def compute_unc_loss(self, model, inputs, outputs):
         input_ids, labels, output_ids = (
             inputs.get("input_ids"),
             inputs.get("labels")[..., 1:],
-            outputs.logits[..., :-1, :].argmax(dim=-1),
+            outputs.logits[..., :-1, :].argmax(dim=-1).detach(),
         )
 
         eos_idx = extract_eos_pos(self.tokenizer, labels)
@@ -66,13 +67,17 @@ class CalibrationTrainer(Trainer):
     def compute_loss(self, model, inputs, return_outputs=False):
         loss, outputs = super().compute_loss(model, inputs, return_outputs=True)
 
-        if self.unc_decay > 0.0:
+        if self.args.unc_decay > 0.0:
             unc_loss = self.compute_unc_loss(model, inputs, outputs)
 
-            total_loss = (1 - self.unc_decay) * loss + self.unc_decay * unc_loss
+            total_loss = (
+                1 - self.args.unc_decay
+            ) * loss + self.args.unc_decay * unc_loss
 
             ## FIXME: respect logging intervals.
-            self.log({"unc_loss": unc_loss.detach().item(), "lm_loss": unc_loss.detach().item()})
+            self.log(
+                {"unc_loss": unc_loss.detach().item(), "lm_loss": loss.detach().item()}
+            )
         else:
             total_loss = loss
 
