@@ -19,7 +19,7 @@ class ArgsTrain:
     data_dir: str = field(default=None)
     dataset: str = field(default=None)
     dataset_instance: str = field(default=None)
-    batch_size: int = field(default=1)
+    batch_size: int = field(default=8)
     lr: float = field(default=5e-2)
     unc_decay: float = field(default=0.5)
     weight_decay: float = field(default=2e-5)
@@ -45,13 +45,13 @@ def main(
     model_dir=None,
     dataset=None,
     dataset_instance=None,
-    batch_size=1,
+    batch_size=8,
     model_name=None,
     fp8=True,
     lora_rank=8,
     lora_alpha=32,
     lora_dropout=0.1,
-    lr=5e-2,
+    lr=0.001,
     unc_decay=0.5,
     weight_decay=2e-5,
     warmup_steps=0,
@@ -119,7 +119,7 @@ def main(
         num_train_epochs=epochs,
         eval_steps=1000,
         save_steps=100000,  ## FIXME: saving leads to OOM.
-        logging_steps=100,
+        logging_steps=10,
         evaluation_strategy="steps",
         per_device_train_batch_size=batch_size,
         per_device_eval_batch_size=batch_size,
@@ -128,7 +128,7 @@ def main(
         lr_scheduler_type="cosine",
         warmup_steps=warmup_steps,
         weight_decay=weight_decay,
-        gradient_accumulation_steps=1,
+        gradient_accumulation_steps=3,
         output_dir=log_dir,
         report_to="wandb",
         dataloader_num_workers=get_num_workers(),
@@ -151,7 +151,7 @@ def entrypoint():
     model_args, train_args = parser.parse_args_into_dataclasses()
     train_args.log_dir = os.environ.get("WANDB_DIR", train_args.log_dir)
 
-    set_logging(log_dir=train_args.log_dir, use_wandb=False)
+    # set_logging(log_dir=train_args.log_dir, use_wandb=True)
 
     accelerator = Accelerator()
     if accelerator.is_main_process:
