@@ -65,47 +65,44 @@ class CalibrationTrainer(Trainer):
     def compute_loss(self, model, inputs, return_outputs=False):
         loss, outputs = super().compute_loss(model, inputs, return_outputs=True)
 
+        loss_metrics = {"lm_loss": loss.detach().item()}
+
         if self.args.unc_decay > 0.0:
             unc_loss = self.compute_unc_loss(model, inputs, outputs)
 
-            total_loss = (
-                1 - self.args.unc_decay
-            ) * loss + self.args.unc_decay * unc_loss
+            total_loss = loss + self.args.unc_decay * unc_loss
 
-            if (self.state.global_step + 1) % self.args.logging_steps == 0:
-                self.log(
-                    {
-                        "unc_loss": unc_loss.detach().item(),
-                        "lm_loss": loss.detach().item(),
-                    }
-                )
+            loss_metrics["unc_loss"] = unc_loss.detach().item()
+            loss_metrics["total_loss"] = total_loss.detach().item()
         else:
             total_loss = loss
 
+        if (self.state.global_step + 1) % self.args.logging_steps == 0:
+            self.log(loss_metrics)
+
         return (total_loss, outputs) if return_outputs else total_loss
 
-    ## FIXME: Skip custom evaluation for now.
-    # def __custom_evaluate(self, eval_dataset=None, ignore_keys=None, metric_key_prefix="eval"):
-    #     metrics = super().evaluate(eval_dataset, ignore_keys, metric_key_prefix)
+    def evaluate(self, eval_dataset=None, ignore_keys=None, metric_key_prefix="eval"):
+        metrics = super().evaluate(eval_dataset, ignore_keys, metric_key_prefix)
 
-    #     val_metrics = evaluate_via_eos(
-    #         self.accelerator,
-    #         self.model,
-    #         self.tokenizer,
-    #         self.get_eval_dataloader(eval_dataset),
-    #     )
-    #     val_metrics = {f"{metric_key_prefix}_{k}": v for k, v in val_metrics.items()}
-    #     self.log(val_metrics)
-    #     metrics.update(val_metrics)
+        val_metrics = evaluate_via_eos(
+            self.accelerator,
+            self.model,
+            self.tokenizer,
+            self.get_eval_dataloader(eval_dataset),
+        )
+        val_metrics = {f"{metric_key_prefix}_{k}": v for k, v in val_metrics.items()}
+        self.log(val_metrics)
+        metrics.update(val_metrics)
 
-    #     test_metrics = evaluate_via_eos(
-    #         self.accelerator,
-    #         self.model,
-    #         self.tokenizer,
-    #         self.get_test_dataloader(self.test_dataset),
-    #     )
-    #     test_metrics = {f"test_{k}": v for k, v in test_metrics.items()}
-    #     self.log(test_metrics)
-    #     metrics.update(test_metrics)
+        test_metrics = evaluate_via_eos(
+            self.accelerator,
+            self.model,
+            self.tokenizer,
+            self.get_test_dataloader(self.test_dataset),
+        )
+        test_metrics = {f"test_{k}": v for k, v in test_metrics.items()}
+        self.log(test_metrics)
+        metrics.update(test_metrics)
 
-    #     return metrics
+        return metrics

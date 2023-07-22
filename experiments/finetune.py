@@ -146,7 +146,7 @@ def main(
 def entrypoint():
     parser = transformers.HfArgumentParser((ArgsData, ArgsModel, ArgsTrain))
     data_args, model_args, train_args = parser.parse_args_into_dataclasses()
-    train_args.log_dir = os.environ.get("WANDB_DIR", train_args.log_dir)
+    train_args.log_dir = train_args.log_dir or os.environ.get("WANDB_DIR")
 
     main(**asdict(data_args), **asdict(model_args), **asdict(train_args))
 
