@@ -14,6 +14,7 @@ class ArgsData:
     dataset: str = field(default=None)
     dataset_instance: str = field(default=None)
     num_workers: int = field(default=8)
+    kshot: int = field(default=0)
 
 
 @dataclass
@@ -44,6 +45,7 @@ def main(
     dataset=None,
     dataset_instance=None,
     data_dir=None,
+    kshot=0,
     num_workers=8,
     batch_size=1,
     model_name=None,
@@ -92,6 +94,7 @@ def main(
     train_data, val_data, _ = get_dataset(
         dataset,
         instance=dataset_instance,
+        kshot=kshot,
         root=data_dir,
         tokenizer=tokenizer,
         seed=seed,
