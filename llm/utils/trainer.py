@@ -12,6 +12,7 @@ from .evaluation import extract_eos_pos, evaluate_via_eos
 @dataclass
 class TrainingArguments(TrainingArguments):
     unc_decay: float = field(default=0.1)
+    loss_mode: str = field(default="reg")
 
 
 class CalibrationTrainer(Trainer):
@@ -67,17 +68,26 @@ class CalibrationTrainer(Trainer):
     def compute_loss(self, model, inputs, return_outputs=False):
         loss, outputs = super().compute_loss(model, inputs, return_outputs=True)
 
-        loss_metrics = {"lm_loss": loss.detach().item()}
+        unc_loss = (
+            self.compute_unc_loss(model, inputs, outputs)
+            if self.args.unc_decay > 0.0
+            else torch.tensor(0.0)
+        )
 
-        if self.args.unc_decay > 0.0:
-            unc_loss = self.compute_unc_loss(model, inputs, outputs)
-
+        if self.args.loss_mode == "reg":
             total_loss = loss + self.args.unc_decay * unc_loss
-
-            loss_metrics["unc_loss"] = unc_loss.detach().item()
-            loss_metrics["total_loss"] = total_loss.detach().item()
+        elif self.args.loss_mode == "cvx_comb":
+            total_loss = (
+                1 - self.args.unc_decay
+            ) * loss + self.args.unc_decay * unc_loss
         else:
-            total_loss = loss
+            raise NotImplementedError
+
+        loss_metrics = {
+            "lm_loss": loss.detach().item(),
+            "unc_loss": unc_loss.detach().item(),
+            "total_loss": total_loss.detach().item(),
+        }
 
         if (self.state.global_step + 1) % self.args.logging_steps == 0:
             self.log(loss_metrics)

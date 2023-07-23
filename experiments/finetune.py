@@ -35,6 +35,7 @@ class ArgsTrain:
     lr: float = field(default=1e-4)
     weight_decay: float = field(default=0.0)
     unc_decay: float = field(default=0.1)
+    loss_mode: str = field(default="reg")
     warmup_steps: int = field(default=100)
     epochs: int = field(default=1)
 
@@ -57,6 +58,7 @@ def main(
     lr=1e-3,
     unc_decay=0.1,
     weight_decay=2e-5,
+    loss_mode="reg",
     warmup_steps=100,
     epochs=1,
 ):
@@ -69,11 +71,12 @@ def main(
         num_train_epochs=epochs,
         eval_steps=1000,
         save_steps=1000,
-        logging_steps=100,
+        logging_steps=1,
         log_on_each_node=False,
         evaluation_strategy="steps",
         per_device_train_batch_size=batch_size,
         per_device_eval_batch_size=batch_size,
+        loss_mode=loss_mode,
         optim="adamw_torch",
         learning_rate=lr,
         lr_scheduler_type="cosine",
