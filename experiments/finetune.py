@@ -91,7 +91,7 @@ def main(
     )
     special_token_count = tokenizer.add_special_tokens(get_special_tokens(tokenizer))
 
-    train_data, val_data, _ = get_dataset(
+    train_data, val_data, test_data = get_dataset(
         dataset,
         instance=dataset_instance,
         kshot=kshot,
@@ -137,6 +137,7 @@ def main(
         args=training_args,
         train_dataset=train_data,
         eval_dataset=val_data,
+        test_dataset=test_data,
         tokenizer=tokenizer,
     )
     trainer.train()

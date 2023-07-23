@@ -15,13 +15,15 @@ class TrainingArguments(TrainingArguments):
 
 
 class CalibrationTrainer(Trainer):
-    def __init__(self, *args, tokenizer=None, **kwargs):
+    def __init__(self, *args, tokenizer=None, test_dataset=None, **kwargs):
         super().__init__(
             *args,
             **kwargs,
             tokenizer=tokenizer,
             data_collator=DataCollatorForSupervisedDataset(tokenizer),
         )
+
+        self.test_dataset = test_dataset
 
     def compute_unc_loss(self, model, inputs, outputs):
         input_ids, labels, output_ids = (
