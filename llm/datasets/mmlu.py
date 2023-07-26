@@ -119,7 +119,7 @@ def get_mmlu(
     root=None,
     instance=None,
     prompt_style=None,
-    kshot=5,
+    eval_kshot=5,
     tokenizer=None,
     num_workers=8,
     **_,
@@ -130,13 +130,13 @@ def get_mmlu(
         "cais/mmlu", instance, cache_dir=os.environ.get("HF_DATASETS_CACHE", root)
     )
 
-    dataset = (
-        dataset.map(
+    dev_data = dataset.pop("dev")
+
+    train_data = (
+        dataset.pop("auxiliary_train")
+        .map(
             lambda x: {
-                "source": __generate_fewshot_prompts(
-                    dataset["dev"], instance, prompt_style, kshot=kshot
-                )
-                + __format_prompt(x, prompt_style),
+                "source": __format_prompt(x, prompt_style),
                 "target": f"{string.ascii_lowercase[x['answer']]}{tokenizer.eos_token}",
             },
             num_proc=num_workers,
@@ -145,20 +145,34 @@ def get_mmlu(
                 "choices",
                 "answer",
             ],
-        ).map(
+        )
+        .map(
             lambda x: tokenize_for_causal_lm(tokenizer, x),
             num_proc=num_workers,
             remove_columns=["source", "target"],
         )
-        # .filter(
-        #     ## NOTE: filter out samples without eos_token, sometimes due to truncation.
-        #     lambda x: torch.tensor(x["labels"]).eq(tokenizer.eos_token_id).sum(dim=-1)
-        #     > 0,
-        #     num_proc=num_workers,
-        # )
     )
 
-    train_data = dataset["auxiliary_train"]
+    dataset = dataset.map(
+        lambda x: {
+            "source": __generate_fewshot_prompts(
+                dev_data, instance, prompt_style, kshot=eval_kshot
+            )
+            + __format_prompt(x, prompt_style),
+            "target": f"{string.ascii_lowercase[x['answer']]}{tokenizer.eos_token}",
+        },
+        num_proc=num_workers,
+        remove_columns=[
+            "question",
+            "choices",
+            "answer",
+        ],
+    ).map(
+        lambda x: tokenize_for_causal_lm(tokenizer, x),
+        num_proc=num_workers,
+        remove_columns=["source", "target"],
+    )
+
     val_data = dataset["validation"]
     test_data = dataset["test"]
 

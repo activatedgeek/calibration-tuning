@@ -14,7 +14,7 @@ class ArgsData:
     dataset: str = field(default=None)
     dataset_instance: str = field(default=None)
     num_workers: int = field(default=8)
-    kshot: int = field(default=0)
+    eval_kshot: int = field(default=5)
 
 
 @dataclass
@@ -32,7 +32,8 @@ class ArgsTrain:
     log_dir: str = field(default=None)
     seed: int = field(default=137)
     batch_size: int = field(default=1)
-    lr: float = field(default=1e-4)
+    grad_acc: int = field(default=1)
+    lr: float = field(default=3e-4)
     weight_decay: float = field(default=0.0)
     unc_decay: float = field(default=0.1)
     unc_normalize: bool = field(default=True)
@@ -47,19 +48,20 @@ def main(
     dataset=None,
     dataset_instance=None,
     data_dir=None,
-    kshot=0,
+    eval_kshot=5,
     num_workers=8,
     batch_size=1,
+    grad_acc=1,
     model_name=None,
     model_dir=None,
     fp8=True,
     lora_rank=8,
     lora_alpha=32,
     lora_dropout=0.1,
-    lr=1e-3,
-    unc_decay=0.1,
+    lr=3e-4,
+    unc_decay=0.0,
     unc_normalize=True,
-    weight_decay=2e-5,
+    weight_decay=0.0,
     loss_mode="reg",
     warmup_steps=100,
     epochs=1,
@@ -86,7 +88,7 @@ def main(
         weight_decay=weight_decay,
         unc_decay=unc_decay,
         unc_normalize=unc_normalize,
-        gradient_accumulation_steps=1,
+        gradient_accumulation_steps=grad_acc,
         output_dir=log_dir,
         report_to="wandb",
         dataloader_num_workers=4,
@@ -100,7 +102,7 @@ def main(
     train_data, val_data, test_data = get_dataset(
         dataset,
         instance=dataset_instance,
-        kshot=kshot,
+        eval_kshot=eval_kshot,
         root=data_dir,
         tokenizer=tokenizer,
         seed=seed,

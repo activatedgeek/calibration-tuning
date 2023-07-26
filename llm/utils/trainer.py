@@ -27,16 +27,15 @@ class CalibrationTrainer(Trainer):
         )
 
         self.test_dataset = test_dataset
-        
+
         _no_token = self.tokenizer("no").input_ids
         _yes_token = self.tokenizer("yes").input_ids
 
-        ## NOTE: Assumes yes/no are single token (length 2 for BOS token).
+        ## NOTE: Assumes yes/no are single token (length 2 including BOS token).
         assert len(_no_token) == 2, f'Cannot handle "no" token {_no_token} yet.'
         assert len(_yes_token) == 2, f'Cannot handle "yes" token {_yes_token} yet.'
 
         self.uq_ans_token_vec = torch.tensor([_no_token[-1], _yes_token[-1]])
-
 
     def compute_unc_loss(self, model, inputs, outputs):
         input_ids, labels, output_ids = (
@@ -77,15 +76,23 @@ class CalibrationTrainer(Trainer):
             unc_labels = unc_inputs.pop("labels")
             unc_eos_idx = extract_eos_pos(self.tokenizer, unc_labels)
 
-            unc_logits = model(**unc_inputs).logits[torch.arange(unc_labels.size(0)), unc_eos_idx - 1, :]
+            unc_logits = model(**unc_inputs).logits[
+                torch.arange(unc_labels.size(0)), unc_eos_idx - 1, :
+            ]
             norm_unc_logits = unc_logits[..., self.uq_ans_token_vec]
 
             unc_labels = unc_labels[torch.arange(unc_labels.size(0)), unc_eos_idx - 1]
-            norm_unc_labels = (unc_labels.unsqueeze(-1) == self.uq_ans_token_vec).long().argmax(dim=-1)
+            norm_unc_labels = (
+                (unc_labels.unsqueeze(-1) == self.uq_ans_token_vec)
+                .long()
+                .argmax(dim=-1)
+            )
 
-            norm_unc_loss = F.cross_entropy(norm_unc_logits, norm_unc_labels.to(norm_unc_logits.device))
+            norm_unc_loss = F.cross_entropy(
+                norm_unc_logits, norm_unc_labels.to(norm_unc_logits.device)
+            )
 
-            return  norm_unc_loss
+            return norm_unc_loss
 
         unc_loss = super().compute_loss(model, unc_inputs)
 
