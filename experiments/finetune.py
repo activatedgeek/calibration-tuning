@@ -35,6 +35,7 @@ class ArgsTrain:
     lr: float = field(default=1e-4)
     weight_decay: float = field(default=0.0)
     unc_decay: float = field(default=0.1)
+    unc_normalize: bool = field(default=True)
     loss_mode: str = field(default="reg")
     warmup_steps: int = field(default=100)
     epochs: int = field(default=1)
@@ -57,6 +58,7 @@ def main(
     lora_dropout=0.1,
     lr=1e-3,
     unc_decay=0.1,
+    unc_normalize=True,
     weight_decay=2e-5,
     loss_mode="reg",
     warmup_steps=100,
@@ -71,7 +73,7 @@ def main(
         num_train_epochs=epochs,
         eval_steps=1000,
         save_steps=1000,
-        logging_steps=1,
+        logging_steps=100,
         log_on_each_node=False,
         evaluation_strategy="steps",
         per_device_train_batch_size=batch_size,
@@ -83,6 +85,7 @@ def main(
         warmup_steps=warmup_steps,
         weight_decay=weight_decay,
         unc_decay=unc_decay,
+        unc_normalize=unc_normalize,
         gradient_accumulation_steps=1,
         output_dir=log_dir,
         report_to="wandb",
