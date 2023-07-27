@@ -1,5 +1,6 @@
 import os
 import logging
+import torch
 from accelerate import Accelerator
 
 from llm.logging import set_logging, wandb
@@ -20,7 +21,6 @@ def main(
     batch_size=1,
     model_name=None,
     model_dir=None,
-    fp8=True,
 ):
     if accelerator.is_main_process:
         wandb.config.update(
@@ -29,7 +29,6 @@ def main(
                 "dataset_instance": dataset_instance,
                 "model_name": model_name,
                 "model_dir": model_dir,
-                "fp8": fp8,
             }
         )
 
@@ -51,8 +50,8 @@ def main(
     model = create_model(
         model_name=model_name,
         model_kwargs=dict(
-            device_map={"": accelerator.device},
-            load_in_8bit=fp8,
+            device_map="auto",
+            torch_dtype=torch.float16,
             model_dir=model_dir,
         ),
     )
@@ -69,9 +68,6 @@ def main(
                 accelerator=accelerator,
             ),
         )
-
-    # train_metrics = _evaluate(train_data)
-    # logging.info(train_metrics, extra=dict(metrics=True, prefix="train"))
 
     val_metrics = _evaluate(val_data)
     logging.info(val_metrics, extra=dict(metrics=True, prefix="val"))

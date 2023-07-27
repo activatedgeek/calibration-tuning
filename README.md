@@ -27,11 +27,7 @@ pip install -e .
 An example command for evaluation.
 
 ```shell
-python experiments/evaluate_gen.py \
-    --seed=137 \
-    --model-name=open_llama_13b \
-    --dataset=mmlu \
-    --dataset-instance=business_ethics
+./scripts/evaluate.py
 ```
 
 ### Fine-Tuning
