@@ -6,7 +6,7 @@ from accelerate import Accelerator
 from llm.logging import set_logging, wandb
 from llm.datasets import get_dataset, get_loader
 from llm.datasets.llm_utils import DataCollatorForSupervisedDataset
-from llm.models import create_model, get_special_tokens
+from llm.models import get_model, get_special_tokens
 from llm.utils.distributed import WaitForMainProcess
 from llm.utils.evaluation import evaluate_via_eos
 
@@ -32,9 +32,9 @@ def main(
             }
         )
 
-    tokenizer = create_model(
-        model_name=f"{model_name}_tokenizer",
-        model_kwargs=dict(model_dir=model_dir),
+    tokenizer = get_model(
+        f"{model_name}_tokenizer",
+        model_dir=model_dir,
     )
     tokenizer.add_special_tokens(get_special_tokens(tokenizer))
 
@@ -47,13 +47,11 @@ def main(
             seed=seed,
         )
 
-    model = create_model(
-        model_name=model_name,
-        model_kwargs=dict(
-            device_map="auto",
-            torch_dtype=torch.float16,
-            model_dir=model_dir,
-        ),
+    model = get_model(
+        model_name,
+        device_map="auto",
+        torch_dtype=torch.float16,
+        model_dir=model_dir,
     )
 
     def _evaluate(_data):

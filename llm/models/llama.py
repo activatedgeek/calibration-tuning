@@ -1,9 +1,10 @@
 import os
-from timm.models import register_model
 from transformers import (
     LlamaTokenizer,
     LlamaForCausalLM,
 )
+
+from .registry import register_model
 
 
 __all__ = ["create_tokenizer", "create_model"]
@@ -27,8 +28,6 @@ def create_tokenizer(
 def create_model(size, model_dir=None, cache_dir=None, **kwargs):
     if size is not None:
         assert size in ["7b"]
-
-    kwargs = {k: v for k, v in kwargs.items() if not k.startswith("pretrained")}
 
     return LlamaForCausalLM.from_pretrained(
         model_dir or f"huggyllama/llama-{size}",

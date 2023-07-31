@@ -4,7 +4,7 @@ import transformers
 from peft import LoraConfig, TaskType, get_peft_model, prepare_model_for_int8_training
 
 from llm.datasets import get_dataset
-from llm.models import create_model, get_special_tokens
+from llm.models import get_model, get_special_tokens
 from llm.utils import TrainingArguments, CalibrationTrainer
 
 
@@ -33,9 +33,9 @@ class ArgsTrain:
     seed: int = field(default=137)
     batch_size: int = field(default=1)
     grad_acc: int = field(default=1)
-    lr: float = field(default=3e-4)
+    lr: float = field(default=1e-4)
     weight_decay: float = field(default=0.0)
-    unc_decay: float = field(default=0.1)
+    unc_decay: float = field(default=1e-2)
     unc_normalize: bool = field(default=True)
     loss_mode: str = field(default="reg")
     warmup_steps: int = field(default=100)
@@ -58,7 +58,7 @@ def main(
     lora_rank=8,
     lora_alpha=32,
     lora_dropout=0.1,
-    lr=3e-4,
+    lr=1e-4,
     unc_decay=0.0,
     unc_normalize=True,
     weight_decay=0.0,
@@ -94,8 +94,9 @@ def main(
         dataloader_num_workers=4,
     )
 
-    tokenizer = create_model(
-        model_name=f"{model_name}_tokenizer", model_kwargs=dict(model_dir=model_dir)
+    tokenizer = get_model(
+        f"{model_name}_tokenizer",
+        model_dir=model_dir,
     )
     special_token_count = tokenizer.add_special_tokens(get_special_tokens(tokenizer))
 
@@ -109,13 +110,11 @@ def main(
         num_workers=num_workers,
     )
 
-    model = create_model(
-        model_name=model_name,
-        model_kwargs=dict(
-            device_map={"": training_args.local_rank},
-            load_in_8bit=fp8,
-            model_dir=model_dir,
-        ),
+    model = get_model(
+        model_name,
+        device_map={"": training_args.local_rank},
+        load_in_8bit=fp8,
+        model_dir=model_dir,
     )
     model.resize_token_embeddings(len(tokenizer))
 
