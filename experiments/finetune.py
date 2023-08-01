@@ -82,6 +82,8 @@ def main(
         per_device_eval_batch_size=batch_size,
         loss_mode=loss_mode,
         optim="adamw_torch",
+        adam_beta1=0.9,
+        adam_beta2=0.95,
         learning_rate=lr,
         lr_scheduler_type="cosine",
         warmup_steps=warmup_steps,
