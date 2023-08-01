@@ -33,13 +33,13 @@ class ArgsTrain:
     seed: int = field(default=137)
     batch_size: int = field(default=1)
     grad_acc: int = field(default=1)
-    lr: float = field(default=1e-4)
-    weight_decay: float = field(default=0.0)
-    unc_decay: float = field(default=1e-2)
+    lr: float = field(default=3e-5)
+    weight_decay: float = field(default=1e-6)
+    unc_decay: float = field(default=0.0)
     unc_normalize: bool = field(default=True)
     loss_mode: str = field(default="reg")
     warmup_steps: int = field(default=100)
-    epochs: int = field(default=1)
+    epochs: int = field(default=3)
 
 
 def main(
