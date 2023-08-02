@@ -15,6 +15,7 @@ class TrainingArguments(TrainingArguments):
     unc_decay: float = field(default=0.1)
     unc_normalize: bool = field(default=True)
     loss_mode: str = field(default="reg")
+    eval_kshot: int = field(default=0)
 
 
 class CalibrationTrainer(Trainer):

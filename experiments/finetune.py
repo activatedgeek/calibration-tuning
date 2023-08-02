@@ -14,7 +14,7 @@ class ArgsData:
     dataset: str = field(default=None)
     dataset_instance: str = field(default=None)
     num_workers: int = field(default=8)
-    eval_kshot: int = field(default=5)
+    eval_kshot: int = field(default=0)
 
 
 @dataclass
@@ -33,8 +33,9 @@ class ArgsTrain:
     seed: int = field(default=137)
     batch_size: int = field(default=1)
     grad_acc: int = field(default=1)
-    lr: float = field(default=3e-5)
-    weight_decay: float = field(default=1e-6)
+    lr: float = field(default=1e-4)
+    adam_beta2: float = field(default=0.999)
+    weight_decay: float = field(default=0.0)
     unc_decay: float = field(default=0.0)
     unc_normalize: bool = field(default=True)
     loss_mode: str = field(default="reg")
@@ -59,6 +60,7 @@ def main(
     lora_alpha=32,
     lora_dropout=0.1,
     lr=1e-4,
+    adam_beta2=0.999,
     unc_decay=0.0,
     unc_normalize=True,
     weight_decay=0.0,
@@ -83,7 +85,7 @@ def main(
         loss_mode=loss_mode,
         optim="adamw_torch",
         adam_beta1=0.9,
-        adam_beta2=0.95,
+        adam_beta2=adam_beta2,
         learning_rate=lr,
         lr_scheduler_type="cosine",
         warmup_steps=warmup_steps,
@@ -94,6 +96,7 @@ def main(
         output_dir=log_dir,
         report_to="wandb",
         dataloader_num_workers=4,
+        eval_kshot=eval_kshot,
     )
 
     tokenizer = get_model(
