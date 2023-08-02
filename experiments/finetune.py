@@ -39,7 +39,7 @@ class ArgsTrain:
     unc_normalize: bool = field(default=True)
     loss_mode: str = field(default="reg")
     warmup_steps: int = field(default=100)
-    epochs: int = field(default=3)
+    epochs: int = field(default=1)
 
 
 def main(
@@ -118,8 +118,9 @@ def main(
         load_in_8bit=fp8,
         model_dir=model_dir,
     )
-    model.resize_token_embeddings(len(tokenizer))
 
+    ## NOTE: Token embeddings aren't trained.
+    model.resize_token_embeddings(len(tokenizer))
     if special_token_count:
         input_embeddings = model.get_input_embeddings().weight.data
         output_embeddings = model.get_output_embeddings().weight.data

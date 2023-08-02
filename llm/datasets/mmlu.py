@@ -97,7 +97,7 @@ def __format_prompt(sample, style, with_answer=False):
     raise NotImplementedError
 
 
-def __generate_fewshot_prompts(dataset, instance, prompt_style, kshot=5):
+def __generate_fewshot_prompts(dataset, instance, prompt_style, kshot=5, seed=None):
     if kshot <= 0:
         return ""
 
@@ -106,7 +106,9 @@ def __generate_fewshot_prompts(dataset, instance, prompt_style, kshot=5):
             f"The following are multiple choice questions (with answers) about {' '.join(instance.split('_'))}.\n",
             *[
                 __format_prompt(dataset[idx], prompt_style, with_answer=True)
-                for idx in torch.randperm(len(dataset))[:kshot].tolist()
+                for idx in torch.randperm(
+                    len(dataset), generator=torch.Generator().manual_seed(seed)
+                )[:kshot].tolist()
             ],
         ]
     )
@@ -122,6 +124,7 @@ def get_mmlu(
     eval_kshot=5,
     tokenizer=None,
     num_workers=8,
+    seed=None,
     **_,
 ):
     from datasets import load_dataset
@@ -156,7 +159,7 @@ def get_mmlu(
     dataset = dataset.map(
         lambda x: {
             "source": __generate_fewshot_prompts(
-                dev_data, instance, prompt_style, kshot=eval_kshot
+                dev_data, instance, prompt_style, kshot=eval_kshot, seed=seed
             )
             + __format_prompt(x, prompt_style),
             "target": f"{string.ascii_lowercase[x['answer']]}{tokenizer.eos_token}",

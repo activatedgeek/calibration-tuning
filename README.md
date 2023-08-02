@@ -34,7 +34,7 @@ An example command for evaluation.
 
 An example command to run fine-tuning on the Alpaca dataset:
 ```shell
-./scripts/finetune.sh --seed=137 --epochs=1
+./scripts/finetune.sh --seed=137 --epochs=1 --log_dir=.log
 ```
 
 # LICENSE
