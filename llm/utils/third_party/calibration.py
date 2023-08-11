@@ -17,9 +17,11 @@
 #
 
 import numpy as np
+import torch
+import logging
 
 
-def calibration(y, p_mean, num_bins=10):
+def calibration(y, class_pred, conf, num_bins=10):
     """Compute the calibration.
 
     References:
@@ -36,12 +38,16 @@ def calibration(y, p_mean, num_bins=10):
       ece: Expected Calibration Error
       mce: Maximum Calibration Error
     """
+    if isinstance(y, torch.Tensor):
+        y = y.cpu().numpy()
+        class_pred = class_pred.cpu().numpy()
+        conf = conf.cpu().numpy()
     # Compute for every test sample x, the predicted class.
-    class_pred = np.argmax(p_mean, axis=1)
+    # class_pred = np.argmax(p_mean, axis=1)
     # and the confidence (probability) associated with it.
-    conf = np.max(p_mean, axis=1)
+    # conf = np.max(p_mean, axis=1)
     # Convert y from one-hot encoding to the number of the class
-    y = np.argmax(y, axis=1)
+    # y = np.argmax(y, axis=1)
     # Storage
     acc_tab = np.zeros(num_bins)  # empirical (true) confidence
     mean_conf = np.zeros(num_bins)  # predicted confidence
@@ -63,6 +69,10 @@ def calibration(y, p_mean, num_bins=10):
     mean_conf = mean_conf[nb_items_bin > 0]
     acc_tab = acc_tab[nb_items_bin > 0]
     nb_items_bin = nb_items_bin[nb_items_bin > 0]
+
+    if len(nb_items_bin) == 0:
+        logging.warning("ECE computation failed.")
+        return float("nan"), float("nan")
 
     # Expected Calibration Error
     ece = np.average(

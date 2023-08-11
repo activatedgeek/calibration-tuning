@@ -95,25 +95,28 @@ def evaluate_via_eos(accelerator, model, tokenizer, loader):
 
     Y, P_hat = torch.cat(Y, dim=0), torch.cat(P_hat, dim=0).softmax(dim=-1)
 
-    acc = (Y == P_hat.argmax(dim=-1)).float().mean()
-    ece, _ = calibration(
-        F.one_hot(Y, num_classes=P_hat.size(-1)).cpu().numpy(), P_hat.cpu().numpy()
-    )
+    Y_hat = P_hat.argmax(dim=-1)
+    acc = (Y == Y_hat).float().mean()
+    ece, _ = calibration(Y, Y_hat, P_hat[torch.arange(Y_hat.size(0)), Y_hat])
 
     UNC_Y, UNC_P_hat = torch.cat(UNC_Y, dim=0), torch.cat(UNC_P_hat, dim=0).softmax(
         dim=-1
     )
 
-    unc_acc = (UNC_Y == UNC_P_hat.argmax(dim=-1)).float().mean()
-    unc_ece, _ = calibration(
-        F.one_hot(UNC_Y, num_classes=UNC_P_hat.size(-1)).cpu().numpy(),
-        UNC_P_hat.cpu().numpy(),
+    UNC_Y_hat = UNC_P_hat.argmax(dim=-1)
+    UNC_acc = (UNC_Y == UNC_Y_hat).float().mean()
+    UNC_ece, _ = calibration(
+        UNC_Y, UNC_Y_hat, UNC_P_hat[torch.arange(UNC_Y_hat.size(0)), UNC_Y_hat]
     )
+
+    ## Using confidence scores from "yes" (idx 1) always.
+    qa_UNC_ece, _ = calibration(Y, Y_hat, UNC_P_hat[:, 1])
 
     return {
         "N": Y.size(0),
         "acc": acc.item(),
         "ece": ece,
-        "unc_acc": unc_acc.item(),
-        "unc_ece": unc_ece,
+        "unc_acc": UNC_acc.item(),
+        "unc_ece": UNC_ece,
+        "qa_unc_ece": qa_UNC_ece,
     }
