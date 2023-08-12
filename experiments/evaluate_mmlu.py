@@ -1,10 +1,11 @@
 import os
 import logging
+from tqdm.auto import tqdm
 from accelerate import Accelerator
 from peft import PeftModel
 
 from llm.logging import set_logging, wandb
-from llm.datasets import get_dataset, get_loader
+from llm.datasets import get_dataset, get_dataset_attrs, get_loader
 from llm.datasets.llm_utils import DataCollatorForSupervisedDataset
 from llm.models import get_model, get_special_tokens
 from llm.utils.distributed import WaitForMainProcess
@@ -15,8 +16,6 @@ def main(
     accelerator,
     seed=None,
     log_dir=None,
-    dataset=None,
-    dataset_instance=None,
     eval_kshot=0,
     data_dir=None,
     batch_size=1,
@@ -29,8 +28,7 @@ def main(
         wandb.config.update(
             {
                 "seed": seed,
-                "dataset": dataset,
-                "dataset_instance": dataset_instance,
+                "dataset": "mmlu",
                 "model_name": model_name,
                 "fp8": fp8,
                 "model_dir": model_dir,
@@ -44,16 +42,6 @@ def main(
         model_dir=model_dir,
     )
     special_token_count = tokenizer.add_special_tokens(get_special_tokens(tokenizer))
-
-    with WaitForMainProcess(accelerator):
-        _, val_data, test_data = get_dataset(
-            dataset,
-            instance=dataset_instance,
-            eval_kshot=eval_kshot,
-            root=data_dir,
-            tokenizer=tokenizer,
-            seed=seed,
-        )
 
     model = get_model(
         model_name,
@@ -89,12 +77,25 @@ def main(
                 accelerator=accelerator,
             ),
         )
+    
+    for task in tqdm(get_dataset_attrs("mmlu").get("tasks")):
+        with WaitForMainProcess(accelerator):
+            logging.info(f"Evaluating {task}...")
 
-    val_metrics = _evaluate(val_data)
-    logging.info(val_metrics, extra=dict(metrics=True, prefix="val"))
+            _, val_data, test_data = get_dataset(
+                "mmlu",
+                instance=task,
+                eval_kshot=eval_kshot,
+                root=data_dir,
+                tokenizer=tokenizer,
+                seed=seed,
+            )
 
-    test_metrics = _evaluate(test_data)
-    logging.info(test_metrics, extra=dict(metrics=True, prefix="test"))
+        val_metrics = _evaluate(val_data)
+        logging.info(val_metrics, extra=dict(metrics=True, prefix=f"{task}/val"))
+
+        test_metrics = _evaluate(test_data)
+        logging.info(test_metrics, extra=dict(metrics=True, prefix=f"{task}/test"))
 
 
 def entrypoint(seed=137, log_dir=None, **kwargs):
