@@ -1,55 +1,18 @@
 import os
-from dataclasses import dataclass, field, asdict
-import transformers
 from peft import LoraConfig, TaskType, get_peft_model, prepare_model_for_int8_training
 
 from llm.datasets import get_dataset
 from llm.models import get_model, get_special_tokens
-from llm.utils import TrainingArguments, CalibrationTrainer
-
-
-@dataclass
-class ArgsData:
-    data_dir: str = field(default=None)
-    dataset: str = field(default=None)
-    dataset_instance: str = field(default=None)
-    num_workers: int = field(default=8)
-    eval_kshot: int = field(default=0)
-
-
-@dataclass
-class ArgsModel:
-    model_dir: str = field(default=None)
-    model_name: str = field(default=None)
-    fp8: bool = field(default=True)
-    lora_rank: int = field(default=8)
-    lora_alpha: int = field(default=32)
-    lora_dropout: float = field(default=0.1)
-
-
-@dataclass
-class ArgsTrain:
-    log_dir: str = field(default=None)
-    seed: int = field(default=137)
-    batch_size: int = field(default=1)
-    grad_acc: int = field(default=1)
-    lr: float = field(default=1e-4)
-    adam_beta2: float = field(default=0.999)
-    weight_decay: float = field(default=0.0)
-    unc_decay: float = field(default=0.0)
-    unc_normalize: bool = field(default=True)
-    loss_mode: str = field(default="reg")
-    warmup_steps: int = field(default=100)
-    epochs: int = field(default=1)
+from llm.utils.trainer import TrainingArguments, CalibrationTrainer
 
 
 def main(
-    seed=None,
+    seed=137,
     log_dir=None,
     dataset=None,
     dataset_instance=None,
     data_dir=None,
-    eval_kshot=5,
+    eval_kshot=0,
     num_workers=8,
     batch_size=1,
     grad_acc=1,
@@ -62,6 +25,7 @@ def main(
     lr=1e-4,
     adam_beta2=0.999,
     unc_decay=0.0,
+    unc_decay_ratio=0.0,
     unc_normalize=True,
     weight_decay=0.0,
     loss_mode="reg",
@@ -91,6 +55,7 @@ def main(
         warmup_steps=warmup_steps,
         weight_decay=weight_decay,
         unc_decay=unc_decay,
+        unc_decay_ratio=unc_decay_ratio,
         unc_normalize=unc_normalize,
         gradient_accumulation_steps=grad_acc,
         output_dir=log_dir,
@@ -157,13 +122,11 @@ def main(
     trainer.save_state()
 
 
-def entrypoint():
-    parser = transformers.HfArgumentParser((ArgsData, ArgsModel, ArgsTrain))
-    data_args, model_args, train_args = parser.parse_args_into_dataclasses()
-    train_args.log_dir = train_args.log_dir or os.environ.get("WANDB_DIR")
-
-    main(**asdict(data_args), **asdict(model_args), **asdict(train_args))
+def entrypoint(log_dir=None, **kwargs):
+    main(**kwargs, log_dir=os.environ.get("WANDB_DIR", log_dir))
 
 
 if __name__ == "__main__":
-    entrypoint()
+    import fire
+
+    fire.Fire(entrypoint)

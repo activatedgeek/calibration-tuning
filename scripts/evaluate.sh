@@ -1,12 +1,17 @@
 #!/usr/bin/env bash
 
-__PORT=$(shuf -i 10000-65500 -n 1)
+__NNODES=${NNODES:-1}
+__NPROC_PER_NODE=${NPROC_PER_NODE:-$(python -c 'import torch; print(torch.cuda.device_count())')}
+__IP=${IP:-$(hostname)}
+__PORT=${PORT:-$(shuf -i 2000-65000 -n 1)}
 
-accelerate launch --multi_gpu --main_process_port=${__PORT} \
-experiments/evaluate.py \
-    --model_name=llama2_7b \
-    --model_dir=${MODELDIR}/models--meta-llama--Llama-2-7b \
-    --dataset=mmlu \
-    --dataset_instance=business_ethics \
-    "${@}"
+torchrun --nnodes=${__NNODES} \
+         --nproc_per_node=${__NPROC_PER_NODE} \
+         --rdzv_endpoint=${__IP}:${__PORT} \
+            experiments/evaluate.py \
+                --model_name=llama2_7b \
+                --model_dir=${MODELDIR}/models--meta-llama--Llama-2-7b \
+                --dataset=mmlu \
+                --dataset_instance=business_ethics \
+                "${@}"
     

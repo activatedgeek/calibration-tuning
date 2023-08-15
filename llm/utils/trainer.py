@@ -8,10 +8,12 @@ from ..datasets.llm_utils import (
     tokenize_for_causal_lm,
 )
 from .evaluation import extract_eos_pos, evaluate_via_eos
+from .scheduler import AnyCosineScheduler
 
 
 @dataclass
 class TrainingArguments(TrainingArguments):
+    unc_decay_ratio: float = field(default=0.0)
     unc_decay: float = field(default=0.1)
     unc_normalize: bool = field(default=True)
     loss_mode: str = field(default="reg")
@@ -37,6 +39,13 @@ class CalibrationTrainer(Trainer):
         assert len(_yes_token) == 2, f'Cannot handle "yes" token {_yes_token} yet.'
 
         self.uq_ans_token_vec = torch.tensor([_no_token[-1], _yes_token[-1]])
+
+        decay_steps = int(
+            self.args.unc_decay_ratio
+            * self.args.num_train_epochs
+            * len(self.get_train_dataloader())
+        )
+        self.unc_decay = AnyCosineScheduler(self.args.unc_decay, decay_steps)
 
     def compute_unc_loss(self, model, inputs, outputs):
         input_ids, labels, output_ids = (
@@ -104,16 +113,16 @@ class CalibrationTrainer(Trainer):
 
         unc_loss = (
             self.compute_unc_loss(model, inputs, outputs)
-            if self.args.unc_decay > 0.0
+            if self.unc_decay.value > 0.0
             else torch.tensor(0.0)
         )
 
         if self.args.loss_mode == "reg":
-            total_loss = loss + self.args.unc_decay * unc_loss
+            total_loss = loss + self.unc_decay.value * unc_loss
         elif self.args.loss_mode == "cvx_comb":
             total_loss = (
-                1 - self.args.unc_decay
-            ) * loss + self.args.unc_decay * unc_loss
+                1 - self.unc_decay.value
+            ) * loss + self.unc_decay.value * unc_loss
         else:
             raise NotImplementedError
 
@@ -121,10 +130,13 @@ class CalibrationTrainer(Trainer):
             "lm_loss": loss.detach().item(),
             "unc_loss": unc_loss.detach().item(),
             "total_loss": total_loss.detach().item(),
+            "unc_decay": self.unc_decay.value,
         }
 
         if (self.state.global_step + 1) % self.args.logging_steps == 0:
             self.log(loss_metrics)
+
+        self.unc_decay.step()
 
         return (total_loss, outputs) if return_outputs else total_loss
 

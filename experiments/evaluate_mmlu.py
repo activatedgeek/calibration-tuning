@@ -77,7 +77,7 @@ def main(
                 accelerator=accelerator,
             ),
         )
-    
+
     for task in tqdm(get_dataset_attrs("mmlu").get("tasks")):
         with WaitForMainProcess(accelerator):
             logging.info(f"Evaluating {task}...")
