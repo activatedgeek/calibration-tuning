@@ -1,12 +1,16 @@
 import os
+import logging
+from accelerate import Accelerator
 from peft import LoraConfig, TaskType, get_peft_model, prepare_model_for_int8_training
 
+from llm.logging import set_logging, wandb
 from llm.datasets import get_dataset
 from llm.models import get_model, get_special_tokens
 from llm.utils.trainer import TrainingArguments, CalibrationTrainer
 
 
 def main(
+    accelerator,
     seed=137,
     log_dir=None,
     dataset=None,
@@ -63,6 +67,37 @@ def main(
         dataloader_num_workers=4,
         eval_kshot=eval_kshot,
     )
+
+    if accelerator.is_main_process:
+        ## Manually report parameters not reported by Trainer.
+        wandb.config.update(
+            dict(
+                seed=seed,
+                log_dir=log_dir,
+                dataset=dataset,
+                dataset_instance=dataset_instance,
+                data_dir=data_dir,
+                eval_kshot=eval_kshot,
+                num_workers=num_workers,
+                batch_size=batch_size,
+                grad_acc=grad_acc,
+                model_name=model_name,
+                model_dir=model_dir,
+                fp8=fp8,
+                lora_rank=lora_rank,
+                lora_alpha=lora_alpha,
+                lora_dropout=lora_dropout,
+                lr=lr,
+                adam_beta2=adam_beta2,
+                unc_decay=unc_decay,
+                unc_decay_ratio=unc_decay_ratio,
+                unc_normalize=unc_normalize,
+                weight_decay=weight_decay,
+                loss_mode=loss_mode,
+                warmup_steps=warmup_steps,
+                epochs=epochs,
+            )
+        )
 
     tokenizer = get_model(
         f"{model_name}_tokenizer",
@@ -123,7 +158,21 @@ def main(
 
 
 def entrypoint(log_dir=None, **kwargs):
-    main(**kwargs, log_dir=os.environ.get("WANDB_DIR", log_dir))
+    accelerator = Accelerator()
+
+    ## Only setup logging from one process.
+    log_dir, finish_logging = (
+        set_logging(log_dir=os.environ.get("WANDB_DIR", log_dir))
+        if accelerator.is_main_process
+        else [None, None]
+    )
+    if accelerator.is_main_process:
+        logging.info(f"Working with {accelerator.num_processes} process(es).")
+
+    main(accelerator, **kwargs, log_dir=os.environ.get("WANDB_DIR", log_dir))
+
+    if accelerator.is_main_process:
+        finish_logging()
 
 
 if __name__ == "__main__":

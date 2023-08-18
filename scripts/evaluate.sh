@@ -10,7 +10,6 @@ torchrun --nnodes=${__NNODES} \
          --rdzv_endpoint=${__IP}:${__PORT} \
             experiments/evaluate.py \
                 --model_name=llama2_7b \
-                --model_dir=${MODELDIR}/models--meta-llama--Llama-2-7b \
                 --dataset=mmlu \
                 --dataset_instance=business_ethics \
                 "${@}"

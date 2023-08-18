@@ -13,7 +13,7 @@ from .scheduler import AnyCosineScheduler
 
 @dataclass
 class TrainingArguments(TrainingArguments):
-    unc_decay_ratio: float = field(default=0.0)
+    unc_decay_ratio: float = field(default=1.0)
     unc_decay: float = field(default=0.1)
     unc_normalize: bool = field(default=True)
     loss_mode: str = field(default="reg")

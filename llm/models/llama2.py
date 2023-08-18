@@ -17,7 +17,7 @@ def create_tokenizer(
         assert size in ["7b", "13b", "70b", "7b-chat", "13b-chat", "70b-chat"]
 
     tokenizer = LlamaTokenizer.from_pretrained(
-        model_dir or f"meta-llama/Llama-2-{size}",
+        model_dir or f"{os.environ.get('MODELDIR')}/models--meta-llama--Llama-2-{size}",
         cache_dir=os.environ.get("MODELDIR", cache_dir),
         padding_side=padding_side,
         use_fast=use_fast,
@@ -31,7 +31,7 @@ def create_model(size=None, model_dir=None, cache_dir=None, **kwargs):
         assert size in ["7b", "13b", "70b", "7b-chat", "13b-chat", "70b-chat"]
 
     return LlamaForCausalLM.from_pretrained(
-        model_dir or f"meta-llama/Llama-2-{size}",
+        model_dir or f"{os.environ.get('MODELDIR')}/models--meta-llama--Llama-2-{size}",
         cache_dir=os.environ.get("MODELDIR", cache_dir),
         **kwargs,
     )
@@ -48,6 +48,16 @@ def llama2_7b(**kwargs):
 
 
 @register_model
+def llama2_7b_chat_tokenizer(**kwargs):
+    return create_tokenizer("7b-chat", **kwargs)
+
+
+@register_model
+def llama2_7b_chat(**kwargs):
+    return create_model("7b-chat", **kwargs)
+
+
+@register_model
 def llama2_13b_tokenizer(**kwargs):
     return create_tokenizer("13b", **kwargs)
 
@@ -58,6 +68,16 @@ def llama2_13b(**kwargs):
 
 
 @register_model
+def llama2_13b_chat_tokenizer(**kwargs):
+    return create_tokenizer("13b-chat", **kwargs)
+
+
+@register_model
+def llama2_13b_chat(**kwargs):
+    return create_model("13b-chat", **kwargs)
+
+
+@register_model
 def llama2_70b_tokenizer(**kwargs):
     return create_tokenizer("70b", **kwargs)
 
@@ -65,3 +85,13 @@ def llama2_70b_tokenizer(**kwargs):
 @register_model
 def llama2_70b(**kwargs):
     return create_model("70b", **kwargs)
+
+
+@register_model
+def llama2_70b_chat_tokenizer(**kwargs):
+    return create_tokenizer("70b-chat", **kwargs)
+
+
+@register_model
+def llama2_70b_chat(**kwargs):
+    return create_model("70b-chat", **kwargs)
