@@ -37,6 +37,12 @@ An example command to run fine-tuning on the Alpaca dataset:
 ./scripts/finetune.sh --seed=137 --epochs=1 --log_dir=.log
 ```
 
+## Details
+
+### Cache
+
+The datasets are cached after pre-processing. Use [`dataset.cleanup_cache_files()`](https://huggingface.co/docs/datasets/v2.14.4/en/cache#cache-files) to remove cache in the target dataset's function under [llm/datasets](./llm//datasets), if the changes are not reflected.
+
 # LICENSE
 
 Apache 2.0

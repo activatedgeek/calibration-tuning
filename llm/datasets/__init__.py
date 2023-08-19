@@ -18,6 +18,7 @@ def __setup():
 
     for n in [
         "alpaca",
+        "boolq",
         "mmlu",
         "nli",
         "truthful_qa",
