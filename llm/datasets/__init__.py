@@ -21,6 +21,7 @@ def __setup():
         "boolq",
         "mmlu",
         "nli",
+        "piqa",
         "truthful_qa",
     ]:
         import_module(f".{n}", __name__)
