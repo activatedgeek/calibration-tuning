@@ -19,6 +19,7 @@ def __setup():
     for n in [
         "alpaca",
         "mmlu",
+        "nli",
         "truthful_qa",
     ]:
         import_module(f".{n}", __name__)
