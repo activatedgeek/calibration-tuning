@@ -78,12 +78,12 @@ def __format_prompt(sample, style, with_answer=False):
     if style == "mcq":
         question = sample["question"]
         choices = sample["choices"]
-        answer = string.ascii_lowercase[sample["answer"]] + "\n"
+        answer = string.ascii_lowercase[sample["answer"]] + "</s>\n"
 
         prompt = "\n".join(
             [
-                f"Question: {question}",
-                "Choices:",
+                f"Question:\n{question}",
+                "\nChoices:",
                 *[
                     f"  ({n}): {c}"
                     for n, c in zip(string.ascii_lowercase[: len(choices)], choices)
@@ -112,7 +112,7 @@ def __generate_fewshot_prompts(dataset, instance, prompt_style, kshot=5, seed=No
             ],
         ]
     )
-    fewshot_prompt = fewshot_prompt + "\nNow, answer the next "
+    fewshot_prompt = fewshot_prompt + "\nNow, answer the next question.\n\n"
 
     return fewshot_prompt
 
@@ -135,11 +135,14 @@ def get_mmlu(
 
     dev_data = dataset.pop("dev")
 
-    train_data = (
-        dataset.pop("auxiliary_train")
+    train_data, val_data, test_data = [
+        dataset.pop(split)
         .map(
             lambda x: {
-                "source": __format_prompt(x, prompt_style),
+                "source": __generate_fewshot_prompts(
+                    dev_data, instance, prompt_style, kshot=k, seed=seed
+                )
+                + __format_prompt(x, prompt_style),
                 "target": f"{string.ascii_lowercase[x['answer']]}{tokenizer.eos_token}",
             },
             num_proc=num_workers,
@@ -154,30 +157,10 @@ def get_mmlu(
             num_proc=num_workers,
             remove_columns=["source", "target"],
         )
-    )
-
-    dataset = dataset.map(
-        lambda x: {
-            "source": __generate_fewshot_prompts(
-                dev_data, instance, prompt_style, kshot=eval_kshot, seed=seed
-            )
-            + __format_prompt(x, prompt_style),
-            "target": f"{string.ascii_lowercase[x['answer']]}{tokenizer.eos_token}",
-        },
-        num_proc=num_workers,
-        remove_columns=[
-            "question",
-            "choices",
-            "answer",
-        ],
-    ).map(
-        lambda x: tokenize_for_causal_lm(tokenizer, x),
-        num_proc=num_workers,
-        remove_columns=["source", "target"],
-    )
-
-    val_data = dataset["validation"]
-    test_data = dataset["test"]
+        for split, k in zip(
+            ["auxiliary_train", "validation", "test"], [0, eval_kshot, eval_kshot]
+        )
+    ]
 
     return train_data, val_data, test_data
 
