@@ -74,9 +74,16 @@ def get_snli(
 
     dataset = load_dataset("snli", cache_dir=os.environ.get("HF_DATASETS_CACHE", root))
 
-    train_data, val_data, test_data = [
+    data_splits = [
         data.filter(lambda x: x["label"] in [0, 1, 2], num_proc=num_workers)
-        .map(
+        for data in [
+            dataset.pop("train"),
+            dataset.pop("validation"),
+            dataset.pop("test"),
+        ]
+    ]
+    train_data, val_data, test_data = [
+        data.map(
             lambda x: {
                 "source": __generate_fewshot_prompts(
                     data, prompt_style, kshot=k, seed=seed
@@ -90,16 +97,12 @@ def get_snli(
                 "hypothesis",
                 "label",
             ],
-        )
-        .map(
+        ).map(
             lambda x: tokenize_for_causal_lm(tokenizer, x),
             num_proc=num_workers,
             remove_columns=["source", "target"],
         )
-        for data, k in zip(
-            [dataset.pop("train"), dataset.pop("validation"), dataset.pop("test")],
-            [0, eval_kshot, eval_kshot],
-        )
+        for data, k in zip(data_splits, [0, eval_kshot, eval_kshot])
     ]
 
     return train_data, val_data, test_data
@@ -120,13 +123,15 @@ def get_anli(
     assert round in [1, 2, 3], "Invalid round value"
 
     dataset = load_dataset("anli", cache_dir=os.environ.get("HF_DATASETS_CACHE", root))
-    dataset.cleanup_cache_files()
 
     dev_data = dataset.pop(f"dev_r{round}")
 
-    train_data, test_data = [
+    data_splits = [
         data.filter(lambda x: x["label"] in [0, 1, 2], num_proc=num_workers)
-        .map(
+        for data in [dataset.pop(f"train_r{round}"), dataset.pop(f"test_r{round}")]
+    ]
+    train_data, test_data = [
+        data.map(
             lambda x: {
                 "source": __generate_fewshot_prompts(
                     dev_data, prompt_style, kshot=k, seed=seed
@@ -140,16 +145,12 @@ def get_anli(
                 "hypothesis",
                 "label",
             ],
-        )
-        .map(
+        ).map(
             lambda x: tokenize_for_causal_lm(tokenizer, x),
             num_proc=num_workers,
             remove_columns=["source", "target"],
         )
-        for data, k in zip(
-            [dataset.pop(f"train_r{round}"), dataset.pop(f"test_r{round}")],
-            [0, eval_kshot],
-        )
+        for data, k in zip(data_splits, [0, eval_kshot])
     ]
 
     return train_data, None, test_data

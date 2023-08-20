@@ -23,6 +23,8 @@ def __setup():
         "nli",
         "piqa",
         "truthful_qa",
+        "winogrande",
+        "wsc",
     ]:
         import_module(f".{n}", __name__)
 
