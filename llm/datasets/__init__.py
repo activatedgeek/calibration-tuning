@@ -22,6 +22,7 @@ def __setup():
         "mmlu",
         "nli",
         "piqa",
+        "sciq",
         "truthful_qa",
         "winogrande",
         "wsc",
