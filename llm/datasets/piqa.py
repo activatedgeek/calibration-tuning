@@ -70,11 +70,11 @@ def get_piqa(
     from datasets import load_dataset
 
     dataset = load_dataset("piqa", cache_dir=os.environ.get("HF_DATASETS_CACHE", root))
-    dataset.cleanup_cache_files()
 
     ## NOTE: "test" split has no labels.
     train_data, val_data = [
-        data.filter(lambda x: x["label"] in [0, 1], num_proc=num_workers).map(
+        data.filter(lambda x: x["label"] in [0, 1], num_proc=num_workers)
+        .map(
             lambda x: {
                 "source": __generate_fewshot_prompts(
                     data, prompt_style, kshot=k, seed=seed
