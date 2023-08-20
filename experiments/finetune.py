@@ -6,6 +6,7 @@ from peft import LoraConfig, TaskType, get_peft_model, prepare_model_for_int8_tr
 from llm.logging import set_logging, wandb
 from llm.datasets import get_dataset
 from llm.models import get_model, get_special_tokens
+from llm.utils.distributed import WaitForMainProcess
 from llm.utils.trainer import TrainingArguments, CalibrationTrainer
 
 
@@ -105,15 +106,16 @@ def main(
     )
     special_token_count = tokenizer.add_special_tokens(get_special_tokens(tokenizer))
 
-    train_data, val_data, test_data = get_dataset(
-        dataset,
-        instance=dataset_instance,
-        eval_kshot=eval_kshot,
-        root=data_dir,
-        tokenizer=tokenizer,
-        seed=seed,
-        num_workers=num_workers,
-    )
+    with WaitForMainProcess(accelerator):
+        train_data, val_data, test_data = get_dataset(
+            dataset,
+            instance=dataset_instance,
+            eval_kshot=eval_kshot,
+            root=data_dir,
+            tokenizer=tokenizer,
+            seed=seed,
+            num_workers=num_workers,
+        )
 
     model = get_model(
         model_name,
