@@ -14,7 +14,7 @@ from llm.utils.evaluation import evaluate_via_eos
 
 def main(
     accelerator,
-    seed=None,
+    seed=137,
     log_dir=None,
     eval_kshot=0,
     data_dir=None,
@@ -98,7 +98,7 @@ def main(
         logging.info(test_metrics, extra=dict(metrics=True, prefix=f"{task}/test"))
 
 
-def entrypoint(seed=137, log_dir=None, **kwargs):
+def entrypoint(log_dir=None, **kwargs):
     accelerator = Accelerator()
 
     ## Only setup logging from one process.
@@ -110,7 +110,7 @@ def entrypoint(seed=137, log_dir=None, **kwargs):
     if accelerator.is_main_process:
         logging.info(f"Working with {accelerator.num_processes} process(es).")
 
-    main(accelerator, **kwargs, seed=seed, log_dir=log_dir)
+    main(accelerator, **kwargs, log_dir=log_dir)
 
     if accelerator.is_main_process:
         finish_logging()
