@@ -57,7 +57,7 @@ def main(
 
     model = get_model(
         model_name,
-        device_map={"": accelerator.local_process_index},
+        device_map="auto",
         load_in_8bit=fp8,
         model_dir=model_dir,
     )
