@@ -1,37 +1,26 @@
 import os
 import string
 import torch
-import numpy as np
 
 from .registry import register_dataset
 from .llm_utils import tokenize_for_causal_lm
 
 
 __all__ = [
-    "get_sciq",
+    "get_story_cloze",
 ]
 
 
 def __format_prompt(sample, style, with_answer=False):
     if style == "choice":
-        support = sample["support"]
-        question = sample["question"]
-
-        answer_order = np.random.permutation(4).tolist()
-        answer_map = [
-            sample["distractor1"],
-            sample["distractor2"],
-            sample["distractor3"],
-            sample["correct_answer"],
-        ]
-        answer_map = [answer_map[idx] for idx in answer_order]
-
-        answer = string.ascii_lowercase[answer_order.index(3)] + "</s>\n"
+        story = " ".join([sample[f"input_sentence_{i}"] for i in range(1, 5)])
+        answer_map = [sample["sentence_quiz1"], sample["sentence_quiz2"]]
+        answer = string.ascii_lowercase[sample["answer_right_ending"] - 1] + "</s>\n"
 
         prompt = "\n".join(
             [
-                f"\n{support}\nQuestion:",
-                question,
+                "Story:",
+                story,
                 "\nChoices:",
                 *[
                     f"  ({n}): {c}"
@@ -43,10 +32,7 @@ def __format_prompt(sample, style, with_answer=False):
             ]
         )
 
-        if with_answer:
-            return prompt
-
-        return {"source": prompt, "target": answer}
+        return prompt
 
     raise NotImplementedError
 
@@ -71,57 +57,62 @@ def __generate_fewshot_prompts(dataset, prompt_style, kshot, seed=None):
     return fewshot_prompt
 
 
-def get_sciq(
+def get_story_cloze(
     root=None,
     prompt_style=None,
     eval_kshot=0,
     tokenizer=None,
     num_workers=8,
     seed=None,
+    use_cache=True,
     **_,
 ):
     from datasets import load_dataset
 
-    dataset = load_dataset("sciq", cache_dir=os.environ.get("HF_DATASETS_CACHE", root))
+    ## NOTE: needs manual download.
+    dataset = load_dataset(
+        "story_cloze", "2018", cache_dir=os.environ.get("HF_DATASETS_CACHE", root)
+    )
+    if not use_cache:
+        dataset.cleanup_cache_files()
 
-    def __map(x, data, k):
-        x_dict = __format_prompt(x, prompt_style)
-        x_dict["source"] = (
-            __generate_fewshot_prompts(data, prompt_style, k, seed=seed)
-            + x_dict["source"]
-        )
-        x_dict["target"] = x_dict["target"].rstrip()
-        return x_dict
-
-    train_data, val_data, test_data = [
+    ## NOTE: "test" split has no labels.
+    data_splits = [
+        data.filter(lambda x: x["label"] in [0, 1, 2], num_proc=num_workers)
+        for data in [dataset.pop("train"), dataset.pop("validation")]
+    ]
+    train_data, val_data = [
         data.map(
-            lambda x: __map(x, data, k),
+            lambda x: {
+                "source": __generate_fewshot_prompts(data, prompt_style, k, seed=seed)
+                + __format_prompt(x, prompt_style),
+                "target": f"{string.ascii_lowercase[x['answer_right_ending'] - 1]}{tokenizer.eos_token}",
+            },
             num_proc=num_workers,
             remove_columns=[
-                "question",
-                "distractor1",
-                "distractor2",
-                "distractor3",
-                "correct_answer",
-                "support",
+                "answer_right_ending",
+                "input_sentence_1",
+                "input_sentence_2",
+                "input_sentence_3",
+                "input_sentence_4",
+                "sentence_quiz1",
+                "sentence_quiz2",
+                "story_id",
             ],
         ).map(
             lambda x: tokenize_for_causal_lm(tokenizer, x),
             num_proc=num_workers,
             remove_columns=["source", "target"],
         )
-        for data, k in zip(
-            [dataset.pop("train"), dataset.pop("validation"), dataset.pop("test")],
-            [0, eval_kshot, eval_kshot],
-        )
+        for data, k in zip(data_splits, [0, eval_kshot])
     ]
 
-    return train_data, val_data, test_data
+    return train_data, val_data, None
 
 
-@register_dataset
-def sciq(*args, **kwargs):
-    return get_sciq(
+@register_dataset(attrs=dict(task_tags=["commonsense"]))
+def story_cloze(*args, **kwargs):
+    return get_story_cloze(
         *args,
         **kwargs,
         prompt_style="choice",

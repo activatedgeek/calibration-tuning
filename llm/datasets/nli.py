@@ -12,11 +12,14 @@ __all__ = [
 ]
 
 
+__ATTRS = dict(task_tags=["entailment"])
+
+
 def __format_prompt(sample, style, with_answer=False):
     if style == "choice":
         premise = sample["premise"]
         hypothesis = sample["hypothesis"]
-        answer_map = {0: "Yes", 1: "No", 2: "It's impossible to say"}
+        answer_map = ["Yes", "It's impossible to say", "No"]
         answer = string.ascii_lowercase[sample["label"]] + "</s>\n"
 
         prompt = "\n".join(
@@ -29,7 +32,7 @@ def __format_prompt(sample, style, with_answer=False):
                 *[
                     f"  ({n}): {c}"
                     for n, c in zip(
-                        string.ascii_lowercase[: len(answer_map)], answer_map.values()
+                        string.ascii_lowercase[: len(answer_map)], answer_map
                     )
                 ],
                 f"Answer: {answer if with_answer else ''}",
@@ -41,7 +44,7 @@ def __format_prompt(sample, style, with_answer=False):
     raise NotImplementedError
 
 
-def __generate_fewshot_prompts(dataset, prompt_style, kshot=5, seed=None):
+def __generate_fewshot_prompts(dataset, prompt_style, kshot, seed=None):
     if kshot <= 0:
         return ""
 
@@ -56,7 +59,7 @@ def __generate_fewshot_prompts(dataset, prompt_style, kshot=5, seed=None):
             ],
         ]
     )
-    fewshot_prompt = fewshot_prompt + "\nNow, answer the next question.\n\n"
+    fewshot_prompt = fewshot_prompt + "\nNow, answer the following.\n\n"
 
     return fewshot_prompt
 
@@ -68,11 +71,14 @@ def get_snli(
     tokenizer=None,
     num_workers=8,
     seed=None,
+    use_cache=True,
     **_,
 ):
     from datasets import load_dataset
 
     dataset = load_dataset("snli", cache_dir=os.environ.get("HF_DATASETS_CACHE", root))
+    if not use_cache:
+        dataset.cleanup_cache_files()
 
     data_splits = [
         data.filter(lambda x: x["label"] in [0, 1, 2], num_proc=num_workers)
@@ -85,9 +91,7 @@ def get_snli(
     train_data, val_data, test_data = [
         data.map(
             lambda x: {
-                "source": __generate_fewshot_prompts(
-                    data, prompt_style, kshot=k, seed=seed
-                )
+                "source": __generate_fewshot_prompts(data, prompt_style, k, seed=seed)
                 + __format_prompt(x, prompt_style),
                 "target": f"{string.ascii_lowercase[x['label']]}{tokenizer.eos_token}",
             },
@@ -108,6 +112,15 @@ def get_snli(
     return train_data, val_data, test_data
 
 
+@register_dataset(attrs=__ATTRS)
+def snli(*args, **kwargs):
+    return get_snli(
+        *args,
+        **kwargs,
+        prompt_style="choice",
+    )
+
+
 def get_anli(
     root=None,
     round=None,
@@ -116,6 +129,7 @@ def get_anli(
     tokenizer=None,
     num_workers=8,
     seed=None,
+    use_cache=True,
     **_,
 ):
     from datasets import load_dataset
@@ -123,6 +137,8 @@ def get_anli(
     assert round in [1, 2, 3], "Invalid round value"
 
     dataset = load_dataset("anli", cache_dir=os.environ.get("HF_DATASETS_CACHE", root))
+    if not use_cache:
+        dataset.cleanup_cache_files()
 
     dev_data = dataset.pop(f"dev_r{round}")
 
@@ -134,7 +150,7 @@ def get_anli(
         data.map(
             lambda x: {
                 "source": __generate_fewshot_prompts(
-                    dev_data, prompt_style, kshot=k, seed=seed
+                    dev_data, prompt_style, k, seed=seed
                 )
                 + __format_prompt(x, prompt_style),
                 "target": f"{string.ascii_lowercase[x['label']]}{tokenizer.eos_token}",
@@ -156,16 +172,7 @@ def get_anli(
     return train_data, None, test_data
 
 
-@register_dataset
-def snli(*args, **kwargs):
-    return get_snli(
-        *args,
-        **kwargs,
-        prompt_style="choice",
-    )
-
-
-@register_dataset
+@register_dataset(attrs=__ATTRS)
 def anli_r1(*args, **kwargs):
     return get_anli(
         *args,
@@ -175,7 +182,7 @@ def anli_r1(*args, **kwargs):
     )
 
 
-@register_dataset
+@register_dataset(attrs=__ATTRS)
 def anli_r2(*args, **kwargs):
     return get_anli(
         *args,
@@ -185,7 +192,7 @@ def anli_r2(*args, **kwargs):
     )
 
 
-@register_dataset
+@register_dataset(attrs=__ATTRS)
 def anli_r3(*args, **kwargs):
     return get_anli(
         *args,

@@ -97,7 +97,7 @@ def __format_prompt(sample, style, with_answer=False):
     raise NotImplementedError
 
 
-def __generate_fewshot_prompts(dataset, instance, prompt_style, kshot=5, seed=None):
+def __generate_fewshot_prompts(dataset, instance, prompt_style, kshot, seed=None):
     if kshot <= 0:
         return ""
 
@@ -140,7 +140,7 @@ def get_mmlu(
         .map(
             lambda x: {
                 "source": __generate_fewshot_prompts(
-                    dev_data, instance, prompt_style, kshot=k, seed=seed
+                    dev_data, instance, prompt_style, k, seed=seed
                 )
                 + __format_prompt(x, prompt_style),
                 "target": f"{string.ascii_lowercase[x['answer']]}{tokenizer.eos_token}",

@@ -37,7 +37,7 @@ def __format_prompt(sample, style, with_answer=False):
     raise NotImplementedError
 
 
-def __generate_fewshot_prompts(dataset, prompt_style, kshot=5, seed=None):
+def __generate_fewshot_prompts(dataset, prompt_style, kshot, seed=None):
     if kshot <= 0:
         return ""
 
@@ -77,7 +77,7 @@ def get_wsc(
     test_data = test_data.map(
         lambda x: {
             "source": __generate_fewshot_prompts(
-                test_data, prompt_style, kshot=eval_kshot, seed=seed
+                test_data, prompt_style, eval_kshot, seed=seed
             )
             + __format_prompt(x, prompt_style),
             "target": f"{string.ascii_lowercase[x['label']]}{tokenizer.eos_token}",

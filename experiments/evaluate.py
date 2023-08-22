@@ -17,7 +17,6 @@ def main(
     log_dir=None,
     dataset=None,
     dataset_instance=None,
-    eval_kshot=0,
     data_dir=None,
     batch_size=1,
     model_name=None,
@@ -35,7 +34,6 @@ def main(
                 "fp8": fp8,
                 "model_dir": model_dir,
                 "peft_dir": peft_dir,
-                "eval_kshot": eval_kshot,
             }
         )
 
@@ -49,7 +47,6 @@ def main(
         _, val_data, test_data = get_dataset(
             dataset,
             instance=dataset_instance,
-            eval_kshot=eval_kshot,
             root=data_dir,
             tokenizer=tokenizer,
             seed=seed,

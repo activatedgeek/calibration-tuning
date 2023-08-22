@@ -37,7 +37,7 @@ def __format_prompt(sample, style, with_answer=False):
     raise NotImplementedError
 
 
-def __generate_fewshot_prompts(dataset, prompt_style, kshot=5, seed=None):
+def __generate_fewshot_prompts(dataset, prompt_style, kshot, seed=None):
     if kshot <= 0:
         return ""
 
@@ -84,9 +84,7 @@ def get_winogrande(
     train_data, val_data, test_data = [
         data.map(
             lambda x: {
-                "source": __generate_fewshot_prompts(
-                    data, prompt_style, kshot=k, seed=seed
-                )
+                "source": __generate_fewshot_prompts(data, prompt_style, k, seed=seed)
                 + __format_prompt(x, prompt_style),
                 "target": f"{string.ascii_lowercase[int(x['answer']) - 1]}{tokenizer.eos_token}",
             },

@@ -1,36 +1,25 @@
 import os
 import string
 import torch
-import numpy as np
 
 from .registry import register_dataset
 from .llm_utils import tokenize_for_causal_lm
 
 
 __all__ = [
-    "get_sciq",
+    "get_openbookqa",
 ]
 
 
 def __format_prompt(sample, style, with_answer=False):
     if style == "choice":
-        support = sample["support"]
-        question = sample["question"]
-
-        answer_order = np.random.permutation(4).tolist()
-        answer_map = [
-            sample["distractor1"],
-            sample["distractor2"],
-            sample["distractor3"],
-            sample["correct_answer"],
-        ]
-        answer_map = [answer_map[idx] for idx in answer_order]
-
-        answer = string.ascii_lowercase[answer_order.index(3)] + "</s>\n"
+        question = sample["question_stem"]
+        answer_map = sample["choices"]["text"]
+        answer = sample["answerKey"].lower() + "</s>\n"
 
         prompt = "\n".join(
             [
-                f"\n{support}\nQuestion:",
+                "Question:",
                 question,
                 "\nChoices:",
                 *[
@@ -43,10 +32,7 @@ def __format_prompt(sample, style, with_answer=False):
             ]
         )
 
-        if with_answer:
-            return prompt
-
-        return {"source": prompt, "target": answer}
+        return prompt
 
     raise NotImplementedError
 
@@ -57,7 +43,7 @@ def __generate_fewshot_prompts(dataset, prompt_style, kshot, seed=None):
 
     fewshot_prompt = "\n".join(
         [
-            "The following are multiple choice questions.\n",
+            "The following are comprehension passages with multiple choice answers.\n",
             *[
                 __format_prompt(dataset[idx], prompt_style, with_answer=True)
                 for idx in torch.randperm(
@@ -66,44 +52,44 @@ def __generate_fewshot_prompts(dataset, prompt_style, kshot, seed=None):
             ],
         ]
     )
-    fewshot_prompt = fewshot_prompt + "\nNow, answer the next question.\n\n"
+    fewshot_prompt = (
+        fewshot_prompt + "\nNow, answer the next question after the passage.\n\n"
+    )
 
     return fewshot_prompt
 
 
-def get_sciq(
+def get_openbookqa(
     root=None,
     prompt_style=None,
     eval_kshot=0,
     tokenizer=None,
     num_workers=8,
     seed=None,
+    use_cache=True,
     **_,
 ):
     from datasets import load_dataset
 
-    dataset = load_dataset("sciq", cache_dir=os.environ.get("HF_DATASETS_CACHE", root))
-
-    def __map(x, data, k):
-        x_dict = __format_prompt(x, prompt_style)
-        x_dict["source"] = (
-            __generate_fewshot_prompts(data, prompt_style, k, seed=seed)
-            + x_dict["source"]
-        )
-        x_dict["target"] = x_dict["target"].rstrip()
-        return x_dict
+    dataset = load_dataset(
+        "openbookqa", cache_dir=os.environ.get("HF_DATASETS_CACHE", root)
+    )
+    if not use_cache:
+        dataset.cleanup_cache_files()
 
     train_data, val_data, test_data = [
         data.map(
-            lambda x: __map(x, data, k),
+            lambda x: {
+                "source": __generate_fewshot_prompts(data, prompt_style, k, seed=seed)
+                + __format_prompt(x, prompt_style),
+                "target": f"{x['answerKey'].lower()}{tokenizer.eos_token}",
+            },
             num_proc=num_workers,
             remove_columns=[
-                "question",
-                "distractor1",
-                "distractor2",
-                "distractor3",
-                "correct_answer",
-                "support",
+                "id",
+                "question_stem",
+                "choices",
+                "answerKey",
             ],
         ).map(
             lambda x: tokenize_for_causal_lm(tokenizer, x),
@@ -119,9 +105,9 @@ def get_sciq(
     return train_data, val_data, test_data
 
 
-@register_dataset
-def sciq(*args, **kwargs):
-    return get_sciq(
+@register_dataset(attrs=dict(task_tags=["qa"]))
+def obqa(*args, **kwargs):
+    return get_openbookqa(
         *args,
         **kwargs,
         prompt_style="choice",

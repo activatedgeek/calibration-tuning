@@ -37,7 +37,7 @@ def __format_prompt(sample, style, with_answer=False):
     raise NotImplementedError
 
 
-def __generate_fewshot_prompts(dataset, prompt_style, kshot=5, seed=None):
+def __generate_fewshot_prompts(dataset, prompt_style, kshot, seed=None):
     if kshot <= 0:
         return ""
 
@@ -64,11 +64,14 @@ def get_piqa(
     tokenizer=None,
     num_workers=8,
     seed=None,
+    use_cache=True,
     **_,
 ):
     from datasets import load_dataset
 
     dataset = load_dataset("piqa", cache_dir=os.environ.get("HF_DATASETS_CACHE", root))
+    if not use_cache:
+        dataset.cleanup_cache_files()
 
     ## NOTE: "test" split has no labels.
     data_splits = [
@@ -78,9 +81,7 @@ def get_piqa(
     train_data, val_data = [
         data.map(
             lambda x: {
-                "source": __generate_fewshot_prompts(
-                    data, prompt_style, kshot=k, seed=seed
-                )
+                "source": __generate_fewshot_prompts(data, prompt_style, k, seed=seed)
                 + __format_prompt(x, prompt_style),
                 "target": f"{string.ascii_lowercase[x['label']]}{tokenizer.eos_token}",
             },
@@ -102,7 +103,7 @@ def get_piqa(
     return train_data, val_data, None
 
 
-@register_dataset
+@register_dataset(attrs=dict(task_tags=["qa", "commonsense"]))
 def piqa(*args, **kwargs):
     return get_piqa(
         *args,
