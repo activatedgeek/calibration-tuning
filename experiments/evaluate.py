@@ -72,6 +72,7 @@ def main(
 
     if peft_dir is not None:
         model = PeftModel.from_pretrained(model, peft_dir)
+        logging.info(f"Loaded PEFT checkpoint from '{peft_dir}'")
 
     def _evaluate(_data):
         return evaluate_via_eos(

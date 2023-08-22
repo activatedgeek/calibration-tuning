@@ -13,11 +13,8 @@ __all__ = ["create_tokenizer", "create_model"]
 def create_tokenizer(
     size=None, model_dir=None, cache_dir=None, padding_side="right", use_fast=False, **_
 ):
-    if size is not None:
-        assert size in ["7b", "13b", "70b", "7b-chat", "13b-chat", "70b-chat"]
-
     tokenizer = LlamaTokenizer.from_pretrained(
-        model_dir or f"{os.environ.get('MODELDIR')}/models--meta-llama--Llama-2-{size}",
+        model_dir or f"meta-llama/Llama-2-{size}-hf",
         cache_dir=os.environ.get("MODELDIR", cache_dir),
         padding_side=padding_side,
         use_fast=use_fast,
@@ -27,11 +24,8 @@ def create_tokenizer(
 
 
 def create_model(size=None, model_dir=None, cache_dir=None, **kwargs):
-    if size is not None:
-        assert size in ["7b", "13b", "70b", "7b-chat", "13b-chat", "70b-chat"]
-
     return LlamaForCausalLM.from_pretrained(
-        model_dir or f"{os.environ.get('MODELDIR')}/models--meta-llama--Llama-2-{size}",
+        model_dir or f"meta-llama/Llama-2-{size}-hf",
         cache_dir=os.environ.get("MODELDIR", cache_dir),
         **kwargs,
     )
