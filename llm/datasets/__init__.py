@@ -20,6 +20,8 @@ def __setup():
         "alpaca",
         "boolq",
         "commonsense_qa",
+        "cosmos_qa",
+        "hellaswag",
         "mmlu",
         "nli",
         "obqa",
