@@ -30,8 +30,8 @@ def __format_prompt(sample, style, with_answer=False):
 
         prompt = "\n".join(
             [
-                f"\n{support}\nQuestion:",
-                question,
+                support,
+                f"\nQuestion:\n{question}",
                 "\nChoices:",
                 *[
                     f"  ({n}): {c}"
@@ -57,7 +57,7 @@ def __generate_fewshot_prompts(dataset, prompt_style, kshot, seed=None):
 
     fewshot_prompt = "\n".join(
         [
-            "The following are multiple choice questions.\n",
+            "The following are multiple choice science exam questions.\n",
             *[
                 __format_prompt(dataset[idx], prompt_style, with_answer=True)
                 for idx in torch.randperm(
@@ -78,11 +78,14 @@ def get_sciq(
     tokenizer=None,
     num_workers=8,
     seed=None,
+    use_cache=True,
     **_,
 ):
     from datasets import load_dataset
 
     dataset = load_dataset("sciq", cache_dir=os.environ.get("HF_DATASETS_CACHE", root))
+    if not use_cache:
+        dataset.cleanup_cache_files()
 
     def __map(x, data, k):
         x_dict = __format_prompt(x, prompt_style)
@@ -119,7 +122,7 @@ def get_sciq(
     return train_data, val_data, test_data
 
 
-@register_dataset
+@register_dataset(attrs=dict(task_tags=["qa"]))
 def sciq(*args, **kwargs):
     return get_sciq(
         *args,

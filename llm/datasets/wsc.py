@@ -65,6 +65,7 @@ def get_wsc(
     tokenizer=None,
     num_workers=8,
     seed=None,
+    use_cache=True,
     **_,
 ):
     from datasets import load_dataset
@@ -72,6 +73,8 @@ def get_wsc(
     dataset = load_dataset(
         "winograd_wsc", subset, cache_dir=os.environ.get("HF_DATASETS_CACHE", root)
     )
+    if not use_cache:
+        dataset.cleanup_cache_files()
 
     test_data = dataset.pop("test")
     test_data = test_data.map(
@@ -102,7 +105,7 @@ def get_wsc(
     return None, None, test_data
 
 
-@register_dataset
+@register_dataset(attrs=dict(task_tags=["coreference"]))
 def wsc(*args, **kwargs):
     return get_wsc(
         *args,

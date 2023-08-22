@@ -7,20 +7,20 @@ from .llm_utils import tokenize_for_causal_lm
 
 
 __all__ = [
-    "get_winogrande",
+    "get_arc",
 ]
 
 
 def __format_prompt(sample, style, with_answer=False):
     if style == "choice":
-        sentence = sample["sentence"]
-        answer_map = [sample["option1"], sample["option2"]]
-        answer = string.ascii_lowercase[int(sample["answer"]) - 1] + "</s>\n"
+        question = sample["question"]
+        answer_map = sample["choices"]["text"]
+        answer = sample["answerKey"].lower() + "</s>\n"
 
         prompt = "\n".join(
             [
-                "Sentence:",
-                sentence,
+                "Question:",
+                question,
                 "\nChoices:",
                 *[
                     f"  ({n}): {c}"
@@ -43,7 +43,7 @@ def __generate_fewshot_prompts(dataset, prompt_style, kshot, seed=None):
 
     fewshot_prompt = "\n".join(
         [
-            "The following are sentences with ambiguity.\n",
+            "The following are questions with multiple choice answers.\n",
             *[
                 __format_prompt(dataset[idx], prompt_style, with_answer=True)
                 for idx in torch.randperm(
@@ -52,12 +52,12 @@ def __generate_fewshot_prompts(dataset, prompt_style, kshot, seed=None):
             ],
         ]
     )
-    fewshot_prompt = fewshot_prompt + "\nNow, resolve the next ambiguity.\n\n"
+    fewshot_prompt = fewshot_prompt + "\nNow, answer the next question.\n\n"
 
     return fewshot_prompt
 
 
-def get_winogrande(
+def get_arc(
     root=None,
     subset=None,
     prompt_style=None,
@@ -71,48 +71,54 @@ def get_winogrande(
     from datasets import load_dataset
 
     dataset = load_dataset(
-        "winogrande", subset, cache_dir=os.environ.get("HF_DATASETS_CACHE", root)
+        "ai2_arc", subset, cache_dir=os.environ.get("HF_DATASETS_CACHE", root)
     )
     if not use_cache:
         dataset.cleanup_cache_files()
 
-    data_splits = [
-        data.filter(lambda x: x["answer"] in ["1", "2"])
-        for data in [
-            dataset.pop("train"),
-            dataset.pop("validation"),
-        ]
-    ]
-    train_data, val_data = [
+    train_data, val_data, test_data = [
         data.map(
             lambda x: {
                 "source": __generate_fewshot_prompts(data, prompt_style, k, seed=seed)
                 + __format_prompt(x, prompt_style),
-                "target": f"{string.ascii_lowercase[int(x['answer']) - 1]}{tokenizer.eos_token}",
+                "target": f"{x['answerKey'].lower()}{tokenizer.eos_token}",
             },
             num_proc=num_workers,
             remove_columns=[
-                "sentence",
-                "option1",
-                "option2",
-                "answer",
+                "id",
+                "question",
+                "choices",
+                "answerKey",
             ],
         ).map(
             lambda x: tokenize_for_causal_lm(tokenizer, x),
             num_proc=num_workers,
             remove_columns=["source", "target"],
         )
-        for data, k in zip(data_splits, [0, eval_kshot])
+        for data, k in zip(
+            [dataset.pop("train"), dataset.pop("validation"), dataset.pop("test")],
+            [0, eval_kshot, eval_kshot],
+        )
     ]
 
-    return train_data, val_data, None
+    return train_data, val_data, test_data
 
 
-@register_dataset(attrs=dict(task_tags=["coreference"]))
-def winogrande(*args, **kwargs):
-    return get_winogrande(
+@register_dataset(attrs=dict(task_tags=["qa"]))
+def arc(*args, **kwargs):
+    return get_arc(
         *args,
         **kwargs,
-        subset="winogrande_xl",
+        subset="ARC-Easy",
+        prompt_style="choice",
+    )
+
+
+@register_dataset(attrs=dict(task_tags=["qa"]))
+def arc_challenge(*args, **kwargs):
+    return get_arc(
+        *args,
+        **kwargs,
+        subset="ARC-Challenge",
         prompt_style="choice",
     )

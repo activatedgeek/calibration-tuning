@@ -18,10 +18,12 @@ def __setup():
 
     for n in [
         "alpaca",
+        "arc",
         "boolq",
         "commonsense_qa",
         "cosmos_qa",
         "hellaswag",
+        "math_qa",
         "mmlu",
         "nli",
         "obqa",
@@ -29,6 +31,7 @@ def __setup():
         "sciq",
         "story_cloze",
         "super_glue",
+        "trec",
         "truthful_qa",
         "winogrande",
         "wsc",

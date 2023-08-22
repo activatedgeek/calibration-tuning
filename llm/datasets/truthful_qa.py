@@ -102,7 +102,7 @@ def get_truthful_qa(
 
 
 @register_dataset
-def truthful_qa_mc1(*args, **kwargs):
+def truthful_qa(*args, **kwargs):
     return get_truthful_qa(
         *args,
         **kwargs,
