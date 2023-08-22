@@ -1,12 +1,11 @@
 import os
 import logging
-from accelerate import Accelerator
+from accelerate import PartialState as AcceleratorState
 from peft import LoraConfig, TaskType, get_peft_model, prepare_model_for_int8_training
 
 from llm.logging import set_logging, wandb
 from llm.datasets import get_dataset
 from llm.models import get_model, get_special_tokens
-from llm.utils.distributed import WaitForMainProcess
 from llm.utils.trainer import TrainingArguments, CalibrationTrainer
 
 
@@ -15,9 +14,7 @@ def main(
     seed=137,
     log_dir=None,
     dataset=None,
-    dataset_instance=None,
     data_dir=None,
-    eval_kshot=0,
     num_workers=8,
     batch_size=1,
     grad_acc=1,
@@ -66,7 +63,6 @@ def main(
         output_dir=log_dir,
         report_to="wandb",
         dataloader_num_workers=4,
-        eval_kshot=eval_kshot,
     )
 
     if accelerator.is_main_process:
@@ -76,9 +72,7 @@ def main(
                 seed=seed,
                 log_dir=log_dir,
                 dataset=dataset,
-                dataset_instance=dataset_instance,
                 data_dir=data_dir,
-                eval_kshot=eval_kshot,
                 num_workers=num_workers,
                 batch_size=batch_size,
                 grad_acc=grad_acc,
@@ -106,11 +100,9 @@ def main(
     )
     special_token_count = tokenizer.add_special_tokens(get_special_tokens(tokenizer))
 
-    with WaitForMainProcess(accelerator):
+    with accelerator.main_process_first():
         train_data, val_data, test_data = get_dataset(
             dataset,
-            instance=dataset_instance,
-            eval_kshot=eval_kshot,
             root=data_dir,
             tokenizer=tokenizer,
             seed=seed,
@@ -119,7 +111,7 @@ def main(
 
     model = get_model(
         model_name,
-        device_map="auto",
+        device_map={"": accelerator.local_process_index},
         load_in_8bit=fp8,
         model_dir=model_dir,
     )
@@ -160,7 +152,7 @@ def main(
 
 
 def entrypoint(log_dir=None, **kwargs):
-    accelerator = Accelerator()
+    accelerator = AcceleratorState()
 
     ## Only setup logging from one process.
     log_dir, finish_logging = (

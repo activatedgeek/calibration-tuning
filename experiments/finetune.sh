@@ -8,7 +8,5 @@ __PORT=${PORT:-$(shuf -i 2000-65000 -n 1)}
 torchrun --nnodes=${__NNODES} \
          --nproc_per_node=${__NPROC_PER_NODE} \
          --rdzv_endpoint=${__IP}:${__PORT} \
-            experiments/evaluate.py \
-                --model_name=llama2_7b \
+            experiments/finetune.py \
                 "${@}"
-    

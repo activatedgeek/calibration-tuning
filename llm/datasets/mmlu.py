@@ -166,7 +166,13 @@ def get_mmlu(
 
 
 @register_dataset(attrs=__ATTRS)
-def mmlu(*args, instance=None, **kwargs):
+def mmlu(*args, dataset_str=None, **kwargs):
+    d, instance = dataset_str.split(":")
+
+    assert d == "mmlu" and isinstance(
+        instance, str
+    ), f"Dataset string should be formatted as 'mmlu:<subset>', found {dataset_str}"
+
     return get_mmlu(
         *args,
         **kwargs,

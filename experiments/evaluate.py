@@ -7,7 +7,6 @@ from llm.logging import set_logging, wandb
 from llm.datasets import get_dataset, get_loader
 from llm.datasets.llm_utils import DataCollatorForSupervisedDataset
 from llm.models import get_model, get_special_tokens
-from llm.utils.distributed import WaitForMainProcess
 from llm.utils.evaluation import evaluate_via_eos
 
 
@@ -15,8 +14,8 @@ def main(
     accelerator,
     seed=137,
     log_dir=None,
+    eval_kshot=None,
     dataset=None,
-    dataset_instance=None,
     data_dir=None,
     batch_size=1,
     model_name=None,
@@ -29,11 +28,11 @@ def main(
             {
                 "seed": seed,
                 "dataset": dataset,
-                "dataset_instance": dataset_instance,
                 "model_name": model_name,
                 "fp8": fp8,
                 "model_dir": model_dir,
                 "peft_dir": peft_dir,
+                "eval_kshot": eval_kshot,
             }
         )
 
@@ -43,18 +42,18 @@ def main(
     )
     special_token_count = tokenizer.add_special_tokens(get_special_tokens(tokenizer))
 
-    with WaitForMainProcess(accelerator):
+    with accelerator.main_process_first():
+        _extra_args = dict()
+        ## NOTE: Conditional to avoid overriding default kshot specification in dataset definition.
+        if eval_kshot is not None:
+            _extra_args["eval_kshot"] = eval_kshot
         _, val_data, test_data = get_dataset(
-            dataset,
-            instance=dataset_instance,
-            root=data_dir,
-            tokenizer=tokenizer,
-            seed=seed,
+            dataset, root=data_dir, tokenizer=tokenizer, seed=seed, **_extra_args
         )
 
     model = get_model(
         model_name,
-        device_map="auto",
+        device_map={"": accelerator.local_process_index},
         load_in_8bit=fp8,
         model_dir=model_dir,
     )
@@ -87,11 +86,13 @@ def main(
             ),
         )
 
-    val_metrics = _evaluate(val_data)
-    logging.info(val_metrics, extra=dict(metrics=True, prefix="val"))
+    if val_data is not None:
+        val_metrics = _evaluate(val_data)
+        logging.info(val_metrics, extra=dict(metrics=True, prefix="val"))
 
-    test_metrics = _evaluate(test_data)
-    logging.info(test_metrics, extra=dict(metrics=True, prefix="test"))
+    if test_data is not None:
+        test_metrics = _evaluate(test_data)
+        logging.info(test_metrics, extra=dict(metrics=True, prefix="test"))
 
 
 def entrypoint(log_dir=None, **kwargs):

@@ -56,11 +56,13 @@ def list_datasets():
 
 
 def get_dataset(dataset, root=None, seed=42, train_subset=1, label_noise=0, **kwargs):
-    dataset_fn = get_dataset_fn(dataset)
+    dataset_fn = get_dataset_fn(dataset.split(":")[0])
 
     root = get_data_dir(data_dir=root)
 
-    train_data, val_data, test_data = dataset_fn(root=root, seed=seed, **kwargs)
+    train_data, val_data, test_data = dataset_fn(
+        root=root, seed=seed, dataset_str=dataset, **kwargs
+    )
 
     if label_noise > 0:
         train_data = LabelNoiseDataset(
