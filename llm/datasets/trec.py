@@ -14,7 +14,14 @@ __all__ = [
 def __format_prompt(sample, style, with_answer=False):
     if style == "choice":
         question = sample["text"]
-        answer_map = ["Abbreviation", "Entity", "Description and abstract concept", "Human being", "Location", "Numeric value"]
+        answer_map = [
+            "Abbreviation",
+            "Entity",
+            "Description and abstract concept",
+            "Human being",
+            "Location",
+            "Numeric value",
+        ]
         answer = string.ascii_lowercase[sample["coarse_label"]] + "</s>\n"
 
         prompt = "\n".join(
@@ -81,7 +88,7 @@ def get_trec(
                 "target": f"{string.ascii_lowercase[x['coarse_label']]}{tokenizer.eos_token}",
             },
             num_proc=num_workers,
-            remove_columns=['text', 'coarse_label', 'fine_label'],
+            remove_columns=["text", "coarse_label", "fine_label"],
         ).map(
             lambda x: tokenize_for_causal_lm(tokenizer, x),
             num_proc=num_workers,

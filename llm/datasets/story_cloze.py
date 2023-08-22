@@ -43,7 +43,7 @@ def __generate_fewshot_prompts(dataset, prompt_style, kshot, seed=None):
 
     fewshot_prompt = "\n".join(
         [
-            "The following are multiple choice questions.\n",
+            "The following are stories (with completitions).\n",
             *[
                 __format_prompt(dataset[idx], prompt_style, with_answer=True)
                 for idx in torch.randperm(
@@ -71,17 +71,15 @@ def get_story_cloze(
 
     ## NOTE: needs manual download.
     dataset = load_dataset(
-        "story_cloze", "2018", cache_dir=os.environ.get("HF_DATASETS_CACHE", root)
+        "story_cloze",
+        "2018",
+        data_dir=f"{os.environ.get('HF_DATASETS_CACHE', root)}/story_cloze",
+        cache_dir=os.environ.get("HF_DATASETS_CACHE", root),
     )
     if not use_cache:
         dataset.cleanup_cache_files()
 
-    ## NOTE: "test" split has no labels.
-    data_splits = [
-        data.filter(lambda x: x["label"] in [0, 1, 2], num_proc=num_workers)
-        for data in [dataset.pop("train"), dataset.pop("validation")]
-    ]
-    train_data, val_data = [
+    (val_data,) = [
         data.map(
             lambda x: {
                 "source": __generate_fewshot_prompts(data, prompt_style, k, seed=seed)
@@ -104,10 +102,10 @@ def get_story_cloze(
             num_proc=num_workers,
             remove_columns=["source", "target"],
         )
-        for data, k in zip(data_splits, [0, eval_kshot])
+        for data, k in zip([dataset.pop("validation")], [eval_kshot])
     ]
 
-    return train_data, val_data, None
+    return None, val_data, None
 
 
 @register_dataset(attrs=dict(task_tags=["commonsense"]))
