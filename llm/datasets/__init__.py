@@ -17,7 +17,6 @@ def __setup():
     from importlib import import_module
 
     for n in [
-        "alpaca",
         "arc",
         "boolq",
         "commonsense_qa",
