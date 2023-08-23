@@ -1,3 +1,4 @@
+import os
 import logging
 from accelerate import Accelerator
 from peft import PeftModel
@@ -96,11 +97,13 @@ def main(
 
 
 def entrypoint(log_dir=None, **kwargs):
+    log_dir = os.environ.get("WANDB_DIR", log_dir)
+
     accelerator = Accelerator()
 
     ## Only setup logging from one process.
     log_dir, finish_logging = (
-        set_logging(log_dir=log_dir) if accelerator.is_main_process else [None, None]
+        set_logging(log_dir) if accelerator.is_main_process else [None, None]
     )
     if accelerator.is_main_process:
         logging.info(f"Working with {accelerator.num_processes} process(es).")

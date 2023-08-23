@@ -2,6 +2,8 @@ from dataclasses import dataclass, field
 import torch
 import torch.nn.functional as F
 from transformers import Trainer, TrainingArguments
+from transformers.integrations import TrainerCallback
+from transformers.training_args import TrainingArguments
 
 from ..datasets.llm_utils import (
     DataCollatorForSupervisedDataset,
@@ -9,6 +11,26 @@ from ..datasets.llm_utils import (
 )
 from .evaluation import extract_eos_pos, evaluate_via_eos
 from .scheduler import AnyCosineScheduler
+
+
+__all__ = [
+    "WandbConfigUpdateCallback",
+    "TrainingArguments",
+    "CalibrationTrainer",
+]
+
+
+class WandbConfigUpdateCallback(TrainerCallback):
+    def __init__(self, config):
+        self._config = config
+
+    def on_train_begin(self, _args, state, _control, **_):
+        if state.is_world_process_zero:
+            import wandb
+
+            wandb.config.update(self._config, allow_val_change=True)
+
+            del self._config
 
 
 @dataclass

@@ -1,16 +1,20 @@
-import logging
+import os
 from accelerate import PartialState as AcceleratorState
 from peft import (
+    PeftModel,
     LoraConfig,
     TaskType,
     get_peft_model,
     prepare_model_for_kbit_training,
 )
 
-from llm.logging import set_logging, wandb
 from llm.datasets import get_dataset
 from llm.models import get_model, get_special_tokens
-from llm.utils.trainer import TrainingArguments, CalibrationTrainer
+from llm.utils.trainer import (
+    TrainingArguments,
+    CalibrationTrainer,
+    WandbConfigUpdateCallback,
+)
 
 
 def main(
@@ -70,35 +74,20 @@ def main(
         dataloader_num_workers=4,
     )
 
-    if accelerator.is_main_process:
-        ## Manually report parameters not reported by Trainer.
-        wandb.config.update(
-            dict(
-                seed=seed,
-                log_dir=log_dir,
-                dataset=dataset,
-                data_dir=data_dir,
-                num_workers=num_workers,
-                batch_size=batch_size,
-                grad_acc=grad_acc,
-                model_name=model_name,
-                model_dir=model_dir,
-                peft_dir=peft_dir,
-                fp8=fp8,
-                lora_rank=lora_rank,
-                lora_alpha=lora_alpha,
-                lora_dropout=lora_dropout,
-                lr=lr,
-                adam_beta2=adam_beta2,
-                unc_decay=unc_decay,
-                unc_decay_ratio=unc_decay_ratio,
-                unc_normalize=unc_normalize,
-                weight_decay=weight_decay,
-                loss_mode=loss_mode,
-                warmup_steps=warmup_steps,
-                max_steps=max_steps,
-            )
+    wandb_config_callback = WandbConfigUpdateCallback(
+        dict(
+            seed=seed,
+            dataset=dataset,
+            data_dir=data_dir,
+            model_name=model_name,
+            model_dir=model_dir,
+            peft_dir=peft_dir,
+            fp8=fp8,
+            lora_rank=lora_rank,
+            lora_alpha=lora_alpha,
+            lora_dropout=lora_dropout,
         )
+    )
 
     tokenizer = get_model(
         f"{model_name}_tokenizer",
@@ -121,6 +110,7 @@ def main(
         load_in_8bit=fp8,
         model_dir=model_dir,
     )
+    model.config.use_cache = False
 
     ## NOTE: Token embeddings aren't trained.
     model.resize_token_embeddings(len(tokenizer))
@@ -137,7 +127,11 @@ def main(
 
     model = prepare_model_for_kbit_training(model)
 
-    if peft_dir is None:
+    if peft_dir is not None:
+        model = PeftModel.from_pretrained(model, peft_dir)
+        if accelerator.is_main_process:
+            print(f"[INFO]: Loaded PEFT checkpoint from '{peft_dir}'")
+    else:
         peft_config = LoraConfig(
             task_type=TaskType.CAUSAL_LM,
             bias="none",
@@ -154,25 +148,22 @@ def main(
         eval_dataset=val_data,
         test_dataset=test_data,
         tokenizer=tokenizer,
+        callbacks=[wandb_config_callback],
     )
+    ## FIXME: peft models fail loading optimizer state.
     trainer.train(resume_from_checkpoint=peft_dir)
     trainer.save_state()
 
 
 def entrypoint(log_dir=None, **kwargs):
+    log_dir = os.environ.get("WANDB_DIR", log_dir)
+
     accelerator = AcceleratorState()
 
-    ## Only setup logging from one process.
-    log_dir, finish_logging = (
-        set_logging(log_dir=log_dir) if accelerator.is_main_process else [None, None]
-    )
     if accelerator.is_main_process:
-        logging.info(f"Working with {accelerator.num_processes} process(es).")
+        print(f"[INFO] Working with {accelerator.num_processes} process(es).")
 
     main(accelerator, **kwargs, log_dir=log_dir)
-
-    if accelerator.is_main_process:
-        finish_logging()
 
 
 if __name__ == "__main__":
