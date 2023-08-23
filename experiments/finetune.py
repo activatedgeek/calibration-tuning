@@ -1,7 +1,11 @@
-import os
 import logging
 from accelerate import PartialState as AcceleratorState
-from peft import LoraConfig, TaskType, get_peft_model, prepare_model_for_int8_training
+from peft import (
+    LoraConfig,
+    TaskType,
+    get_peft_model,
+    prepare_model_for_kbit_training,
+)
 
 from llm.logging import set_logging, wandb
 from llm.datasets import get_dataset
@@ -20,6 +24,7 @@ def main(
     grad_acc=1,
     model_name=None,
     model_dir=None,
+    peft_dir=None,
     fp8=True,
     lora_rank=8,
     lora_alpha=32,
@@ -32,7 +37,7 @@ def main(
     weight_decay=0.0,
     loss_mode="reg",
     warmup_steps=100,
-    epochs=1,
+    max_steps=1000,
 ):
     training_args = TrainingArguments(
         fsdp=False,
@@ -40,7 +45,7 @@ def main(
         bf16=False,
         gradient_checkpointing=False,
         ddp_find_unused_parameters=False,
-        num_train_epochs=epochs,
+        max_steps=max_steps,
         eval_steps=1000,
         save_steps=1000,
         logging_steps=100,
@@ -78,6 +83,7 @@ def main(
                 grad_acc=grad_acc,
                 model_name=model_name,
                 model_dir=model_dir,
+                peft_dir=peft_dir,
                 fp8=fp8,
                 lora_rank=lora_rank,
                 lora_alpha=lora_alpha,
@@ -90,7 +96,7 @@ def main(
                 weight_decay=weight_decay,
                 loss_mode=loss_mode,
                 warmup_steps=warmup_steps,
-                epochs=epochs,
+                max_steps=max_steps,
             )
         )
 
@@ -129,15 +135,17 @@ def main(
             :-special_token_count
         ].mean(dim=0, keepdim=True)
 
-    model = prepare_model_for_int8_training(model)
-    peft_config = LoraConfig(
-        task_type=TaskType.CAUSAL_LM,
-        bias="none",
-        r=lora_rank,
-        lora_alpha=lora_alpha,
-        lora_dropout=lora_dropout,
-    )
-    model = get_peft_model(model, peft_config)
+    model = prepare_model_for_kbit_training(model)
+
+    if peft_dir is None:
+        peft_config = LoraConfig(
+            task_type=TaskType.CAUSAL_LM,
+            bias="none",
+            r=lora_rank,
+            lora_alpha=lora_alpha,
+            lora_dropout=lora_dropout,
+        )
+        model = get_peft_model(model, peft_config)
 
     trainer = CalibrationTrainer(
         model=model,
@@ -147,7 +155,7 @@ def main(
         test_dataset=test_data,
         tokenizer=tokenizer,
     )
-    trainer.train()
+    trainer.train(resume_from_checkpoint=peft_dir)
     trainer.save_state()
 
 

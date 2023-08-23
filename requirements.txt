@@ -15,6 +15,5 @@ transformers
 sentencepiece
 datasets
 accelerate
-evaluate
 peft
 bitsandbytes

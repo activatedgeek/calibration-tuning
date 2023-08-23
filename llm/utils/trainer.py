@@ -14,7 +14,7 @@ from .scheduler import AnyCosineScheduler
 @dataclass
 class TrainingArguments(TrainingArguments):
     unc_decay_ratio: float = field(default=1.0)
-    unc_decay: float = field(default=0.1)
+    unc_decay: float = field(default=0.0)
     unc_normalize: bool = field(default=True)
     loss_mode: str = field(default="reg")
 
@@ -39,12 +39,9 @@ class CalibrationTrainer(Trainer):
 
         self.uq_ans_token_vec = torch.tensor([_no_token[-1], _yes_token[-1]])
 
-        decay_steps = int(
-            self.args.unc_decay_ratio
-            * self.args.num_train_epochs
-            * len(self.get_train_dataloader())
+        self.unc_decay = AnyCosineScheduler(
+            self.args.unc_decay, int(self.args.unc_decay_ratio * self.args.max_steps)
         )
-        self.unc_decay = AnyCosineScheduler(self.args.unc_decay, decay_steps)
 
     def compute_unc_loss(self, model, inputs, outputs):
         input_ids, labels, output_ids = (

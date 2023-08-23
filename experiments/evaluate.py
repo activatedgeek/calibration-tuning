@@ -1,4 +1,3 @@
-import os
 import logging
 from accelerate import Accelerator
 from peft import PeftModel
