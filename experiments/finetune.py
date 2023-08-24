@@ -1,12 +1,12 @@
 import os
 from accelerate import PartialState as AcceleratorState
 from peft import (
-    PeftModel,
     LoraConfig,
     TaskType,
     get_peft_model,
     prepare_model_for_kbit_training,
 )
+from transformers.trainer_utils import PREFIX_CHECKPOINT_DIR, get_last_checkpoint
 
 from llm.datasets import get_dataset
 from llm.models import get_model, get_special_tokens
@@ -42,67 +42,13 @@ def main(
     loss_mode="reg",
     warmup_steps=100,
     max_steps=1000,
+    save_steps=1000,
 ):
-    training_args = TrainingArguments(
-        fsdp=False,
-        fp16=not fp8,
-        bf16=False,
-        gradient_checkpointing=False,
-        ddp_find_unused_parameters=False,
-        max_steps=max_steps,
-        eval_steps=1000,
-        save_steps=1000,
-        logging_steps=100,
-        log_on_each_node=False,
-        evaluation_strategy="steps",
-        per_device_train_batch_size=batch_size,
-        per_device_eval_batch_size=batch_size,
-        loss_mode=loss_mode,
-        optim="adamw_torch",
-        adam_beta1=0.9,
-        adam_beta2=adam_beta2,
-        learning_rate=lr,
-        lr_scheduler_type="cosine",
-        warmup_steps=warmup_steps,
-        weight_decay=weight_decay,
-        unc_decay=unc_decay,
-        unc_decay_ratio=unc_decay_ratio,
-        unc_normalize=unc_normalize,
-        gradient_accumulation_steps=grad_acc,
-        output_dir=log_dir,
-        report_to="wandb",
-        dataloader_num_workers=4,
-    )
-
-    wandb_config_callback = WandbConfigUpdateCallback(
-        dict(
-            seed=seed,
-            dataset=dataset,
-            data_dir=data_dir,
-            model_name=model_name,
-            model_dir=model_dir,
-            peft_dir=peft_dir,
-            fp8=fp8,
-            lora_rank=lora_rank,
-            lora_alpha=lora_alpha,
-            lora_dropout=lora_dropout,
-        )
-    )
-
     tokenizer = get_model(
         f"{model_name}_tokenizer",
         model_dir=model_dir,
     )
     special_token_count = tokenizer.add_special_tokens(get_special_tokens(tokenizer))
-
-    with accelerator.main_process_first():
-        train_data, val_data, test_data = get_dataset(
-            dataset,
-            root=data_dir,
-            tokenizer=tokenizer,
-            seed=seed,
-            num_workers=num_workers,
-        )
 
     model = get_model(
         model_name,
@@ -128,29 +74,89 @@ def main(
     model = prepare_model_for_kbit_training(model)
 
     if peft_dir is not None:
-        model = PeftModel.from_pretrained(model, peft_dir)
+        if PREFIX_CHECKPOINT_DIR not in peft_dir:
+            peft_dir = get_last_checkpoint(peft_dir)
+
+            assert peft_dir is not None, f"No checkpoint found in '{peft_dir}'."
+
+        peft_config = LoraConfig.from_pretrained(peft_dir)
+
+        lora_rank = peft_config.r
+        lora_alpha = peft_config.lora_alpha
+        lora_dropout = peft_config.lora_dropout
+
         if accelerator.is_main_process:
-            print(f"[INFO]: Loaded PEFT checkpoint from '{peft_dir}'")
-    else:
-        peft_config = LoraConfig(
-            task_type=TaskType.CAUSAL_LM,
-            bias="none",
-            r=lora_rank,
-            lora_alpha=lora_alpha,
-            lora_dropout=lora_dropout,
+            print(f"[INFO]: Loaded LoRA config from '{peft_dir}'.")
+
+    peft_config = LoraConfig(
+        task_type=TaskType.CAUSAL_LM,
+        bias="none",
+        r=lora_rank,
+        lora_alpha=lora_alpha,
+        lora_dropout=lora_dropout,
+    )
+    model = get_peft_model(model, peft_config)
+
+    with accelerator.main_process_first():
+        train_data, val_data, test_data = get_dataset(
+            dataset,
+            root=data_dir,
+            tokenizer=tokenizer,
+            seed=seed,
+            num_workers=num_workers,
         )
-        model = get_peft_model(model, peft_config)
 
     trainer = CalibrationTrainer(
         model=model,
-        args=training_args,
+        args=TrainingArguments(
+            fsdp=False,
+            fp16=not fp8,
+            bf16=False,
+            gradient_checkpointing=False,
+            ddp_find_unused_parameters=False,
+            max_steps=max_steps,
+            eval_steps=1000,
+            save_steps=save_steps,
+            logging_steps=100,
+            log_on_each_node=False,
+            evaluation_strategy="steps",
+            per_device_train_batch_size=batch_size,
+            per_device_eval_batch_size=batch_size,
+            loss_mode=loss_mode,
+            optim="adamw_torch",
+            adam_beta1=0.9,
+            adam_beta2=adam_beta2,
+            learning_rate=lr,
+            lr_scheduler_type="cosine",
+            warmup_steps=warmup_steps,
+            weight_decay=weight_decay,
+            unc_decay=unc_decay,
+            unc_decay_ratio=unc_decay_ratio,
+            unc_normalize=unc_normalize,
+            gradient_accumulation_steps=grad_acc,
+            output_dir=log_dir,
+            report_to="wandb",
+            dataloader_num_workers=4,
+        ),
         train_dataset=train_data,
         eval_dataset=val_data,
         test_dataset=test_data,
         tokenizer=tokenizer,
-        callbacks=[wandb_config_callback],
+        callbacks=[
+            WandbConfigUpdateCallback(
+                seed=seed,
+                dataset=dataset,
+                data_dir=data_dir,
+                model_name=model_name,
+                model_dir=model_dir,
+                peft_dir=peft_dir,
+                fp8=fp8,
+                lora_rank=lora_rank,
+                lora_alpha=lora_alpha,
+                lora_dropout=lora_dropout,
+            ),
+        ],
     )
-    ## FIXME: peft models fail loading optimizer state.
     trainer.train(resume_from_checkpoint=peft_dir)
     trainer.save_state()
 
@@ -161,7 +167,7 @@ def entrypoint(log_dir=None, **kwargs):
     accelerator = AcceleratorState()
 
     if accelerator.is_main_process:
-        print(f"[INFO] Working with {accelerator.num_processes} process(es).")
+        print(f"[INFO]: Working with {accelerator.num_processes} process(es).")
 
     main(accelerator, **kwargs, log_dir=log_dir)
 

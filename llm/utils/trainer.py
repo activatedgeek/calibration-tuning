@@ -21,7 +21,7 @@ __all__ = [
 
 
 class WandbConfigUpdateCallback(TrainerCallback):
-    def __init__(self, config):
+    def __init__(self, **config):
         self._config = config
 
     def on_train_begin(self, _args, state, _control, **_):
@@ -31,6 +31,20 @@ class WandbConfigUpdateCallback(TrainerCallback):
             wandb.config.update(self._config, allow_val_change=True)
 
             del self._config
+
+
+class SchedulerInitCallback(TrainerCallback):
+    def __init__(self, scheduler):
+        super().__init__()
+
+        self.scheduler = scheduler
+
+    def on_train_begin(self, args, state, _control, **_):
+        self.scheduler.setup(
+            init_value=args.unc_decay,
+            T_max=int(args.unc_decay_ratio * args.max_steps),
+            last_epoch=state.global_step,
+        )
 
 
 @dataclass
@@ -61,9 +75,8 @@ class CalibrationTrainer(Trainer):
 
         self.uq_ans_token_vec = torch.tensor([_no_token[-1], _yes_token[-1]])
 
-        self.unc_decay = AnyCosineScheduler(
-            self.args.unc_decay, int(self.args.unc_decay_ratio * self.args.max_steps)
-        )
+        self.unc_decay = AnyCosineScheduler()
+        self.add_callback(SchedulerInitCallback(self.unc_decay))
 
     def compute_unc_loss(self, model, inputs, outputs):
         input_ids, labels, output_ids = (

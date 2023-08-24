@@ -3,6 +3,7 @@ import logging
 from tqdm.auto import tqdm
 from accelerate import Accelerator
 from peft import PeftModel
+from transformers.trainer_utils import PREFIX_CHECKPOINT_DIR, get_last_checkpoint
 
 from llm.logging import set_logging, wandb
 from llm.datasets import get_dataset, get_loader, list_datasets, get_dataset_attrs
@@ -111,7 +112,13 @@ def main(
         ].mean(dim=0, keepdim=True)
 
     if peft_dir is not None:
+        if PREFIX_CHECKPOINT_DIR not in peft_dir:
+            peft_dir = get_last_checkpoint(peft_dir)
+
+            assert peft_dir is not None, f"No checkpoint found in '{peft_dir}'."
+
         model = PeftModel.from_pretrained(model, peft_dir)
+
         logging.info(f"Loaded PEFT checkpoint from '{peft_dir}'")
 
     all_datasets = list(filter(lambda x: x != "mmlu", list_datasets())) + [
