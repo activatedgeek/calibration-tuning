@@ -1,9 +1,12 @@
 from tqdm.auto import tqdm
 import torch
-import torch.nn.functional as F
 
 from .third_party.calibration import calibration
-from ..datasets.llm_utils import tokenize_for_causal_lm
+from ..datasets import get_dataset, get_loader
+from ..datasets.llm_utils import (
+    tokenize_for_causal_lm,
+    DataCollatorForSupervisedDataset,
+)
 
 
 def extract_eos_pos(tokenizer, labels):
@@ -120,3 +123,67 @@ def evaluate_via_eos(accelerator, model, tokenizer, loader):
         "unc_ece": UNC_ece,
         "qa_unc_ece": qa_UNC_ece,
     }
+
+
+def evaluate_dataset(
+    accelerator,
+    model,
+    tokenizer,
+    dataset,
+    seed=137,
+    batch_size=1,
+    data_dir=None,
+    eval_kshot=None,
+    use_cache=True,
+):
+    with accelerator.main_process_first():
+        _extra_args = dict()
+        ## NOTE: Conditional to avoid overriding default kshot specification in dataset definition.
+        if eval_kshot is not None:
+            _extra_args["eval_kshot"] = eval_kshot
+        _, val_data, test_data = get_dataset(
+            dataset,
+            root=data_dir,
+            tokenizer=tokenizer,
+            seed=seed,
+            use_cache=use_cache,
+            **_extra_args,
+        )
+
+    val_metrics = None
+    if val_data is not None:
+        val_metrics = evaluate_via_eos(
+            accelerator,
+            model,
+            tokenizer,
+            get_loader(
+                val_data,
+                batch_size=batch_size,
+                collate_fn=DataCollatorForSupervisedDataset(tokenizer),
+                accelerator=accelerator,
+            ),
+        )
+        val_metrics["seed"] = seed
+        val_metrics["eval_kshot"] = eval_kshot
+        val_metrics["split"] = "validation"
+        val_metrics["dataset"] = dataset
+
+    test_metrics = None
+    if test_data is not None:
+        test_metrics = evaluate_via_eos(
+            accelerator,
+            model,
+            tokenizer,
+            get_loader(
+                test_data,
+                batch_size=batch_size,
+                collate_fn=DataCollatorForSupervisedDataset(tokenizer),
+                accelerator=accelerator,
+            ),
+        )
+        test_metrics["seed"] = seed
+        test_metrics["eval_kshot"] = eval_kshot
+        test_metrics["split"] = "test"
+        test_metrics["dataset"] = dataset
+
+    return val_metrics, test_metrics

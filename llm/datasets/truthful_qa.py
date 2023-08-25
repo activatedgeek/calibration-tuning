@@ -69,6 +69,7 @@ def get_truthful_qa(
     tokenizer=None,
     num_workers=8,
     seed=None,
+    use_cache=True,
     **_,
 ):
     from datasets import load_dataset
@@ -76,6 +77,8 @@ def get_truthful_qa(
     dataset = load_dataset(
         "truthful_qa", subset, cache_dir=os.environ.get("HF_DATASETS_CACHE", root)
     )
+    if not use_cache:
+        dataset.cleanup_cache_files()
 
     val_data = dataset.pop("validation")
     val_data = val_data.map(

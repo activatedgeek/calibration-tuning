@@ -43,6 +43,7 @@ def main(
     warmup_steps=100,
     max_steps=1000,
     save_steps=1000,
+    use_dataset_cache=True,
 ):
     tokenizer = get_model(
         f"{model_name}_tokenizer",
@@ -104,6 +105,7 @@ def main(
             tokenizer=tokenizer,
             seed=seed,
             num_workers=num_workers,
+            use_cache=use_dataset_cache,
         )
 
     trainer = CalibrationTrainer(

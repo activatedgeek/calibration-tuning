@@ -1,65 +1,15 @@
 import os
 import logging
 from tqdm.auto import tqdm
+import pandas as pd
 from accelerate import Accelerator
 from peft import PeftModel
 from transformers.trainer_utils import PREFIX_CHECKPOINT_DIR, get_last_checkpoint
 
 from llm.logging import set_logging, wandb
-from llm.datasets import get_dataset, get_loader, list_datasets, get_dataset_attrs
-from llm.datasets.llm_utils import DataCollatorForSupervisedDataset
+from llm.datasets import list_datasets, get_dataset_attrs
 from llm.models import get_model, get_special_tokens
-from llm.utils.evaluation import evaluate_via_eos
-
-
-def evaluate_dataset(
-    accelerator,
-    model,
-    tokenizer,
-    dataset,
-    seed=137,
-    batch_size=1,
-    data_dir=None,
-    eval_kshot=None,
-):
-    with accelerator.main_process_first():
-        _extra_args = dict()
-        ## NOTE: Conditional to avoid overriding default kshot specification in dataset definition.
-        if eval_kshot is not None:
-            _extra_args["eval_kshot"] = eval_kshot
-        _, val_data, test_data = get_dataset(
-            dataset, root=data_dir, tokenizer=tokenizer, seed=seed, **_extra_args
-        )
-
-    val_metrics = None
-    if val_data is not None:
-        val_metrics = evaluate_via_eos(
-            accelerator,
-            model,
-            tokenizer,
-            get_loader(
-                val_data,
-                batch_size=batch_size,
-                collate_fn=DataCollatorForSupervisedDataset(tokenizer),
-                accelerator=accelerator,
-            ),
-        )
-
-    test_metrics = None
-    if test_data is not None:
-        test_metrics = evaluate_via_eos(
-            accelerator,
-            model,
-            tokenizer,
-            get_loader(
-                test_data,
-                batch_size=batch_size,
-                collate_fn=DataCollatorForSupervisedDataset(tokenizer),
-                accelerator=accelerator,
-            ),
-        )
-
-    return val_metrics, test_metrics
+from llm.utils.evaluation import evaluate_dataset
 
 
 def main(
@@ -73,6 +23,7 @@ def main(
     fp8=True,
     model_dir=None,
     peft_dir=None,
+    use_dataset_cache=True,
 ):
     if accelerator.is_main_process:
         wandb.config.update(
@@ -121,10 +72,12 @@ def main(
 
         logging.info(f"Loaded PEFT checkpoint from '{peft_dir}'")
 
-    all_datasets = list(filter(lambda x: x != "mmlu", list_datasets())) + [
-        f"mmlu:{task}" for task in get_dataset_attrs("mmlu").get("tasks")
-    ]
+    all_datasets = sorted(
+        list(filter(lambda x: x != "mmlu", list_datasets()))
+        + [f"mmlu:{task}" for task in get_dataset_attrs("mmlu").get("tasks")]
+    )
 
+    all_metrics = []
     for dataset in tqdm(all_datasets):
         val_metrics, test_metrics = evaluate_dataset(
             accelerator,
@@ -135,13 +88,16 @@ def main(
             batch_size=batch_size,
             data_dir=data_dir,
             eval_kshot=eval_kshot,
+            use_cache=use_dataset_cache,
         )
-        if val_metrics is not None:
-            logging.info(val_metrics, extra=dict(metrics=True, prefix=f"{dataset}/val"))
-        if test_metrics is not None:
-            logging.info(
-                test_metrics, extra=dict(metrics=True, prefix=f"{dataset}/test")
-            )
+
+        all_metrics += list(
+            filter(lambda m: m is not None, [val_metrics, test_metrics])
+        )
+        logging.info(
+            {"metrics": wandb.Table(dataframe=pd.DataFrame(all_metrics))},
+            extra=dict(metrics=True),
+        )
 
 
 def entrypoint(log_dir=None, **kwargs):

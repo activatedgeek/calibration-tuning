@@ -125,6 +125,7 @@ def get_mmlu(
     tokenizer=None,
     num_workers=8,
     seed=None,
+    use_cache=True,
     **_,
 ):
     from datasets import load_dataset
@@ -132,6 +133,8 @@ def get_mmlu(
     dataset = load_dataset(
         "cais/mmlu", instance, cache_dir=os.environ.get("HF_DATASETS_CACHE", root)
     )
+    if not use_cache:
+        dataset.cleanup_cache_files()
 
     dev_data = dataset.pop("dev")
 
