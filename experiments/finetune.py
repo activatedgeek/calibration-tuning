@@ -1,4 +1,4 @@
-import os
+import logging
 from accelerate import PartialState as AcceleratorState
 from peft import (
     PeftModel,
@@ -10,6 +10,7 @@ from peft import (
 
 from llm.datasets import get_dataset
 from llm.models import get_model, get_special_tokens
+from llm.logging import set_logging
 from llm.utils.trainer import (
     TrainingArguments,
     CalibrationTrainer,
@@ -158,14 +159,17 @@ def main(
 
 
 def entrypoint(log_dir=None, **kwargs):
-    log_dir = os.environ.get("WANDB_DIR", log_dir)
-
     accelerator = AcceleratorState()
 
+    log_dir, finish_logging = set_logging(
+        log_dir=log_dir, use_wandb=accelerator.is_main_process
+    )
     if accelerator.is_main_process:
-        print(f"[INFO]: Working with {accelerator.num_processes} process(es).")
+        logging.info(f"Working with {accelerator.num_processes} process(es).")
 
     main(accelerator, **kwargs, log_dir=log_dir)
+
+    finish_logging()
 
 
 if __name__ == "__main__":

@@ -53,7 +53,14 @@ def get_log_dir(log_dir=None):
     return log_dir
 
 
-def set_logging(log_dir, metrics_extra_key="metrics", use_wandb=True):
+def set_logging(
+    log_dir=None, metrics_extra_key="metrics", use_wandb=True, generate_log_dir=False
+):
+    log_dir = log_dir or os.environ.get(
+        "WANDB_DIR", get_log_dir() if generate_log_dir else None
+    )
+    assert log_dir is not None, "Missing log_dir."
+
     os.makedirs(log_dir, exist_ok=True)
 
     if use_wandb:

@@ -89,21 +89,17 @@ def main(
 
 
 def entrypoint(log_dir=None, **kwargs):
-    log_dir = os.environ.get("WANDB_DIR", log_dir)
-
     accelerator = Accelerator()
 
-    ## Only setup logging from one process.
-    log_dir, finish_logging = (
-        set_logging(log_dir) if accelerator.is_main_process else [None, None]
+    log_dir, finish_logging = set_logging(
+        log_dir=log_dir, use_wandb=accelerator.is_main_process
     )
     if accelerator.is_main_process:
         logging.info(f"Working with {accelerator.num_processes} process(es).")
 
     main(accelerator, **kwargs, log_dir=log_dir)
 
-    if accelerator.is_main_process:
-        finish_logging()
+    finish_logging()
 
 
 if __name__ == "__main__":
