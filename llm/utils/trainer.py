@@ -4,6 +4,7 @@ import torch.nn.functional as F
 from transformers import Trainer, TrainingArguments
 from transformers.integrations import TrainerCallback
 from transformers.training_args import TrainingArguments
+from transformers.trainer_utils import PREFIX_CHECKPOINT_DIR, get_last_checkpoint
 
 from ..datasets.llm_utils import (
     DataCollatorForSupervisedDataset,
@@ -18,6 +19,15 @@ __all__ = [
     "TrainingArguments",
     "CalibrationTrainer",
 ]
+
+
+def get_last_checkpoint_path(path):
+    if PREFIX_CHECKPOINT_DIR not in path:
+        path = get_last_checkpoint(path)
+
+    assert path is not None, f"No checkpoint found in '{path}'."
+
+    return path
 
 
 class WandbConfigUpdateCallback(TrainerCallback):

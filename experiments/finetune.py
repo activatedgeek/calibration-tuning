@@ -1,12 +1,12 @@
 import os
 from accelerate import PartialState as AcceleratorState
 from peft import (
+    PeftModel,
     LoraConfig,
     TaskType,
     get_peft_model,
     prepare_model_for_kbit_training,
 )
-from transformers.trainer_utils import PREFIX_CHECKPOINT_DIR, get_last_checkpoint
 
 from llm.datasets import get_dataset
 from llm.models import get_model, get_special_tokens
@@ -14,6 +14,7 @@ from llm.utils.trainer import (
     TrainingArguments,
     CalibrationTrainer,
     WandbConfigUpdateCallback,
+    get_last_checkpoint_path,
 )
 
 
@@ -75,28 +76,21 @@ def main(
     model = prepare_model_for_kbit_training(model)
 
     if peft_dir is not None:
-        if PREFIX_CHECKPOINT_DIR not in peft_dir:
-            peft_dir = get_last_checkpoint(peft_dir)
+        peft_dir = get_last_checkpoint_path(peft_dir)
 
-            assert peft_dir is not None, f"No checkpoint found in '{peft_dir}'."
-
-        peft_config = LoraConfig.from_pretrained(peft_dir)
-
-        lora_rank = peft_config.r
-        lora_alpha = peft_config.lora_alpha
-        lora_dropout = peft_config.lora_dropout
+        model = PeftModel.from_pretrained(model, peft_dir, is_trainable=True)
 
         if accelerator.is_main_process:
-            print(f"[INFO]: Loaded LoRA config from '{peft_dir}'.")
-
-    peft_config = LoraConfig(
-        task_type=TaskType.CAUSAL_LM,
-        bias="none",
-        r=lora_rank,
-        lora_alpha=lora_alpha,
-        lora_dropout=lora_dropout,
-    )
-    model = get_peft_model(model, peft_config)
+            print(f"[INFO]: Loaded PEFT checkpoint from '{peft_dir}'")
+    else:
+        peft_config = LoraConfig(
+            task_type=TaskType.CAUSAL_LM,
+            bias="none",
+            r=lora_rank,
+            lora_alpha=lora_alpha,
+            lora_dropout=lora_dropout,
+        )
+        model = get_peft_model(model, peft_config)
 
     with accelerator.main_process_first():
         train_data, val_data, test_data = get_dataset(
