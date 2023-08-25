@@ -1,3 +1,5 @@
+import os
+from functools import partial
 import logging
 from accelerate import PartialState as AcceleratorState
 from peft import (
@@ -10,7 +12,7 @@ from peft import (
 
 from llm.datasets import get_dataset
 from llm.models import get_model, get_special_tokens
-from llm.logging import set_logging
+from llm.logging import set_logging, wandb, maybe_load_wandb_kwargs
 from llm.utils.trainer import (
     TrainingArguments,
     CalibrationTrainer,
@@ -20,7 +22,6 @@ from llm.utils.trainer import (
 
 
 def main(
-    accelerator,
     seed=137,
     log_dir=None,
     dataset=None,
@@ -47,6 +48,8 @@ def main(
     save_steps=1000,
     use_dataset_cache=True,
 ):
+    accelerator = AcceleratorState()
+
     tokenizer = get_model(
         f"{model_name}_tokenizer",
         model_dir=model_dir,
@@ -161,18 +164,37 @@ def main(
 def entrypoint(log_dir=None, **kwargs):
     accelerator = AcceleratorState()
 
-    log_dir, finish_logging = set_logging(
-        log_dir=log_dir, use_wandb=accelerator.is_main_process
-    )
+    with accelerator.main_process_first():
+        log_dir, finish_logging = set_logging(
+            log_dir=log_dir, init_wandb=accelerator.is_main_process
+        )
+        kwargs = {**kwargs, **maybe_load_wandb_kwargs(log_dir)}
+
     if accelerator.is_main_process:
         logging.info(f"Working with {accelerator.num_processes} process(es).")
 
-    main(accelerator, **kwargs, log_dir=log_dir)
+    main(**kwargs, log_dir=log_dir)
 
     finish_logging()
+
+
+def pre_entrypoint(**kwargs):
+    accelerator = AcceleratorState()
+
+    if "WANDB_SWEEP_ID" in os.environ:
+        if accelerator.is_main_process:
+            wandb.agent(
+                os.environ.get("WANDB_SWEEP_ID"),
+                function=partial(entrypoint, **kwargs),
+                count=1,
+            )
+        else:
+            entrypoint(**kwargs)
+    else:
+        entrypoint(**kwargs)
 
 
 if __name__ == "__main__":
     import fire
 
-    fire.Fire(entrypoint)
+    fire.Fire(pre_entrypoint)

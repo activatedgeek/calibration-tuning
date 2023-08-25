@@ -163,10 +163,7 @@ def evaluate_dataset(
                 accelerator=accelerator,
             ),
         )
-        val_metrics["seed"] = seed
-        val_metrics["eval_kshot"] = eval_kshot
         val_metrics["split"] = "validation"
-        val_metrics["dataset"] = dataset
 
     test_metrics = None
     if test_data is not None:
@@ -181,9 +178,6 @@ def evaluate_dataset(
                 accelerator=accelerator,
             ),
         )
-        test_metrics["seed"] = seed
-        test_metrics["eval_kshot"] = eval_kshot
         test_metrics["split"] = "test"
-        test_metrics["dataset"] = dataset
 
     return val_metrics, test_metrics

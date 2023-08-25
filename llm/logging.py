@@ -2,7 +2,11 @@ from pathlib import Path
 from uuid import uuid4
 import logging
 import os
+import json
 import wandb
+
+
+WANDB_KWARGS_NAME = "wandb_args.json"
 
 
 class WnBHandler(logging.Handler):
@@ -54,7 +58,7 @@ def get_log_dir(log_dir=None):
 
 
 def set_logging(
-    log_dir=None, metrics_extra_key="metrics", use_wandb=True, generate_log_dir=False
+    log_dir=None, metrics_extra_key="metrics", init_wandb=True, generate_log_dir=False
 ):
     log_dir = log_dir or os.environ.get(
         "WANDB_DIR", get_log_dir() if generate_log_dir else None
@@ -63,13 +67,17 @@ def set_logging(
 
     os.makedirs(log_dir, exist_ok=True)
 
-    if use_wandb:
+    if init_wandb:
         ## Set other properties using environment variables: https://docs.wandb.ai/guides/track/environment-variables.
         wandb.init(
             mode=os.environ.get("WANDB_MODE", default="offline"),
             dir=log_dir,
             # settings=wandb.Settings(start_method="fork"),
         )
+        ## Store sweep run config, if other processes need it.
+        if "WANDB_SWEEP_ID" in os.environ:
+            with open(f"{log_dir}/{WANDB_KWARGS_NAME}", "w") as f:
+                json.dump(dict(wandb.config), f)
 
     _CONFIG = {
         "version": 1,
@@ -103,7 +111,7 @@ def set_logging(
         },
         "loggers": {
             "": {
-                "handlers": ["stdout"] + ["wandb_file"] if use_wandb else [],
+                "handlers": ["stdout"] + (["wandb_file"] if init_wandb else []),
                 "level": os.environ.get("LOGLEVEL", "INFO"),
             },
         },
@@ -114,7 +122,16 @@ def set_logging(
     logging.info(f'Files stored in "{log_dir}".')
 
     def finish_logging():
-        if use_wandb:
+        if init_wandb:
             wandb.finish()
 
     return log_dir, finish_logging
+
+
+def maybe_load_wandb_kwargs(path):
+    wandb_kwargs_path = f"{path}/{WANDB_KWARGS_NAME}"
+    if os.path.isfile(wandb_kwargs_path):
+        with open(wandb_kwargs_path) as f:
+            wandb_kwargs = json.load(f)
+        return wandb_kwargs
+    return {}

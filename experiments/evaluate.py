@@ -1,17 +1,17 @@
 import os
+from functools import partial
 import logging
 import pandas as pd
-from accelerate import Accelerator
+from accelerate import Accelerator, PartialState as AcceleratorState
 from peft import PeftModel
 
-from llm.logging import set_logging, wandb
+from llm.logging import set_logging, wandb, maybe_load_wandb_kwargs
 from llm.models import get_model, get_special_tokens
 from llm.utils.evaluation import evaluate_dataset
 from llm.utils.trainer import get_last_checkpoint_path
 
 
 def main(
-    accelerator,
     seed=137,
     log_dir=None,
     eval_kshot=None,
@@ -24,6 +24,8 @@ def main(
     peft_dir=None,
     use_dataset_cache=True,
 ):
+    accelerator = Accelerator()
+
     if accelerator.is_main_process:
         wandb.config.update(
             {
@@ -81,7 +83,10 @@ def main(
         use_cache=use_dataset_cache,
     )
 
-    all_metrics = list(filter(lambda m: m is not None, [val_metrics, test_metrics]))
+    all_metrics = map(
+        lambda m: {**m, **dict(wandb.config)},
+        list(filter(lambda m: m is not None, [val_metrics, test_metrics])),
+    )
     logging.info(
         {"metrics": wandb.Table(dataframe=pd.DataFrame(all_metrics))},
         extra=dict(metrics=True),
@@ -89,20 +94,39 @@ def main(
 
 
 def entrypoint(log_dir=None, **kwargs):
-    accelerator = Accelerator()
+    accelerator = AcceleratorState()
 
-    log_dir, finish_logging = set_logging(
-        log_dir=log_dir, use_wandb=accelerator.is_main_process
-    )
+    with accelerator.main_process_first():
+        log_dir, finish_logging = set_logging(
+            log_dir=log_dir, init_wandb=accelerator.is_main_process
+        )
+        kwargs = {**kwargs, **maybe_load_wandb_kwargs(log_dir)}
+
     if accelerator.is_main_process:
         logging.info(f"Working with {accelerator.num_processes} process(es).")
 
-    main(accelerator, **kwargs, log_dir=log_dir)
+    main(**kwargs, log_dir=log_dir)
 
     finish_logging()
+
+
+def pre_entrypoint(**kwargs):
+    accelerator = AcceleratorState()
+
+    if "WANDB_SWEEP_ID" in os.environ:
+        if accelerator.is_main_process:
+            wandb.agent(
+                os.environ.get("WANDB_SWEEP_ID"),
+                function=partial(entrypoint, **kwargs),
+                count=1,
+            )
+        else:
+            entrypoint(**kwargs)
+    else:
+        entrypoint(**kwargs)
 
 
 if __name__ == "__main__":
     import fire
 
-    fire.Fire(entrypoint)
+    fire.Fire(pre_entrypoint)
