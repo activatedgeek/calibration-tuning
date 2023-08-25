@@ -27,17 +27,16 @@ def main(
 ):
     accelerator = Accelerator()
 
+    config = {
+        "seed": seed,
+        "model_name": model_name,
+        "fp8": fp8,
+        "model_dir": model_dir,
+        "peft_dir": peft_dir,
+        "eval_kshot": eval_kshot,
+    }
     if accelerator.is_main_process:
-        wandb.config.update(
-            {
-                "seed": seed,
-                "model_name": model_name,
-                "fp8": fp8,
-                "model_dir": model_dir,
-                "peft_dir": peft_dir,
-                "eval_kshot": eval_kshot,
-            }
-        )
+        wandb.config.update(config)
 
     tokenizer = get_model(
         f"{model_name}_tokenizer",
@@ -91,7 +90,7 @@ def main(
         )
 
         all_metrics += map(
-            lambda m: {**m, **dict(wandb.config)},
+            lambda m: {**m, **config, "dataset": dataset},
             list(filter(lambda m: m is not None, [val_metrics, test_metrics])),
         )
         logging.info(
