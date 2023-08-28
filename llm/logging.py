@@ -1,8 +1,14 @@
 from pathlib import Path
 from uuid import uuid4
+from functools import partial
 import logging
 import os
+import json
 import wandb
+from accelerate import PartialState as AcceleratorState
+
+
+WANDB_KWARGS_NAME = "wandb_args.json"
 
 
 class WnBHandler(logging.Handler):
@@ -53,14 +59,27 @@ def get_log_dir(log_dir=None):
     return log_dir
 
 
-def set_logging(log_dir=None, metrics_extra_key="metrics", use_wandb=True):
-    if use_wandb:
+def set_logging(
+    log_dir=None, metrics_extra_key="metrics", init_wandb=True, generate_log_dir=False
+):
+    log_dir = log_dir or os.environ.get(
+        "WANDB_DIR", get_log_dir() if generate_log_dir else None
+    )
+    assert log_dir is not None, "Missing log_dir."
+
+    os.makedirs(log_dir, exist_ok=True)
+
+    if init_wandb:
         ## Set other properties using environment variables: https://docs.wandb.ai/guides/track/environment-variables.
         wandb.init(
             mode=os.environ.get("WANDB_MODE", default="offline"),
+            dir=log_dir,
             # settings=wandb.Settings(start_method="fork"),
         )
-        log_dir = Path(wandb.run.dir)
+        ## Store sweep run config, if other processes need it.
+        if "WANDB_SWEEP_ID" in os.environ:
+            with open(f"{log_dir}/{WANDB_KWARGS_NAME}", "w") as f:
+                json.dump(dict(wandb.config), f)
 
     _CONFIG = {
         "version": 1,
@@ -94,7 +113,7 @@ def set_logging(log_dir=None, metrics_extra_key="metrics", use_wandb=True):
         },
         "loggers": {
             "": {
-                "handlers": ["stdout"] + ["wandb_file"] if use_wandb else [],
+                "handlers": ["stdout"] + (["wandb_file"] if init_wandb else []),
                 "level": os.environ.get("LOGLEVEL", "INFO"),
             },
         },
@@ -105,7 +124,49 @@ def set_logging(log_dir=None, metrics_extra_key="metrics", use_wandb=True):
     logging.info(f'Files stored in "{log_dir}".')
 
     def finish_logging():
-        if use_wandb:
+        if init_wandb:
             wandb.finish()
 
     return log_dir, finish_logging
+
+
+def maybe_load_wandb_kwargs(path):
+    wandb_kwargs_path = f"{path}/{WANDB_KWARGS_NAME}"
+    if os.path.isfile(wandb_kwargs_path):
+        with open(wandb_kwargs_path) as f:
+            wandb_kwargs = json.load(f)
+        return wandb_kwargs
+    return {}
+
+
+def entrypoint(main):
+    accelerator = AcceleratorState()
+
+    def _main(log_dir=None, **kwargs):
+        with accelerator.main_process_first():
+            log_dir, finish_logging = set_logging(
+                log_dir=log_dir, init_wandb=accelerator.is_main_process
+            )
+            kwargs = {**kwargs, **maybe_load_wandb_kwargs(log_dir)}
+
+        if accelerator.is_main_process:
+            logging.info(f"Working with {accelerator.num_processes} process(es).")
+
+        main(**kwargs, log_dir=log_dir)
+
+        finish_logging()
+
+    def _entrypoint(**kwargs):
+        if "WANDB_SWEEP_ID" in os.environ:
+            if accelerator.is_main_process:
+                wandb.agent(
+                    os.environ.get("WANDB_SWEEP_ID"),
+                    function=partial(_main, **kwargs),
+                    count=1,
+                )
+            else:
+                _main(**kwargs)
+        else:
+            _main(**kwargs)
+
+    return _entrypoint

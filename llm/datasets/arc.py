@@ -1,25 +1,21 @@
 import os
 import string
 import torch
-import numpy as np
 
 from .registry import register_dataset
 from .llm_utils import tokenize_for_causal_lm
 
 
 __all__ = [
-    "get_truthful_qa",
+    "get_arc",
 ]
 
 
 def __format_prompt(sample, style, with_answer=False):
     if style == "choice":
         question = sample["question"]
-        answer_map = sample["mc1_targets"]["choices"]
-        answer = (
-            string.ascii_lowercase[np.array(sample["mc1_targets"]["labels"]).argmax()]
-            + "</s>\n"
-        )
+        answer_map = sample["choices"]["text"]
+        answer = sample["answerKey"].lower() + "</s>\n"
 
         prompt = "\n".join(
             [
@@ -47,7 +43,7 @@ def __generate_fewshot_prompts(dataset, prompt_style, kshot, seed=None):
 
     fewshot_prompt = "\n".join(
         [
-            "The following are multiple choice questions.\n",
+            "The following are questions with multiple choice answers.\n",
             *[
                 __format_prompt(dataset[idx], prompt_style, with_answer=True)
                 for idx in torch.randperm(
@@ -61,7 +57,7 @@ def __generate_fewshot_prompts(dataset, prompt_style, kshot, seed=None):
     return fewshot_prompt
 
 
-def get_truthful_qa(
+def get_arc(
     root=None,
     subset=None,
     prompt_style=None,
@@ -75,40 +71,54 @@ def get_truthful_qa(
     from datasets import load_dataset
 
     dataset = load_dataset(
-        "truthful_qa", subset, cache_dir=os.environ.get("HF_DATASETS_CACHE", root)
+        "ai2_arc", subset, cache_dir=os.environ.get("HF_DATASETS_CACHE", root)
     )
     if not use_cache:
         dataset.cleanup_cache_files()
 
-    val_data = dataset.pop("validation")
-    val_data = val_data.map(
-        lambda x: {
-            "source": __generate_fewshot_prompts(
-                val_data, prompt_style, eval_kshot, seed=seed
-            )
-            + __format_prompt(x, prompt_style),
-            "target": f"{string.ascii_lowercase[np.array(x['mc1_targets']['labels']).argmax()]}{tokenizer.eos_token}",
-        },
-        num_proc=num_workers,
-        remove_columns=[
-            "question",
-            "mc1_targets",
-            "mc2_targets",
-        ],
-    ).map(
-        lambda x: tokenize_for_causal_lm(tokenizer, x),
-        num_proc=num_workers,
-        remove_columns=["source", "target"],
-    )
+    train_data, val_data, test_data = [
+        data.map(
+            lambda x: {
+                "source": __generate_fewshot_prompts(data, prompt_style, k, seed=seed)
+                + __format_prompt(x, prompt_style),
+                "target": f"{x['answerKey'].lower()}{tokenizer.eos_token}",
+            },
+            num_proc=num_workers,
+            remove_columns=[
+                "id",
+                "question",
+                "choices",
+                "answerKey",
+            ],
+        ).map(
+            lambda x: tokenize_for_causal_lm(tokenizer, x),
+            num_proc=num_workers,
+            remove_columns=["source", "target"],
+        )
+        for data, k in zip(
+            [dataset.pop("train"), dataset.pop("validation"), dataset.pop("test")],
+            [0, eval_kshot, eval_kshot],
+        )
+    ]
 
-    return None, val_data, None
+    return train_data, val_data, test_data
 
 
-@register_dataset
-def truthful_qa(*args, **kwargs):
-    return get_truthful_qa(
+@register_dataset(attrs=dict(task_tags=["qa"]))
+def arc(*args, **kwargs):
+    return get_arc(
         *args,
         **kwargs,
-        subset="multiple_choice",
+        subset="ARC-Easy",
+        prompt_style="choice",
+    )
+
+
+@register_dataset(attrs=dict(task_tags=["qa"]))
+def arc_challenge(*args, **kwargs):
+    return get_arc(
+        *args,
+        **kwargs,
+        subset="ARC-Challenge",
         prompt_style="choice",
     )

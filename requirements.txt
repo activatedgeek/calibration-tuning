@@ -9,17 +9,11 @@ numpy
 scipy
 pandas
 scikit-learn
-opencv-python
-tensorflow<2.12
-tensorflow-datasets
 torch>=2.0
 torchvision
-timm
 transformers
 sentencepiece
 datasets
 accelerate
-tensor_parallel
-evaluate
 peft
 bitsandbytes

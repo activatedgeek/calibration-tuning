@@ -78,12 +78,12 @@ def __format_prompt(sample, style, with_answer=False):
     if style == "mcq":
         question = sample["question"]
         choices = sample["choices"]
-        answer = string.ascii_lowercase[sample["answer"]] + "\n"
+        answer = string.ascii_lowercase[sample["answer"]] + "</s>\n"
 
         prompt = "\n".join(
             [
-                f"Question: {question}",
-                "Choices:",
+                f"Question:\n{question}",
+                "\nChoices:",
                 *[
                     f"  ({n}): {c}"
                     for n, c in zip(string.ascii_lowercase[: len(choices)], choices)
@@ -97,7 +97,7 @@ def __format_prompt(sample, style, with_answer=False):
     raise NotImplementedError
 
 
-def __generate_fewshot_prompts(dataset, instance, prompt_style, kshot=5):
+def __generate_fewshot_prompts(dataset, instance, prompt_style, kshot, seed=None):
     if kshot <= 0:
         return ""
 
@@ -106,11 +106,13 @@ def __generate_fewshot_prompts(dataset, instance, prompt_style, kshot=5):
             f"The following are multiple choice questions (with answers) about {' '.join(instance.split('_'))}.\n",
             *[
                 __format_prompt(dataset[idx], prompt_style, with_answer=True)
-                for idx in torch.randperm(len(dataset))[:kshot].tolist()
+                for idx in torch.randperm(
+                    len(dataset), generator=torch.Generator().manual_seed(seed)
+                )[:kshot].tolist()
             ],
         ]
     )
-    fewshot_prompt = fewshot_prompt + "\nNow, answer the next "
+    fewshot_prompt = fewshot_prompt + "\nNow, answer the next question.\n\n"
 
     return fewshot_prompt
 
@@ -119,8 +121,11 @@ def get_mmlu(
     root=None,
     instance=None,
     prompt_style=None,
-    kshot=5,
+    eval_kshot=5,
     tokenizer=None,
+    num_workers=8,
+    seed=None,
+    use_cache=True,
     **_,
 ):
     from datasets import load_dataset
@@ -128,44 +133,49 @@ def get_mmlu(
     dataset = load_dataset(
         "cais/mmlu", instance, cache_dir=os.environ.get("HF_DATASETS_CACHE", root)
     )
+    if not use_cache:
+        dataset.cleanup_cache_files()
 
-    dataset = (
-        dataset.map(
+    dev_data = dataset.pop("dev")
+
+    train_data, val_data, test_data = [
+        dataset.pop(split)
+        .map(
             lambda x: {
                 "source": __generate_fewshot_prompts(
-                    dataset["dev"], instance, prompt_style, kshot=kshot
+                    dev_data, instance, prompt_style, k, seed=seed
                 )
                 + __format_prompt(x, prompt_style),
                 "target": f"{string.ascii_lowercase[x['answer']]}{tokenizer.eos_token}",
             },
-            num_proc=4,
+            num_proc=num_workers,
             remove_columns=[
                 "question",
                 "choices",
                 "answer",
             ],
-        ).map(
+        )
+        .map(
             lambda x: tokenize_for_causal_lm(tokenizer, x),
-            num_proc=4,
+            num_proc=num_workers,
             remove_columns=["source", "target"],
         )
-        # .filter(
-        #     ## NOTE: filter out samples without eos_token, sometimes due to truncation.
-        #     lambda x: torch.tensor(x["labels"]).eq(tokenizer.eos_token_id).sum(dim=-1)
-        #     > 0,
-        #     num_proc=4,
-        # )
-    )
-
-    train_data = dataset["auxiliary_train"]
-    val_data = dataset["validation"]
-    test_data = dataset["test"]
+        for split, k in zip(
+            ["auxiliary_train", "validation", "test"], [0, eval_kshot, eval_kshot]
+        )
+    ]
 
     return train_data, val_data, test_data
 
 
 @register_dataset(attrs=__ATTRS)
-def mmlu(*args, instance=None, **kwargs):
+def mmlu(*args, dataset_str=None, **kwargs):
+    d, instance = dataset_str.split(":")
+
+    assert d == "mmlu" and isinstance(
+        instance, str
+    ), f"Dataset string should be formatted as 'mmlu:<subset>', found {dataset_str}"
+
     return get_mmlu(
         *args,
         **kwargs,

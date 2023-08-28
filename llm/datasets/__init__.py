@@ -17,9 +17,23 @@ def __setup():
     from importlib import import_module
 
     for n in [
-        "alpaca",
+        "arc",
+        "boolq",
+        "commonsense_qa",
+        "cosmos_qa",
+        "hellaswag",
+        "math_qa",
         "mmlu",
+        "nli",
+        "obqa",
+        "piqa",
+        "sciq",
+        "story_cloze",
+        "super_glue",
+        "trec",
         "truthful_qa",
+        "winogrande",
+        "wsc",
     ]:
         import_module(f".{n}", __name__)
 

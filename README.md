@@ -27,19 +27,21 @@ pip install -e .
 An example command for evaluation.
 
 ```shell
-python experiments/evaluate_gen.py \
-    --seed=137 \
-    --model-name=open_llama_13b \
-    --dataset=mmlu \
-    --dataset-instance=business_ethics
+./autotorchrun experiments/evaluate.py --model_name=llama2_7b --dataset=mmlu:business_ethics
 ```
 
 ### Fine-Tuning
 
-An example command to run fine-tuning on the Alpaca dataset:
+An example command to run fine-tuning on the Alpaca dataset with Llama2-7b:
 ```shell
-./scripts/finetune.sh --seed=137 --epochs=1
+./autotorchrun experiments/finetune.py --model_name=llama2_7b --dataset=alpaca
 ```
+
+## Details
+
+### Cache
+
+Send `--use_dataset_cache=False` to rebuild [HuggingFace dataset cache](https://huggingface.co/docs/datasets/v2.14.4/en/cache#cache-files).
 
 # LICENSE
 

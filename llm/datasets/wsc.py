@@ -1,30 +1,26 @@
 import os
 import string
 import torch
-import numpy as np
 
 from .registry import register_dataset
 from .llm_utils import tokenize_for_causal_lm
 
 
 __all__ = [
-    "get_truthful_qa",
+    "get_wsc",
 ]
 
 
 def __format_prompt(sample, style, with_answer=False):
     if style == "choice":
-        question = sample["question"]
-        answer_map = sample["mc1_targets"]["choices"]
-        answer = (
-            string.ascii_lowercase[np.array(sample["mc1_targets"]["labels"]).argmax()]
-            + "</s>\n"
-        )
+        text = sample["text"]
+        answer_map = sample["options"]
+        answer = string.ascii_lowercase[sample["label"]] + "</s>\n"
 
         prompt = "\n".join(
             [
-                "Question:",
-                question,
+                "Sentence:",
+                text,
                 "\nChoices:",
                 *[
                     f"  ({n}): {c}"
@@ -47,7 +43,7 @@ def __generate_fewshot_prompts(dataset, prompt_style, kshot, seed=None):
 
     fewshot_prompt = "\n".join(
         [
-            "The following are multiple choice questions.\n",
+            "The following are sentences with ambiguity.\n",
             *[
                 __format_prompt(dataset[idx], prompt_style, with_answer=True)
                 for idx in torch.randperm(
@@ -56,12 +52,12 @@ def __generate_fewshot_prompts(dataset, prompt_style, kshot, seed=None):
             ],
         ]
     )
-    fewshot_prompt = fewshot_prompt + "\nNow, answer the next question.\n\n"
+    fewshot_prompt = fewshot_prompt + "\nNow, resolve the next ambiguity.\n\n"
 
     return fewshot_prompt
 
 
-def get_truthful_qa(
+def get_wsc(
     root=None,
     subset=None,
     prompt_style=None,
@@ -75,25 +71,30 @@ def get_truthful_qa(
     from datasets import load_dataset
 
     dataset = load_dataset(
-        "truthful_qa", subset, cache_dir=os.environ.get("HF_DATASETS_CACHE", root)
+        "winograd_wsc", subset, cache_dir=os.environ.get("HF_DATASETS_CACHE", root)
     )
     if not use_cache:
         dataset.cleanup_cache_files()
 
-    val_data = dataset.pop("validation")
-    val_data = val_data.map(
+    test_data = dataset.pop("test")
+    test_data = test_data.map(
         lambda x: {
             "source": __generate_fewshot_prompts(
-                val_data, prompt_style, eval_kshot, seed=seed
+                test_data, prompt_style, eval_kshot, seed=seed
             )
             + __format_prompt(x, prompt_style),
-            "target": f"{string.ascii_lowercase[np.array(x['mc1_targets']['labels']).argmax()]}{tokenizer.eos_token}",
+            "target": f"{string.ascii_lowercase[x['label']]}{tokenizer.eos_token}",
         },
         num_proc=num_workers,
         remove_columns=[
-            "question",
-            "mc1_targets",
-            "mc2_targets",
+            "text",
+            "pronoun",
+            "pronoun_loc",
+            "quote",
+            "quote_loc",
+            "options",
+            "label",
+            "source",
         ],
     ).map(
         lambda x: tokenize_for_causal_lm(tokenizer, x),
@@ -101,14 +102,14 @@ def get_truthful_qa(
         remove_columns=["source", "target"],
     )
 
-    return None, val_data, None
+    return None, None, test_data
 
 
-@register_dataset
-def truthful_qa(*args, **kwargs):
-    return get_truthful_qa(
+@register_dataset(attrs=dict(task_tags=["coreference"]))
+def wsc(*args, **kwargs):
+    return get_wsc(
         *args,
         **kwargs,
-        subset="multiple_choice",
+        subset="wsc285",
         prompt_style="choice",
     )
