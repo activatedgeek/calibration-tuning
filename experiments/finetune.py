@@ -1,6 +1,3 @@
-import os
-from functools import partial
-import logging
 from accelerate import PartialState as AcceleratorState
 from peft import (
     PeftModel,
@@ -12,7 +9,7 @@ from peft import (
 
 from llm.datasets import get_dataset
 from llm.models import get_model, get_special_tokens
-from llm.logging import set_logging, wandb, maybe_load_wandb_kwargs
+from llm.logging import entrypoint
 from llm.utils.trainer import (
     TrainingArguments,
     CalibrationTrainer,
@@ -161,40 +158,7 @@ def main(
     trainer.save_state()
 
 
-def entrypoint(log_dir=None, **kwargs):
-    accelerator = AcceleratorState()
-
-    with accelerator.main_process_first():
-        log_dir, finish_logging = set_logging(
-            log_dir=log_dir, init_wandb=accelerator.is_main_process
-        )
-        kwargs = {**kwargs, **maybe_load_wandb_kwargs(log_dir)}
-
-    if accelerator.is_main_process:
-        logging.info(f"Working with {accelerator.num_processes} process(es).")
-
-    main(**kwargs, log_dir=log_dir)
-
-    finish_logging()
-
-
-def pre_entrypoint(**kwargs):
-    accelerator = AcceleratorState()
-
-    if "WANDB_SWEEP_ID" in os.environ:
-        if accelerator.is_main_process:
-            wandb.agent(
-                os.environ.get("WANDB_SWEEP_ID"),
-                function=partial(entrypoint, **kwargs),
-                count=1,
-            )
-        else:
-            entrypoint(**kwargs)
-    else:
-        entrypoint(**kwargs)
-
-
 if __name__ == "__main__":
     import fire
 
-    fire.Fire(pre_entrypoint)
+    fire.Fire(entrypoint(main))

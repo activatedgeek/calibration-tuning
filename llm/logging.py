@@ -1,9 +1,11 @@
 from pathlib import Path
 from uuid import uuid4
+from functools import partial
 import logging
 import os
 import json
 import wandb
+from accelerate import PartialState as AcceleratorState
 
 
 WANDB_KWARGS_NAME = "wandb_args.json"
@@ -135,3 +137,36 @@ def maybe_load_wandb_kwargs(path):
             wandb_kwargs = json.load(f)
         return wandb_kwargs
     return {}
+
+
+def entrypoint(main):
+    accelerator = AcceleratorState()
+
+    def _main(log_dir=None, **kwargs):
+        with accelerator.main_process_first():
+            log_dir, finish_logging = set_logging(
+                log_dir=log_dir, init_wandb=accelerator.is_main_process
+            )
+            kwargs = {**kwargs, **maybe_load_wandb_kwargs(log_dir)}
+
+        if accelerator.is_main_process:
+            logging.info(f"Working with {accelerator.num_processes} process(es).")
+
+        main(**kwargs, log_dir=log_dir)
+
+        finish_logging()
+
+    def _entrypoint(**kwargs):
+        if "WANDB_SWEEP_ID" in os.environ:
+            if accelerator.is_main_process:
+                wandb.agent(
+                    os.environ.get("WANDB_SWEEP_ID"),
+                    function=partial(_main, **kwargs),
+                    count=1,
+                )
+            else:
+                _main(**kwargs)
+        else:
+            _main(**kwargs)
+
+    return _entrypoint
