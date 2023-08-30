@@ -88,14 +88,16 @@ def main(
             use_cache=use_dataset_cache,
         )
 
-        all_metrics += map(
+        dataset_metrics = list(map(
             lambda m: {**m, **config, "dataset": dataset},
             list(filter(lambda m: m is not None, [val_metrics, test_metrics])),
-        )
+        ))
+        all_metrics += dataset_metrics
         logging.info(
             {"metrics": wandb.Table(dataframe=pd.DataFrame(all_metrics))},
             extra=dict(metrics=True),
         )
+        logging.debug(dataset_metrics)
 
 
 if __name__ == "__main__":
