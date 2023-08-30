@@ -6,6 +6,7 @@ import pandas as pd
 from accelerate import Accelerator
 from peft import PeftModel
 
+
 from llm.logging import entrypoint
 from llm.models import get_model, get_special_tokens
 from llm.utils.trainer import get_last_checkpoint_path
@@ -14,22 +15,72 @@ from llm.datasets.llm_utils import (
     DataCollatorForSupervisedDataset,
 )
 from llm.utils.evaluation import extract_eos_pos
+from llm.utils.third_party.calibration import calibration
 
+def prepare_model(
+    causal_lm,
+    accelerator,
+    model_name,
+    tokenizer,
+    special_token_count,
+    model_dir,
+    peft_dir,
+    fp8,
+):
+    model = get_model(
+        model_name,
+        device_map={"": accelerator.local_process_index},
+        load_in_8bit=fp8,
+        model_dir=model_dir,
+        causal_lm=causal_lm,
+    )
 
+    model.resize_token_embeddings(len(tokenizer))
+    if special_token_count:
+        input_embeddings = model.get_input_embeddings().weight.data
+
+        input_embeddings[-special_token_count:] = input_embeddings[
+            :-special_token_count
+        ].mean(dim=0, keepdim=True)
+
+        if causal_lm:
+            output_embeddings = model.get_output_embeddings().weight.data
+
+            output_embeddings[-special_token_count:] = output_embeddings[
+                :-special_token_count
+            ].mean(dim=0, keepdim=True)
+
+    # model = prepare_model_for_kbit_training(model)
+
+    # if peft_dir is not None:
+    #     peft_dir = get_last_checkpoint_path(peft_dir)
+
+    #     model = PeftModel.from_pretrained(model, peft_dir)
+
+    #     logging.info(f"Loaded PEFT checkpoint from '{peft_dir}'")
+
+    return model
+
+@torch.inference_mode()
 def evaluate_classifier(
     accelerator,
-    model,
+    base_model,
+    classifier_model,
     tokenizer,
     loader,
 ):
     device = accelerator.device
 
+    Y, P_hat = [], []
+    UNC_Y, UNC_P_hat = [], []
+
     for inputs in tqdm(loader, leave=False):
         inputs = {k: v.to(device) for k, v in inputs.items()}
 
         labels = inputs.pop("labels")[..., 1:]
+        attn_mask = inputs.get("attention_mask")
 
-        logits = model(**inputs).logits[..., :-1, :]
+        logits = base_model(**inputs).logits[..., :-1, :]
 
         eos_idx = extract_eos_pos(tokenizer, labels)
         y = labels[torch.arange(labels.size(0)), eos_idx - 1]
@@ -52,10 +103,49 @@ def evaluate_classifier(
             torch.arange(output_ids.size(0)), eos_idx - 1
         ]
 
+        unc_y = targets
+        unc_p_hat = classifier_model(
+            input_ids=response_ids,
+            attention_mask=attn_mask,
+            labels=torch.tensor(targets, device=targets.device).long(),
+        ).logits
+
+        (__unc_y, __uq_p_hat) = accelerator.gather_for_metrics((unc_y, unc_p_hat))
+        UNC_Y.append(__unc_y), UNC_P_hat.append(__uq_p_hat)
+
+    Y, P_hat = torch.cat(Y, dim=0), torch.cat(P_hat, dim=0).softmax(dim=-1)
+
+    Y_hat = P_hat.argmax(dim=-1)
+    acc = (Y == Y_hat).float().mean()
+    ece, _ = calibration(Y, Y_hat, P_hat[torch.arange(Y_hat.size(0)), Y_hat])
+
+    UNC_Y, UNC_P_hat = torch.cat(UNC_Y, dim=0), torch.cat(UNC_P_hat, dim=0).softmax(
+        dim=-1
+    )
+
+    UNC_Y_hat = UNC_P_hat.argmax(dim=-1)
+    UNC_acc = (UNC_Y == UNC_Y_hat).float().mean()
+    UNC_ece, _ = calibration(
+        UNC_Y, UNC_Y_hat, UNC_P_hat[torch.arange(UNC_Y_hat.size(0)), UNC_Y_hat]
+    )
+
+    ## Using confidence scores from "yes" (idx 1) always.
+    qa_UNC_ece, _ = calibration(Y, Y_hat, UNC_P_hat[:, 1])
+
+    return {
+        "N": Y.size(0),
+        "acc": acc.item(),
+        "ece": ece,
+        "unc_acc": UNC_acc.item(),
+        "unc_ece": UNC_ece,
+        "qa_unc_ece": qa_UNC_ece,
+    }
+
 
 def evaluate_dataset(
     accelerator,
-    model,
+    base_model,
+    classifier_model,
     tokenizer,
     dataset,
     seed=137,
@@ -80,9 +170,10 @@ def evaluate_dataset(
 
     val_metrics = None
     if val_data is not None:
-        val_metrics = evaluate_via_eos(
+        val_metrics = evaluate_classifier(
             accelerator,
-            model,
+            base_model,
+            classifier_model,
             tokenizer,
             get_loader(
                 val_data,
@@ -95,9 +186,10 @@ def evaluate_dataset(
 
     test_metrics = None
     if test_data is not None:
-        test_metrics = evaluate_via_eos(
+        test_metrics = evaluate_classifier(
             accelerator,
-            model,
+            base_model,
+            classifier_model,
             tokenizer,
             get_loader(
                 test_data,
@@ -144,31 +236,32 @@ def main(
     )
     special_token_count = tokenizer.add_special_tokens(get_special_tokens(tokenizer))
 
-    model = get_model(
-        model_name,
-        device_map={"": accelerator.local_process_index},
-        load_in_8bit=fp8,
+    base_model = prepare_model(
+        causal_lm=True,
+        accelerator=accelerator,
+        model_name=model_name,
+        tokenizer=tokenizer,
+        special_token_count=special_token_count,
         model_dir=model_dir,
-        causal_lm=False
+        peft_dir=peft_dir,
+        fp8=fp8,
     )
 
-    model.resize_token_embeddings(len(tokenizer))
-    if special_token_count:
-        input_embeddings = model.get_input_embeddings().weight.data
-        input_embeddings[-special_token_count:] = input_embeddings[
-            :-special_token_count
-        ].mean(dim=0, keepdim=True)
-
-    # if peft_dir is not None:
-    #     peft_dir = get_last_checkpoint_path(peft_dir)
-
-    #     model = PeftModel.from_pretrained(model, peft_dir)
-
-    #     logging.info(f"Loaded PEFT checkpoint from '{peft_dir}'")
+    classifier_model = prepare_model(
+        causal_lm=False,
+        accelerator=accelerator,
+        model_name=model_name,
+        tokenizer=tokenizer,
+        special_token_count=special_token_count,
+        model_dir=model_dir,
+        peft_dir=peft_dir,
+        fp8=fp8,
+    )
 
     val_metrics, test_metrics = evaluate_dataset(
         accelerator,
-        model,
+        base_model,
+        classifier_model,
         tokenizer,
         dataset,
         seed=seed,
