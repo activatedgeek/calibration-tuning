@@ -85,10 +85,10 @@ def __format_prompt(sample, style, with_answer=False):
                 f"Question:\n{question}",
                 "\nChoices:",
                 *[
-                    f"{n}: {c}"
+                    f"  ({n}): {c}"
                     for n, c in zip(string.ascii_lowercase[: len(choices)], choices)
                 ],
-                f"Answer:\n{answer if with_answer else ''}",
+                f"Answer: {answer if with_answer else ''}",
             ]
         )
 
