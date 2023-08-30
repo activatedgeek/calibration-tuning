@@ -2,6 +2,7 @@ import os
 from transformers import (
     LlamaTokenizer,
     LlamaForCausalLM,
+    LlamaForSequenceClassification,
 )
 
 from .registry import register_model
@@ -23,13 +24,19 @@ def create_tokenizer(
     return tokenizer
 
 
-def create_model(size=None, model_dir=None, cache_dir=None, **kwargs):
-    return LlamaForCausalLM.from_pretrained(
-        model_dir or f"meta-llama/Llama-2-{size}-hf",
-        cache_dir=os.environ.get("MODELDIR", cache_dir),
-        **kwargs,
-    )
-
+def create_model(size=None, model_dir=None, cache_dir=None, causal_lm=True, **kwargs):
+    if causal_lm:
+        return LlamaForCausalLM.from_pretrained(
+            model_dir or f"meta-llama/Llama-2-{size}-hf",
+            cache_dir=os.environ.get("MODELDIR", cache_dir),
+            **kwargs,
+        )
+    else:
+        return LlamaForSequenceClassification.from_pretrained(
+            model_dir or f"meta-llama/Llama-2-{size}-hf",
+            cache_dir=os.environ.get("MODELDIR", cache_dir),
+            **kwargs,
+        )
 
 @register_model
 def llama2_7b_tokenizer(**kwargs):
