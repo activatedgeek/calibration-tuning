@@ -183,6 +183,9 @@ class CalibrationTrainer(Trainer):
         return (total_loss, outputs) if return_outputs else total_loss
 
     def evaluate(self, eval_dataset=None, ignore_keys=None, metric_key_prefix="eval"):
+        if eval_dataset is None:
+            return {}
+
         metrics = super().evaluate(eval_dataset, ignore_keys, metric_key_prefix)
 
         val_metrics = evaluate_via_eos(

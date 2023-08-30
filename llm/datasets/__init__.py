@@ -19,6 +19,7 @@ def __setup():
     for n in [
         "arc",
         "boolq",
+        "combined",
         "commonsense_qa",
         "cosmos_qa",
         "hellaswag",
