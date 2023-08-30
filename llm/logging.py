@@ -59,17 +59,18 @@ def get_log_dir(log_dir=None):
     return log_dir
 
 
-def set_logging(
-    log_dir=None, metrics_extra_key="metrics", init_wandb=True, generate_log_dir=False
-):
+def set_logging(log_dir=None, metrics_extra_key="metrics", generate_log_dir=False):
+    accelerator = AcceleratorState()
+
     log_dir = log_dir or os.environ.get(
         "WANDB_DIR", get_log_dir() if generate_log_dir else None
     )
     assert log_dir is not None, "Missing log_dir."
 
-    os.makedirs(log_dir, exist_ok=True)
+    with accelerator.main_process_first():
+        os.makedirs(log_dir, exist_ok=True)
 
-    if init_wandb:
+    if accelerator.is_main_process:
         ## Set other properties using environment variables: https://docs.wandb.ai/guides/track/environment-variables.
         wandb.init(
             mode=os.environ.get("WANDB_MODE", default="offline"),
@@ -100,6 +101,9 @@ def set_logging(
             },
         },
         "handlers": {
+            "null": {
+                "()": logging.NullHandler,
+            },
             "stdout": {
                 "()": logging.StreamHandler,
                 "formatter": "console",
@@ -113,7 +117,9 @@ def set_logging(
         },
         "loggers": {
             "": {
-                "handlers": ["stdout"] + (["wandb_file"] if init_wandb else []),
+                "handlers": ["stdout", "wandb_file"]
+                if accelerator.is_main_process
+                else ["null"],
                 "level": os.environ.get("LOGLEVEL", "INFO"),
             },
         },
@@ -124,7 +130,7 @@ def set_logging(
     logging.info(f'Files stored in "{log_dir}".')
 
     def finish_logging():
-        if init_wandb:
+        if accelerator.is_main_process:
             wandb.finish()
 
     return log_dir, finish_logging
@@ -144,9 +150,7 @@ def entrypoint(main):
 
     def _main(log_dir=None, **kwargs):
         with accelerator.main_process_first():
-            log_dir, finish_logging = set_logging(
-                log_dir=log_dir, init_wandb=accelerator.is_main_process
-            )
+            log_dir, finish_logging = set_logging(log_dir=log_dir)
             kwargs = {**kwargs, **maybe_load_wandb_kwargs(log_dir)}
 
         if accelerator.is_main_process:
