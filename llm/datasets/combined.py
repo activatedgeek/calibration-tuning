@@ -14,7 +14,7 @@ def get_combined_train_dataset(
     **_,
 ):
     all_datasets = list(
-        filter(lambda x: (x != "mmlu") and (x != "bbh"), list_datasets())
+        filter(lambda x: ("combined" not in x) and ("mmlu" not in x) and ("bbh" not in x), list_datasets())
     )
 
     all_train_data, all_n = [], []
