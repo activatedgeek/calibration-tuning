@@ -69,7 +69,14 @@ def main(
         logging.info(f"Loaded PEFT checkpoint from '{peft_dir}'")
 
     all_datasets = sorted(
-        list(filter(lambda x: x != "mmlu", list_datasets()))
+        list(
+            filter(
+                lambda x: ("combined" not in x)
+                and ("mmlu" not in x)
+                and ("bbh" not in x),
+                list_datasets(),
+            )
+        )
         + [f"mmlu:{task}" for task in get_dataset_attrs("mmlu").get("tasks")]
     )
 
@@ -87,10 +94,12 @@ def main(
             use_cache=use_dataset_cache,
         )
 
-        dataset_metrics = list(map(
-            lambda m: {**m, **config, "dataset": dataset},
-            list(filter(lambda m: m is not None, [val_metrics, test_metrics])),
-        ))
+        dataset_metrics = list(
+            map(
+                lambda m: {**m, **config, "dataset": dataset},
+                list(filter(lambda m: m is not None, [val_metrics, test_metrics])),
+            )
+        )
         all_metrics += dataset_metrics
         logging.info(
             {"metrics": wandb.Table(dataframe=pd.DataFrame(all_metrics))},

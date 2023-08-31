@@ -262,9 +262,9 @@ class ClassificationTrainer(Trainer):
 
     def evaluate(self, eval_dataset=None, ignore_keys=None, metric_key_prefix="eval"):
         metrics = {}
-        
+
         eval_loader = self.get_eval_dataloader(eval_dataset)
-       
+
         device = self.accelerator.device
         loss = 0.0
         for inputs in tqdm.tqdm(eval_loader, leave=False):
@@ -273,7 +273,7 @@ class ClassificationTrainer(Trainer):
         loss /= len(eval_loader)
 
         val_metrics = {f"{metric_key_prefix}_loss": loss.detach().item()}
-        
+
         self.log(val_metrics)
         metrics.update(val_metrics)
 
