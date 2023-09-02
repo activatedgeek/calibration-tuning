@@ -15,7 +15,6 @@ def __setup():
     from importlib import import_module
 
     for n in [
-        "llama",
         "llama2",
     ]:
         import_module(f".{n}", __name__)
