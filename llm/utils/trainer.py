@@ -245,10 +245,14 @@ class ClassificationTrainer(Trainer):
             torch.arange(output_ids.size(0)), eos_idx - 1
         ]
 
+        response_ids[torch.arange(input_ids.size(0)), eos_idx+1] = self.tokenizer.pad_token_id
+
+        labels = torch.tensor(targets, device=targets.device).long()
+
         loss = model(
             input_ids=response_ids,
             attention_mask=attn_mask,
-            labels=torch.tensor(targets, device=targets.device).long(),
+            labels=labels,
         ).loss
 
         loss_metrics = {
@@ -285,7 +289,7 @@ class ClassificationTrainer(Trainer):
             loss += self.compute_loss(self.model, inputs)
         loss /= len(test_loader)
 
-        test_metrics = {f"test_{k}": v for k, v in test_metrics.items()}
+        test_metrics = {f"test_loss": loss.detach().item()}
         self.log(test_metrics)
         metrics.update(test_metrics)
 
