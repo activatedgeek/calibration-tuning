@@ -1,6 +1,7 @@
 import logging
 import wandb
 import pandas as pd
+import torch
 from accelerate import Accelerator
 from peft import PeftModel
 
@@ -18,7 +19,6 @@ def main(
     data_dir=None,
     batch_size=1,
     model_name=None,
-    fp8=True,
     model_dir=None,
     peft_dir=None,
     use_dataset_cache=True,
@@ -29,7 +29,6 @@ def main(
         "seed": seed,
         "dataset": dataset,
         "model_name": model_name,
-        "fp8": fp8,
         "model_dir": model_dir,
         "peft_dir": peft_dir,
         "eval_kshot": eval_kshot,
@@ -45,8 +44,9 @@ def main(
 
     model = get_model(
         model_name,
+        # device_map="auto",
         device_map={"": accelerator.local_process_index},
-        load_in_8bit=fp8,
+        torch_dtype=torch.float16,
         model_dir=model_dir,
     )
 
@@ -81,10 +81,12 @@ def main(
         use_cache=use_dataset_cache,
     )
 
-    all_metrics = list(map(
-        lambda m: {**m, **config, "dataset": dataset},
-        list(filter(lambda m: m is not None, [val_metrics, test_metrics])),
-    ))
+    all_metrics = list(
+        map(
+            lambda m: {**m, **config, "dataset": dataset},
+            list(filter(lambda m: m is not None, [val_metrics, test_metrics])),
+        )
+    )
     logging.info(
         {"metrics": wandb.Table(dataframe=pd.DataFrame(all_metrics))},
         extra=dict(metrics=True),

@@ -3,7 +3,7 @@ import torch
 import transformers
 
 
-## NOTE: HF Convention. See https://huggingface.co/docs/transformers/v4.30.0/en/tasks/token_classification#preprocess.
+## NOTE: HF Convention. See https://huggingface.co/docs/transformers/en/tasks/token_classification#preprocess.
 IGNORE_LABEL = -100
 
 

@@ -136,6 +136,9 @@ def evaluate_dataset(
     eval_kshot=None,
     use_cache=True,
 ):
+    ## FIXME: See https://github.com/huggingface/transformers/issues/25790#issuecomment-1695846805.
+    assert batch_size == 1, "Only support batch_size 1. See code comments."
+
     with accelerator.main_process_first():
         _extra_args = dict()
         ## NOTE: Conditional to avoid overriding default kshot specification in dataset definition.

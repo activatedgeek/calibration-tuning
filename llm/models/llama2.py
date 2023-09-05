@@ -38,6 +38,7 @@ def create_model(size=None, model_dir=None, cache_dir=None, causal_lm=True, **kw
             **kwargs,
         )
 
+
 @register_model
 def llama2_7b_tokenizer(**kwargs):
     return create_tokenizer("7b", **kwargs)
