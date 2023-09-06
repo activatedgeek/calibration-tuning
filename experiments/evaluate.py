@@ -7,7 +7,7 @@ from peft import PeftModel
 
 from llm.logging import entrypoint
 from llm.models import get_model, get_special_tokens
-from llm.utils.evaluation import evaluate_dataset
+from llm.utils.evaluation import evaluate_dataset_via_eos
 from llm.utils.trainer import get_last_checkpoint_path
 
 
@@ -69,7 +69,7 @@ def main(
 
         logging.info(f"Loaded PEFT checkpoint from '{peft_dir}'")
 
-    val_metrics, test_metrics = evaluate_dataset(
+    val_metrics, test_metrics = evaluate_dataset_via_eos(
         accelerator,
         model,
         tokenizer,

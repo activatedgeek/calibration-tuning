@@ -86,14 +86,14 @@ def prepare_unc_query(tokenizer, inputs, outputs, collate_fn):
     eos_idx, y, logits = extract_qa_exact(tokenizer, inputs, outputs=outputs)
     y_hat = logits.argmax(dim=-1)
 
-    response_ids = inputs.get("input_ids")
+    response_ids = inputs.get("input_ids").clone()
     response_ids[torch.arange(response_ids.size(0)), eos_idx] = y_hat
     responses = tokenizer.batch_decode(response_ids)
 
     query = [
         {
             "source": f"{r}\n\nIs the proposed answer correct? ",
-            "target": ("yes" if a == 1 else "no") + tokenizer.eos_token,
+            "target": ("yes" if a else "no") + tokenizer.eos_token,
         }
         for r, a in zip(responses, y == y_hat)
     ]

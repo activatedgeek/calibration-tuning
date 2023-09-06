@@ -75,7 +75,7 @@ __ATTRS = dict(tasks=__TASKS)
 
 
 def __format_prompt(sample, style, with_answer=False):
-    if style == "mcq":
+    if style == "choice":
         question = sample["question"]
         choices = sample["choices"]
         answer = string.ascii_lowercase[sample["answer"]] + "</s>\n"
@@ -180,5 +180,5 @@ def mmlu(*args, dataset_str=None, **kwargs):
         *args,
         **kwargs,
         instance=instance,
-        prompt_style="mcq",
+        prompt_style="choice",
     )

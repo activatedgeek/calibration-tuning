@@ -9,7 +9,7 @@ from peft import PeftModel
 from llm.logging import entrypoint
 from llm.datasets import list_datasets, get_dataset_attrs
 from llm.models import get_model, get_special_tokens
-from llm.utils.evaluation import evaluate_dataset
+from llm.utils.evaluation import evaluate_dataset_via_eos
 from llm.utils.trainer import get_last_checkpoint_path
 
 
@@ -83,7 +83,7 @@ def main(
 
     all_metrics = []
     for dataset in tqdm(all_datasets):
-        val_metrics, test_metrics = evaluate_dataset(
+        val_metrics, test_metrics = evaluate_dataset_via_eos(
             accelerator,
             model,
             tokenizer,

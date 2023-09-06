@@ -27,14 +27,14 @@ pip install -e .
 An example command for evaluation.
 
 ```shell
-python experiments/evaluate.py --model_name=llama2_7b --dataset=mmlu:business_ethics
+./autotorchrun experiments/evaluate.py --model_name=llama2_7b --dataset=mmlu:business_ethics
 ```
 
 ### Fine-Tuning
 
-An example command to run fine-tuning on the Alpaca dataset with Llama2-7b:
+An example command to run fine-tuning with Llama2-7b:
 ```shell
-./autotorchrun experiments/finetune.py --model_name=llama2_7b --dataset=alpaca
+./autotorchrun experiments/finetune.py --model_name=llama2_7b --dataset=mmlu:business_ethics
 ```
 
 ## Details

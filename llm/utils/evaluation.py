@@ -82,7 +82,7 @@ def evaluate_via_eos(accelerator, model, tokenizer, loader):
     }
 
 
-def evaluate_dataset(
+def evaluate_dataset_via_eos(
     accelerator,
     model,
     tokenizer,
