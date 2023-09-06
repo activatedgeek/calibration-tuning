@@ -106,7 +106,6 @@ def main(
             {"metrics": wandb.Table(dataframe=pd.DataFrame(all_metrics))},
             extra=dict(metrics=True),
         )
-        logging.debug(dataset_metrics)
 
 
 if __name__ == "__main__":

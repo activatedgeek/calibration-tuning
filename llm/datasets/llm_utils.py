@@ -48,3 +48,55 @@ def tokenize_for_causal_lm(tokenizer, sample):
     tokenize_dict["labels"] = labels.tolist()
 
     return tokenize_dict
+
+
+def get_uq_answer_token_vec(tokenizer):
+    _no_token = tokenizer("no").input_ids
+    _yes_token = tokenizer("yes").input_ids
+
+    ## NOTE: Assumes yes/no are single token (length 2 including BOS token).
+    assert len(_no_token) == 2, f'Cannot handle "no" token {_no_token} yet.'
+    assert len(_yes_token) == 2, f'Cannot handle "yes" token {_yes_token} yet.'
+
+    return torch.tensor([_no_token[-1], _yes_token[-1]])
+
+
+def extract_qa_exact(tokenizer, inputs, outputs=None):
+    """
+    Assumes all answers are 1 token and end immediately with EOS token.
+    """
+    labels = inputs.pop("labels")[..., 1:]
+
+    eos_idx = labels.eq(tokenizer.eos_token_id).nonzero()[
+        labels.eq(tokenizer.eos_token_id).sum(dim=-1).cumsum(dim=0) - 1
+    ][:, -1]
+
+    y = labels[torch.arange(labels.size(0)), eos_idx - 1]
+
+    if outputs is not None:
+        logits = outputs.logits[..., :-1, :]
+        logits = logits[torch.arange(logits.size(0)), eos_idx - 1]
+
+        return eos_idx, y, logits
+
+    return eos_idx, y
+
+
+def prepare_unc_query(tokenizer, inputs, outputs, collate_fn):
+    eos_idx, y, logits = extract_qa_exact(tokenizer, inputs, outputs=outputs)
+    y_hat = logits.argmax(dim=-1)
+
+    response_ids = inputs.get("input_ids")
+    response_ids[torch.arange(response_ids.size(0)), eos_idx] = y_hat
+    responses = tokenizer.batch_decode(response_ids)
+
+    query = [
+        {
+            "source": f"{r}\n\nIs the proposed answer correct? ",
+            "target": ("yes" if a == 1 else "no") + tokenizer.eos_token,
+        }
+        for r, a in zip(responses, y == y_hat)
+    ]
+    query_inputs = collate_fn([tokenize_for_causal_lm(tokenizer, q) for q in query])
+
+    return y, logits, query_inputs

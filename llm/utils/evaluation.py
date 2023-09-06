@@ -1,23 +1,15 @@
+import logging
 from tqdm.auto import tqdm
 import torch
 
 from .third_party.calibration import calibration
 from ..datasets import get_dataset, get_loader
 from ..datasets.llm_utils import (
-    tokenize_for_causal_lm,
+    get_uq_answer_token_vec,
+    extract_qa_exact,
+    prepare_unc_query,
     DataCollatorForSupervisedDataset,
 )
-
-
-def extract_eos_pos(tokenizer, labels):
-    """
-    Extracts the position of the last EOS token from each row.
-    """
-    eos_idx = labels.eq(tokenizer.eos_token_id).nonzero()[
-        labels.eq(tokenizer.eos_token_id).sum(dim=-1).cumsum(dim=0) - 1
-    ][:, -1]
-
-    return eos_idx
 
 
 @torch.inference_mode()
@@ -27,101 +19,66 @@ def evaluate_via_eos(accelerator, model, tokenizer, loader):
     """
     device = accelerator.device
 
-    uq_ans_token_vec = torch.tensor(
-        [tokenizer("no").input_ids[-1], tokenizer("yes").input_ids[-1]]
-    ).to(device)
+    uq_ans_token_vec = get_uq_answer_token_vec(tokenizer).to(device)
 
-    Y, P_hat = [], []
-    UNC_Y, UNC_P_hat = [], []
+    all_y, all_logits = [], []
+    all_unc_y, all_unc_logits = [], []
 
     for inputs in tqdm(loader, leave=False):
         inputs = {k: v.to(device) for k, v in inputs.items()}
+        outputs = model(**inputs)
 
-        labels = inputs.pop("labels")[..., 1:]
-
-        logits = model(**inputs).logits[..., :-1, :]
-
-        eos_idx = extract_eos_pos(tokenizer, labels)
-        y = labels[torch.arange(labels.size(0)), eos_idx - 1]
-        p_hat = logits[torch.arange(logits.size(0)), eos_idx - 1]
-
-        (__y, __p_hat) = accelerator.gather_for_metrics((y, p_hat))
-        Y.append(__y), P_hat.append(__p_hat)
-
-        ######### UQ Metrics #######
-
-        output_ids = logits.argmax(dim=-1)
-
-        targets = (
-            labels[torch.arange(labels.size(0)), eos_idx - 1]
-            == output_ids[torch.arange(output_ids.size(0)), eos_idx - 1]
+        y, logits, query_inputs = prepare_unc_query(
+            tokenizer, inputs, outputs, loader.collate_fn
         )
 
-        response_ids = inputs.get("input_ids").clone()
-        response_ids[torch.arange(response_ids.size(0)), eos_idx] = output_ids[
-            torch.arange(output_ids.size(0)), eos_idx - 1
-        ]
-        unc_prompts = tokenizer.batch_decode(
-            response_ids,
-            skip_special_tokens=True,
-            clean_up_tokenization_spaces=True,
+        query_inputs = {k: v.to(device) for k, v in query_inputs.items()}
+        query_outputs = model(**query_inputs)
+
+        _, unc_y, unc_logits = extract_qa_exact(
+            tokenizer, query_inputs, outputs=query_outputs
         )
-        unc_samples = [
-            {
-                "source": u + "\n" + "Is the proposed answer correct? ",
-                "target": f"{'yes' if r else 'no'}{tokenizer.eos_token}",
-            }
-            for u, r in zip(unc_prompts, targets)
-        ]
-        tokenized_unc_samples = [
-            tokenize_for_causal_lm(tokenizer, sample) for sample in unc_samples
-        ]
-        unc_inputs = {
-            k: v.to(device) for k, v in loader.collate_fn(tokenized_unc_samples).items()
-        }
 
-        unc_labels = unc_inputs.pop("labels")
-        unc_eos_idx = extract_eos_pos(tokenizer, unc_labels)
+        (_y, _logits, _unc_y, _unc_logits) = accelerator.gather_for_metrics(
+            (y, logits, unc_y, unc_logits)
+        )
+        all_y.append(_y), all_logits.append(_logits), all_unc_y.append(
+            _unc_y
+        ), all_unc_logits.append(_unc_logits)
 
-        unc_labels = unc_labels[torch.arange(unc_labels.size(0)), unc_eos_idx - 1]
-        unc_y = (unc_labels.unsqueeze(-1) == uq_ans_token_vec).long().argmax(dim=-1)
+    all_y, all_p = torch.cat(all_y, dim=0), torch.cat(all_logits, dim=0).softmax(dim=-1)
+    all_unc_y, all_unc_p = torch.cat(all_unc_y, dim=0), torch.cat(
+        all_unc_logits, dim=0
+    ).softmax(dim=-1)
 
-        unc_logits = model(**unc_inputs).logits[
-            torch.arange(unc_labels.size(0)), unc_eos_idx - 1, :
-        ]
-        unc_p_hat = unc_logits[..., uq_ans_token_vec]
-
-        (__unc_y, __uq_p_hat) = accelerator.gather_for_metrics((unc_y, unc_p_hat))
-        UNC_Y.append(__unc_y), UNC_P_hat.append(__uq_p_hat)
-
-        ######### UQ Metrics #######
-
-    Y, P_hat = torch.cat(Y, dim=0), torch.cat(P_hat, dim=0).softmax(dim=-1)
-
-    Y_hat = P_hat.argmax(dim=-1)
-    acc = (Y == Y_hat).float().mean()
-    ece, _ = calibration(Y, Y_hat, P_hat[torch.arange(Y_hat.size(0)), Y_hat])
-
-    UNC_Y, UNC_P_hat = torch.cat(UNC_Y, dim=0), torch.cat(UNC_P_hat, dim=0).softmax(
-        dim=-1
+    all_y_hat = all_p.argmax(dim=-1)
+    acc = (all_y == all_y_hat).float().mean()
+    ece, _ = calibration(
+        all_y, all_y_hat, all_p[torch.arange(all_p.size(0)), all_y_hat]
     )
 
-    UNC_Y_hat = UNC_P_hat.argmax(dim=-1)
-    UNC_acc = (UNC_Y == UNC_Y_hat).float().mean()
-    UNC_ece, _ = calibration(
-        UNC_Y, UNC_Y_hat, UNC_P_hat[torch.arange(UNC_Y_hat.size(0)), UNC_Y_hat]
+    ## Only use yes/no token logits for unc accuracy.
+    all_unc_y = (all_unc_y.unsqueeze(-1) == uq_ans_token_vec).long().argmax(dim=-1)
+    all_unc_p = all_unc_p[:, uq_ans_token_vec]
+
+    all_unc_y_hat = all_unc_p.argmax(dim=-1)
+    unc_acc = (all_unc_y == all_unc_y_hat).float().mean()
+    unc_ece, _ = calibration(
+        all_unc_y,
+        all_unc_y_hat,
+        all_unc_p[torch.arange(all_unc_p.size(0)), all_unc_y_hat],
     )
 
     ## Using confidence scores from "yes" (idx 1) always.
-    qa_UNC_ece, _ = calibration(Y, Y_hat, UNC_P_hat[:, 1])
+    qa_unc_ece, _ = calibration(all_y, all_y_hat, all_unc_p[:, 1])
 
     return {
-        "N": Y.size(0),
+        "N": all_y.size(0),
         "acc": acc.item(),
         "ece": ece,
-        "unc_acc": UNC_acc.item(),
-        "unc_ece": UNC_ece,
-        "qa_unc_ece": qa_UNC_ece,
+        "unc_acc": unc_acc.item(),
+        "unc_ece": unc_ece,
+        "qa_unc_ece": qa_unc_ece,
     }
 
 
@@ -130,6 +87,8 @@ def evaluate_dataset(
     model,
     tokenizer,
     dataset,
+    val_data=None,
+    test_data=None,
     seed=137,
     batch_size=1,
     data_dir=None,
@@ -139,19 +98,24 @@ def evaluate_dataset(
     ## FIXME: See https://github.com/huggingface/transformers/issues/25790#issuecomment-1695846805.
     assert batch_size == 1, "Only support batch_size 1. See code comments."
 
-    with accelerator.main_process_first():
-        _extra_args = dict()
-        ## NOTE: Conditional to avoid overriding default kshot specification in dataset definition.
-        if eval_kshot is not None:
-            _extra_args["eval_kshot"] = eval_kshot
-        _, val_data, test_data = get_dataset(
-            dataset,
-            root=data_dir,
-            tokenizer=tokenizer,
-            seed=seed,
-            use_cache=use_cache,
-            **_extra_args,
-        )
+    if dataset is not None:
+        with accelerator.main_process_first():
+            _extra_args = dict()
+            ## NOTE: Conditional to avoid overriding default kshot specification in dataset definition.
+            if eval_kshot is not None:
+                _extra_args["eval_kshot"] = eval_kshot
+            _, val_data, test_data = get_dataset(
+                dataset,
+                root=data_dir,
+                tokenizer=tokenizer,
+                seed=seed,
+                use_cache=use_cache,
+                **_extra_args,
+            )
+    else:
+        assert (val_data is not None) or (
+            test_data is not None
+        ), "Missing val_data or test_data."
 
     val_metrics = None
     if val_data is not None:
@@ -168,6 +132,8 @@ def evaluate_dataset(
         )
         val_metrics["split"] = "validation"
 
+        logging.debug(val_metrics)
+
     test_metrics = None
     if test_data is not None:
         test_metrics = evaluate_via_eos(
@@ -182,5 +148,7 @@ def evaluate_dataset(
             ),
         )
         test_metrics["split"] = "test"
+
+        logging.debug(test_metrics)
 
     return val_metrics, test_metrics

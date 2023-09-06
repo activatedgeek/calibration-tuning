@@ -11,14 +11,12 @@ from .registry import register_model
 __all__ = ["create_tokenizer", "create_model"]
 
 
-def create_tokenizer(
-    size=None, model_dir=None, cache_dir=None, padding_side="right", use_fast=False, **_
-):
+def create_tokenizer(size=None, model_dir=None, cache_dir=None, **_):
     tokenizer = LlamaTokenizer.from_pretrained(
         model_dir or f"meta-llama/Llama-2-{size}-hf",
         cache_dir=os.environ.get("MODELDIR", cache_dir),
-        padding_side=padding_side,
-        use_fast=use_fast,
+        padding_side="left",
+        use_fast=True,
         legacy=False,
     )
     return tokenizer

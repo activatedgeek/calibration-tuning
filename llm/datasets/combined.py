@@ -1,4 +1,5 @@
 import numpy as np
+import logging
 from datasets import concatenate_datasets
 
 from .registry import get_dataset, list_datasets, register_dataset
@@ -20,9 +21,9 @@ def get_combined_train_dataset(
         )
     )
 
-    all_train_data, all_n = [], []
+    all_train_data, a_val_data, all_n = [], None, []
     for dataset in all_datasets:
-        train_data, _, _ = get_dataset(
+        train_data, val_data, _ = get_dataset(
             dataset,
             root=root,
             tokenizer=tokenizer,
@@ -35,6 +36,11 @@ def get_combined_train_dataset(
             all_train_data.append(train_data)
             all_n.append(len(train_data))
 
+        ## Use first val_data from any dataset as val.
+        if val_data is not None and a_val_data is None:
+            logging.info(f"Setting validation data from '{dataset}'")
+            a_val_data = val_data
+
     max_n = min(max_n, sum(all_n))
     all_n = ((np.array(all_n) / max_n) * max_n).astype(int)
 
@@ -45,7 +51,7 @@ def get_combined_train_dataset(
         ]
     )
 
-    return all_train_data, None, None
+    return all_train_data, a_val_data, None
 
 
 @register_dataset
