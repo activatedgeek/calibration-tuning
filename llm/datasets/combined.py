@@ -21,9 +21,10 @@ def get_combined_train_dataset(
         )
     )
 
-    all_train_data, a_val_data, all_n = [], None, []
+    all_train_data, all_n = [], []
+    a_val_data, a_test_data = None, None
     for dataset in all_datasets:
-        train_data, val_data, _ = get_dataset(
+        train_data, val_data, test_data = get_dataset(
             dataset,
             root=root,
             tokenizer=tokenizer,
@@ -36,10 +37,11 @@ def get_combined_train_dataset(
             all_train_data.append(train_data)
             all_n.append(len(train_data))
 
-        ## Use first val_data from any dataset as val.
-        if val_data is not None and a_val_data is None:
-            logging.info(f"Setting validation data from '{dataset}'")
+        ## Use last val_data from any dataset as val.
+        if val_data is not None and test_data is not None:
+            logging.info(f"Setting validation/test data from '{dataset}'")
             a_val_data = val_data
+            a_test_data = test_data
 
     max_n = min(max_n, sum(all_n))
     all_n = ((np.array(all_n) / max_n) * max_n).astype(int)
@@ -51,7 +53,7 @@ def get_combined_train_dataset(
         ]
     )
 
-    return all_train_data, a_val_data, None
+    return all_train_data, a_val_data, a_test_data
 
 
 @register_dataset
