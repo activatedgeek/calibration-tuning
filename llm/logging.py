@@ -1,7 +1,6 @@
 from pathlib import Path
 from uuid import uuid4
-from functools import partial
-import logging
+import logging.config
 import os
 import json
 import wandb
@@ -9,6 +8,7 @@ from accelerate import PartialState as AcceleratorState
 
 
 WANDB_KWARGS_NAME = "wandb_args.json"
+WANDB_SWEEP_ID_NAME = "WANDB_SWEEP_ID"
 
 
 class WnBHandler(logging.Handler):
@@ -78,7 +78,7 @@ def set_logging(log_dir=None, metrics_extra_key="metrics", generate_log_dir=Fals
             # settings=wandb.Settings(start_method="fork"),
         )
         ## Store sweep run config, if other processes need it.
-        if "WANDB_SWEEP_ID" in os.environ:
+        if WANDB_SWEEP_ID_NAME in os.environ:
             with open(f"{log_dir}/{WANDB_KWARGS_NAME}", "w") as f:
                 json.dump(dict(wandb.config), f)
 
@@ -161,11 +161,11 @@ def entrypoint(main):
         finish_logging()
 
     def _entrypoint(**kwargs):
-        if "WANDB_SWEEP_ID" in os.environ:
+        if WANDB_SWEEP_ID_NAME in os.environ:
             if accelerator.is_main_process:
                 wandb.agent(
-                    os.environ.get("WANDB_SWEEP_ID"),
-                    function=partial(_main, **kwargs),
+                    os.environ.get(WANDB_SWEEP_ID_NAME),
+                    function=lambda **kwargs: _main(**kwargs),
                     count=1,
                 )
             else:
