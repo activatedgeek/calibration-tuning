@@ -47,10 +47,6 @@ def evaluate_via_eos(accelerator, model, tokenizer, loader):
         ), all_unc_logits.append(_unc_logits)
 
     all_y, all_p = torch.cat(all_y, dim=0), torch.cat(all_logits, dim=0).softmax(dim=-1)
-    all_unc_y, all_unc_p = torch.cat(all_unc_y, dim=0), torch.cat(
-        all_unc_logits, dim=0
-    ).softmax(dim=-1)
-
     all_y_hat = all_p.argmax(dim=-1)
     acc = (all_y == all_y_hat).float().mean()
     ece, _ = calibration(
@@ -58,8 +54,14 @@ def evaluate_via_eos(accelerator, model, tokenizer, loader):
     )
 
     ## Only use yes/no token logits for unc accuracy.
-    all_unc_y = (all_unc_y.unsqueeze(-1) == uq_ans_token_vec).long().argmax(dim=-1)
-    all_unc_p = all_unc_p[:, uq_ans_token_vec]
+    all_unc_y, all_unc_logits = (
+        torch.cat(all_unc_y, dim=0),
+        torch.cat(all_unc_logits, dim=0),
+    )
+    all_unc_y, all_unc_p = (
+        (all_unc_y.unsqueeze(-1) == uq_ans_token_vec).long().argmax(dim=-1),
+        all_unc_logits[:, uq_ans_token_vec].softmax(dim=-1),
+    )
 
     all_unc_y_hat = all_unc_p.argmax(dim=-1)
     unc_acc = (all_unc_y == all_unc_y_hat).float().mean()
