@@ -6,6 +6,7 @@ from transformers import (
 )
 
 from .registry import register_model
+from .llm_utils import get_special_tokens
 
 
 __all__ = ["create_tokenizer", "create_model"]
@@ -16,25 +17,48 @@ def create_tokenizer(size=None, model_dir=None, cache_dir=None, **_):
         model_dir or f"meta-llama/Llama-2-{size}-hf",
         cache_dir=os.environ.get("MODELDIR", cache_dir),
         padding_side="left",
-        use_fast=True,
+        use_fast=False,
         legacy=False,
     )
+
+    tokenizer.add_special_tokens(get_special_tokens(tokenizer))
+
     return tokenizer
 
 
-def create_model(size=None, model_dir=None, cache_dir=None, causal_lm=True, **kwargs):
+def create_model(
+    size=None, model_dir=None, cache_dir=None, causal_lm=True, tokenizer=None, **kwargs
+):
     if causal_lm:
-        return LlamaForCausalLM.from_pretrained(
+        model = LlamaForCausalLM.from_pretrained(
             model_dir or f"meta-llama/Llama-2-{size}-hf",
             cache_dir=os.environ.get("MODELDIR", cache_dir),
             **kwargs,
         )
     else:
-        return LlamaForSequenceClassification.from_pretrained(
+        model = LlamaForSequenceClassification.from_pretrained(
             model_dir or f"meta-llama/Llama-2-{size}-hf",
             cache_dir=os.environ.get("MODELDIR", cache_dir),
             **kwargs,
         )
+
+    extra_token_count = len(tokenizer) - model.get_input_embeddings().weight.data.size(
+        0
+    )
+    if extra_token_count:
+        model.resize_token_embeddings(len(tokenizer))
+
+        input_embeddings = model.get_input_embeddings().weight.data
+        output_embeddings = model.get_output_embeddings().weight.data
+
+        input_embeddings[-extra_token_count:] = input_embeddings[
+            :-extra_token_count
+        ].mean(dim=0, keepdim=True)
+        output_embeddings[-extra_token_count:] = output_embeddings[
+            :-extra_token_count
+        ].mean(dim=0, keepdim=True)
+
+    return model
 
 
 @register_model

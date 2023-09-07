@@ -8,7 +8,7 @@ from peft import (
 )
 
 from llm.datasets import get_dataset
-from llm.models import get_model, get_special_tokens
+from llm.models import get_model
 from llm.logging import entrypoint
 from llm.utils.trainer import (
     TrainingArguments,
@@ -48,28 +48,15 @@ def main(
         f"{model_name}_tokenizer",
         model_dir=model_dir,
     )
-    special_token_count = tokenizer.add_special_tokens(get_special_tokens(tokenizer))
 
     model = get_model(
         model_name,
         device_map={"": accelerator.local_process_index},
         load_in_8bit=fp8,
         model_dir=model_dir,
+        use_cache=False,
+        tokenizer=tokenizer,
     )
-    model.config.use_cache = False
-
-    ## NOTE: Token embeddings aren't trained.
-    model.resize_token_embeddings(len(tokenizer))
-    if special_token_count:
-        input_embeddings = model.get_input_embeddings().weight.data
-        output_embeddings = model.get_output_embeddings().weight.data
-
-        input_embeddings[-special_token_count:] = input_embeddings[
-            :-special_token_count
-        ].mean(dim=0, keepdim=True)
-        output_embeddings[-special_token_count:] = output_embeddings[
-            :-special_token_count
-        ].mean(dim=0, keepdim=True)
 
     model = prepare_model_for_kbit_training(model)
 

@@ -6,7 +6,7 @@ from accelerate import Accelerator
 from peft import PeftModel
 
 from llm.logging import entrypoint
-from llm.models import get_model, get_special_tokens
+from llm.models import get_model
 from llm.utils.evaluation import evaluate_dataset_via_eos
 from llm.utils.trainer import get_last_checkpoint_path
 
@@ -40,7 +40,6 @@ def main(
         f"{model_name}_tokenizer",
         model_dir=model_dir,
     )
-    special_token_count = tokenizer.add_special_tokens(get_special_tokens(tokenizer))
 
     model = get_model(
         model_name,
@@ -48,19 +47,8 @@ def main(
         device_map={"": accelerator.local_process_index},
         torch_dtype=torch.float16,
         model_dir=model_dir,
+        tokenizer=tokenizer,
     )
-
-    model.resize_token_embeddings(len(tokenizer))
-    if special_token_count:
-        input_embeddings = model.get_input_embeddings().weight.data
-        output_embeddings = model.get_output_embeddings().weight.data
-
-        input_embeddings[-special_token_count:] = input_embeddings[
-            :-special_token_count
-        ].mean(dim=0, keepdim=True)
-        output_embeddings[-special_token_count:] = output_embeddings[
-            :-special_token_count
-        ].mean(dim=0, keepdim=True)
 
     if peft_dir is not None:
         peft_dir = get_last_checkpoint_path(peft_dir)
