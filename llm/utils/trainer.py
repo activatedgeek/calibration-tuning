@@ -153,9 +153,7 @@ class CalibrationTrainer(Trainer):
         )
 
         if val_metrics is not None:
-            val_metrics = {
-                f"eval_{k}": v for k, v in val_metrics.items()
-            }
+            val_metrics = {f"eval_{k}": v for k, v in val_metrics.items()}
             self.log(val_metrics)
             metrics.update(val_metrics)
 
@@ -201,7 +199,9 @@ class ClassificationTrainer(Trainer):
             torch.arange(output_ids.size(0)), eos_idx - 1
         ]
 
-        response_ids[torch.arange(input_ids.size(0)), eos_idx+1] = self.tokenizer.pad_token_id
+        response_ids[
+            torch.arange(input_ids.size(0)), eos_idx + 1
+        ] = self.tokenizer.pad_token_id
 
         labels = torch.tensor(targets, device=targets.device).long()
 

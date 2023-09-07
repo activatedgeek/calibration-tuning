@@ -88,6 +88,13 @@ def prepare_unc_query(tokenizer, inputs, outputs, collate_fn):
 
     response_ids = inputs.get("input_ids").clone()
     response_ids[torch.arange(response_ids.size(0)), eos_idx] = y_hat
+
+    ## Remove the initial BOS token to conflict with BOS added during tokenization.
+    assert (response_ids[:, 0] == tokenizer.bos_token_id).sum() == response_ids.size(
+        0
+    ), "Not all sequences start with BOS token. This should not happen."
+    response_ids = response_ids[:, 1:]
+
     responses = tokenizer.batch_decode(response_ids)
 
     query = [
