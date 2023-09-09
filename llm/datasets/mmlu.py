@@ -74,13 +74,12 @@ __TASKS = [
 __ATTRS = dict(tasks=__TASKS)
 
 
-def __format_prompt(sample, style, with_answer=False):
+def __format_sample(sample, tokenizer, style):
     if style == "choice":
         question = sample["question"]
         choices = sample["choices"]
-        answer = string.ascii_lowercase[sample["answer"]] + "</s>\n"
 
-        prompt = "\n".join(
+        source = "\n".join(
             [
                 f"Question:\n{question}",
                 "\nChoices:",
@@ -88,33 +87,68 @@ def __format_prompt(sample, style, with_answer=False):
                     f"  ({n}): {c}"
                     for n, c in zip(string.ascii_lowercase[: len(choices)], choices)
                 ],
-                f"Answer: {answer if with_answer else ''}",
+                f"Answer: ",
             ]
         )
 
-        return prompt
+        target = string.ascii_lowercase[sample["answer"]] + tokenizer.eos_token
+
+        return dict(source=source, target=target)
+    elif style == "oe":
+        question = sample["question"]
+
+        source = "\n".join(
+            [
+                f"Question:\n{question}",
+                f"Answer: ",
+            ]
+        )
+
+        target = sample["choices"][sample["answer"]] + tokenizer.eos_token
+
+        return dict(source=source, target=target)
 
     raise NotImplementedError
 
 
-def __generate_fewshot_prompts(dataset, instance, prompt_style, kshot, seed=None):
+def __generate_fewshot_prompts(
+    tokenizer, prompt_style, prompt_dataset, instance, kshot, seed=None
+):
     if kshot <= 0:
         return ""
+
+    _c = lambda s: s["source"] + s["target"]
 
     fewshot_prompt = "\n".join(
         [
             f"The following are multiple choice questions (with answers) about {' '.join(instance.split('_'))}.\n",
             *[
-                __format_prompt(dataset[idx], prompt_style, with_answer=True)
+                _c(__format_sample(prompt_dataset[idx], tokenizer, prompt_style)) + "\n"
                 for idx in torch.randperm(
-                    len(dataset), generator=torch.Generator().manual_seed(seed)
+                    len(prompt_dataset), generator=torch.Generator().manual_seed(seed)
                 )[:kshot].tolist()
             ],
         ]
     )
-    fewshot_prompt = fewshot_prompt + "\nNow, answer the next question.\n\n"
+    fewshot_prompt = fewshot_prompt + "\nNow, answer the next question."
 
     return fewshot_prompt
+
+
+def __format_sample_with_prompt(
+    sample, tokenizer, prompt_style, prompt_dataset, instance, kshot, seed=None
+):
+    sample_dict = __format_sample(sample, tokenizer, prompt_style)
+
+    prompt_str = __generate_fewshot_prompts(
+        tokenizer, prompt_style, prompt_dataset, instance, kshot, seed=seed
+    )
+    if len(prompt_str):
+        prompt_str += "\n\n"
+
+    sample_dict["source"] = prompt_str + sample_dict["source"]
+
+    return sample_dict
 
 
 def get_mmlu(
@@ -141,13 +175,9 @@ def get_mmlu(
     train_data, val_data, test_data = [
         dataset.pop(split)
         .map(
-            lambda x: {
-                "source": __generate_fewshot_prompts(
-                    dev_data, instance, prompt_style, k, seed=seed
-                )
-                + __format_prompt(x, prompt_style),
-                "target": f"{string.ascii_lowercase[x['answer']]}{tokenizer.eos_token}",
-            },
+            lambda x: __format_sample_with_prompt(
+                x, tokenizer, prompt_style, dev_data, instance, k, seed=seed
+            ),
             num_proc=num_workers,
             remove_columns=[
                 "question",
@@ -169,16 +199,18 @@ def get_mmlu(
 
 
 @register_dataset(attrs=__ATTRS)
-def mmlu(*args, dataset_str=None, **kwargs):
+def mmlu(*args, dataset_str=None, prompt_style="choice", **kwargs):
     d, instance = dataset_str.split(":")
 
     assert d == "mmlu" and isinstance(
         instance, str
     ), f"Dataset string should be formatted as 'mmlu:<subset>', found {dataset_str}"
 
+    assert instance in __TASKS, f"Task '{instance}' not found."
+
     return get_mmlu(
         *args,
         **kwargs,
         instance=instance,
-        prompt_style="choice",
+        prompt_style=prompt_style,
     )
