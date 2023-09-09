@@ -11,15 +11,14 @@ __all__ = [
 ]
 
 
-def __format_prompt(sample, style, with_answer=False):
+def __format_sample(sample, tokenizer, style):
     if style == "choice":
         problem = sample["Problem"]
         answer_map = [
             opt.split(")")[-1].strip() for opt in sample["options"].split(",")
         ]
-        answer = sample["correct"] + "</s>\n"
 
-        prompt = "\n".join(
+        source = "\n".join(
             [
                 "Problem:",
                 problem,
@@ -30,33 +29,55 @@ def __format_prompt(sample, style, with_answer=False):
                         string.ascii_lowercase[: len(answer_map)], answer_map
                     )
                 ],
-                f"Answer: {answer if with_answer else ''}",
+                f"Answer: ",
             ]
         )
 
-        return prompt
+        target = sample["correct"] + tokenizer.eos_token
+
+        return dict(source=source, target=target)
 
     raise NotImplementedError
 
 
-def __generate_fewshot_prompts(dataset, prompt_style, kshot, seed=None):
+def __generate_fewshot_prompts(
+    tokenizer, prompt_style, prompt_dataset, kshot, seed=None
+):
     if kshot <= 0:
         return ""
+
+    _c = lambda s: s["source"] + s["target"]
 
     fewshot_prompt = "\n".join(
         [
             "The following are multiple choice math questions.\n",
             *[
-                __format_prompt(dataset[idx], prompt_style, with_answer=True)
+                _c(__format_sample(prompt_dataset[idx], tokenizer, prompt_style)) + "\n"
                 for idx in torch.randperm(
-                    len(dataset), generator=torch.Generator().manual_seed(seed)
+                    len(prompt_dataset), generator=torch.Generator().manual_seed(seed)
                 )[:kshot].tolist()
             ],
         ]
     )
-    fewshot_prompt = fewshot_prompt + "\nNow, answer the next question.\n\n"
+    fewshot_prompt = fewshot_prompt + "\nNow, answer the next question."
 
     return fewshot_prompt
+
+
+def __format_sample_with_prompt(
+    sample, tokenizer, prompt_style, prompt_dataset, kshot, seed=None
+):
+    sample_dict = __format_sample(sample, tokenizer, prompt_style)
+
+    prompt_str = __generate_fewshot_prompts(
+        tokenizer, prompt_style, prompt_dataset, kshot, seed=seed
+    )
+    if len(prompt_str):
+        prompt_str += "\n\n"
+
+    sample_dict["source"] = prompt_str + sample_dict["source"]
+
+    return sample_dict
 
 
 def get_math_qa(
@@ -79,11 +100,9 @@ def get_math_qa(
 
     train_data, val_data, test_data = [
         data.map(
-            lambda x: {
-                "source": __generate_fewshot_prompts(data, prompt_style, k, seed=seed)
-                + __format_prompt(x, prompt_style),
-                "target": f"{x['correct']}{tokenizer.eos_token}",
-            },
+            lambda x: __format_sample_with_prompt(
+                x, tokenizer, prompt_style, data, k, seed=seed
+            ),
             num_proc=num_workers,
             remove_columns=[
                 "Problem",
@@ -109,9 +128,9 @@ def get_math_qa(
 
 
 @register_dataset(attrs=dict(task_tags=["qa"]))
-def math_qa(*args, **kwargs):
+def math_qa(*args, prompt_style="choice", **kwargs):
     return get_math_qa(
         *args,
         **kwargs,
-        prompt_style="choice",
+        prompt_style=prompt_style,
     )

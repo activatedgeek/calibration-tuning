@@ -12,16 +12,12 @@ __all__ = [
 ]
 
 
-def __format_prompt(sample, style, with_answer=False):
+def __format_sample(sample, tokenizer, style):
     if style == "choice":
         question = sample["question"]
         answer_map = sample["mc1_targets"]["choices"]
-        answer = (
-            string.ascii_lowercase[np.array(sample["mc1_targets"]["labels"]).argmax()]
-            + "</s>\n"
-        )
 
-        prompt = "\n".join(
+        source = "\n".join(
             [
                 "Question:",
                 question,
@@ -32,33 +28,58 @@ def __format_prompt(sample, style, with_answer=False):
                         string.ascii_lowercase[: len(answer_map)], answer_map
                     )
                 ],
-                f"Answer: {answer if with_answer else ''}",
+                f"Answer: ",
             ]
         )
 
-        return prompt
+        target = (
+            string.ascii_lowercase[np.array(sample["mc1_targets"]["labels"]).argmax()]
+            + tokenizer.eos_token
+        )
+
+        return dict(source=source, target=target)
 
     raise NotImplementedError
 
 
-def __generate_fewshot_prompts(dataset, prompt_style, kshot, seed=None):
+def __generate_fewshot_prompts(
+    tokenizer, prompt_style, prompt_dataset, kshot, seed=None
+):
     if kshot <= 0:
         return ""
+
+    _c = lambda s: s["source"] + s["target"]
 
     fewshot_prompt = "\n".join(
         [
             "The following are multiple choice questions.\n",
             *[
-                __format_prompt(dataset[idx], prompt_style, with_answer=True)
+                _c(__format_sample(prompt_dataset[idx], tokenizer, prompt_style)) + "\n"
                 for idx in torch.randperm(
-                    len(dataset), generator=torch.Generator().manual_seed(seed)
+                    len(prompt_dataset), generator=torch.Generator().manual_seed(seed)
                 )[:kshot].tolist()
             ],
         ]
     )
-    fewshot_prompt = fewshot_prompt + "\nNow, answer the next question.\n\n"
+    fewshot_prompt = fewshot_prompt + "\nNow, answer the next question."
 
     return fewshot_prompt
+
+
+def __format_sample_with_prompt(
+    sample, tokenizer, prompt_style, prompt_dataset, kshot, seed=None
+):
+    sample_dict = __format_sample(sample, tokenizer, prompt_style)
+
+    prompt_str = __generate_fewshot_prompts(
+        tokenizer, prompt_style, prompt_dataset, kshot, seed=seed
+    )
+    if len(prompt_str):
+        prompt_str += "\n\n"
+
+    sample_dict["source"] = prompt_str + sample_dict["source"]
+
+    return sample_dict
 
 
 def get_truthful_qa(
@@ -82,13 +103,9 @@ def get_truthful_qa(
 
     val_data = dataset.pop("validation")
     val_data = val_data.map(
-        lambda x: {
-            "source": __generate_fewshot_prompts(
-                val_data, prompt_style, eval_kshot, seed=seed
-            )
-            + __format_prompt(x, prompt_style),
-            "target": f"{string.ascii_lowercase[np.array(x['mc1_targets']['labels']).argmax()]}{tokenizer.eos_token}",
-        },
+        lambda x: __format_sample_with_prompt(
+            x, tokenizer, prompt_style, val_data, eval_kshot, seed=seed
+        ),
         num_proc=num_workers,
         remove_columns=[
             "question",
@@ -105,10 +122,10 @@ def get_truthful_qa(
 
 
 @register_dataset
-def truthful_qa(*args, **kwargs):
+def truthful_qa(*args, prompt_style="choice", **kwargs):
     return get_truthful_qa(
         *args,
         **kwargs,
         subset="multiple_choice",
-        prompt_style="choice",
+        prompt_style=prompt_style,
     )
