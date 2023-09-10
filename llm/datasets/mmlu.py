@@ -3,7 +3,6 @@ import string
 import torch
 
 from .registry import register_dataset
-from .llm_utils import tokenize_for_causal_lm
 
 
 __all__ = [
@@ -173,8 +172,7 @@ def get_mmlu(
     dev_data = dataset.pop("dev")
 
     train_data, val_data, test_data = [
-        dataset.pop(split)
-        .map(
+        dataset.pop(split).map(
             lambda x: __format_sample_with_prompt(
                 x, tokenizer, prompt_style, dev_data, instance, k, seed=seed
             ),
@@ -184,11 +182,6 @@ def get_mmlu(
                 "choices",
                 "answer",
             ],
-        )
-        .map(
-            lambda x: tokenize_for_causal_lm(tokenizer, x),
-            num_proc=num_workers,
-            remove_columns=["source", "target"],
         )
         for split, k in zip(
             ["auxiliary_train", "validation", "test"], [0, eval_kshot, eval_kshot]

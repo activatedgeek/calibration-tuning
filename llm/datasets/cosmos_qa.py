@@ -3,7 +3,6 @@ import string
 import torch
 
 from .registry import register_dataset
-from .llm_utils import tokenize_for_causal_lm
 
 
 __all__ = [
@@ -115,10 +114,6 @@ def get_cosmos_qa(
                 "answer3",
                 "label",
             ],
-        ).map(
-            lambda x: tokenize_for_causal_lm(tokenizer, x),
-            num_proc=num_workers,
-            remove_columns=["source", "target"],
         )
         for data, k in zip(
             [dataset.pop("train"), dataset.pop("validation")],

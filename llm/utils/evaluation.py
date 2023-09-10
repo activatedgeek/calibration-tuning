@@ -5,6 +5,7 @@ import torch
 from .third_party.calibration import calibration
 from ..datasets import get_dataset, get_loader
 from ..datasets.llm_utils import (
+    tokenize_for_causal_lm,
     get_uq_answer_token_vec,
     extract_qa_exact,
     prepare_unc_query,
@@ -93,6 +94,7 @@ def evaluate_dataset_via_eos(
     test_data=None,
     seed=137,
     batch_size=1,
+    num_workers=8,
     data_dir=None,
     eval_kshot=None,
     use_cache=True,
@@ -114,6 +116,16 @@ def evaluate_dataset_via_eos(
                 use_cache=use_cache,
                 **_extra_args,
             )
+            val_data, test_data = [
+                data.map(
+                    lambda x: tokenize_for_causal_lm(tokenizer, x),
+                    num_proc=num_workers,
+                    remove_columns=["source", "target"],
+                )
+                if data is not None
+                else None
+                for data in [val_data, test_data]
+            ]
     else:
         assert (val_data is not None) or (
             test_data is not None

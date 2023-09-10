@@ -36,7 +36,7 @@ def get_combined_train_dataset(
             all_n.append(len(train_data))
 
     max_n = min(max_n, sum(all_n))
-    all_n = ((np.array(all_n) / max_n) * max_n).astype(int)
+    all_n = ((np.array(all_n) / sum(all_n)) * max_n).astype(int)
 
     all_train_data = concatenate_datasets(
         [
