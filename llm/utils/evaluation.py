@@ -32,6 +32,12 @@ def evaluate_via_eos(accelerator, model, tokenizer, loader):
         y, logits, query_inputs = prepare_unc_query(
             tokenizer, inputs, outputs, loader.collate_fn
         )
+        [
+            l.append(v)
+            for l, v in zip(
+                [all_y, all_logits], accelerator.gather_for_metrics((y, logits))
+            )
+        ]
 
         query_inputs = {k: v.to(device) for k, v in query_inputs.items()}
         query_outputs = model(**query_inputs)
@@ -39,13 +45,13 @@ def evaluate_via_eos(accelerator, model, tokenizer, loader):
         _, unc_y, unc_logits = extract_qa_exact(
             tokenizer, query_inputs, outputs=query_outputs
         )
-
-        (_y, _logits, _unc_y, _unc_logits) = accelerator.gather_for_metrics(
-            (y, logits, unc_y, unc_logits)
-        )
-        all_y.append(_y), all_logits.append(_logits), all_unc_y.append(
-            _unc_y
-        ), all_unc_logits.append(_unc_logits)
+        [
+            l.append(v)
+            for l, v in zip(
+                [all_unc_y, all_unc_logits],
+                accelerator.gather_for_metrics((unc_y, unc_logits)),
+            )
+        ]
 
     all_y, all_p = torch.cat(all_y, dim=0), torch.cat(all_logits, dim=0).softmax(dim=-1)
     all_y_hat = all_p.argmax(dim=-1)

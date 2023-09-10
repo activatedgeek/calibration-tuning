@@ -1,5 +1,6 @@
 from pathlib import Path
 from uuid import uuid4
+from functools import partial
 import logging.config
 import os
 import json
@@ -165,7 +166,7 @@ def entrypoint(main):
             if accelerator.is_main_process:
                 wandb.agent(
                     os.environ.get(WANDB_SWEEP_ID_NAME),
-                    function=lambda **kwargs: _main(**kwargs),
+                    function=lambda **agent_kwargs: _main(**kwargs, **agent_kwargs),
                     count=1,
                 )
             else:
