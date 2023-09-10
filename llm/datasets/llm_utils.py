@@ -65,7 +65,7 @@ def extract_qa_exact(tokenizer, inputs, outputs=None):
     """
     Assumes all answers are 1 token and end immediately with EOS token.
     """
-    labels = inputs.pop("labels")[..., 1:]
+    labels = inputs.get("labels")[..., 1:]
 
     eos_idx = labels.eq(tokenizer.eos_token_id).nonzero()[
         labels.eq(tokenizer.eos_token_id).sum(dim=-1).cumsum(dim=0) - 1
@@ -82,7 +82,7 @@ def extract_qa_exact(tokenizer, inputs, outputs=None):
     return eos_idx, y
 
 
-def prepare_unc_query(tokenizer, inputs, outputs, collate_fn):
+def prepare_unc_query(tokenizer, inputs, outputs):
     eos_idx, y, logits = extract_qa_exact(tokenizer, inputs, outputs=outputs)
     y_hat = logits.argmax(dim=-1)
 
@@ -97,13 +97,15 @@ def prepare_unc_query(tokenizer, inputs, outputs, collate_fn):
 
     responses = tokenizer.batch_decode(response_ids)
 
-    query = [
-        {
-            "source": f"{r}\n\nIs the proposed answer correct? ",
-            "target": ("yes" if a else "no") + tokenizer.eos_token,
-        }
+    query_inputs = [
+        tokenize_for_causal_lm(
+            tokenizer,
+            {
+                "source": f"{r}\n\nIs the proposed answer correct? ",
+                "target": ("yes" if a else "no") + tokenizer.eos_token,
+            },
+        )
         for r, a in zip(responses, y == y_hat)
     ]
-    query_inputs = collate_fn([tokenize_for_causal_lm(tokenizer, q) for q in query])
 
-    return y, logits, query_inputs
+    return query_inputs

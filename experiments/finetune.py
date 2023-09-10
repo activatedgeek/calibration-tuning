@@ -1,3 +1,4 @@
+import torch
 from accelerate import PartialState as AcceleratorState
 from peft import (
     PeftModel,
@@ -53,12 +54,12 @@ def main(
     model = get_model(
         model_name,
         device_map={"": accelerator.local_process_index},
-        load_in_8bit=fp8,
+        torch_dtype=torch.float16,
         model_dir=model_dir,
         use_cache=False,
         tokenizer=tokenizer,
+        load_in_8bit=fp8,
     )
-
     model = prepare_model_for_kbit_training(model)
 
     if peft_dir is not None:

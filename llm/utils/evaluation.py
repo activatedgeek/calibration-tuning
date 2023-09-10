@@ -29,15 +29,9 @@ def evaluate_via_eos(accelerator, model, tokenizer, loader):
         inputs = {k: v.to(device) for k, v in inputs.items()}
         outputs = model(**inputs)
 
-        y, logits, query_inputs = prepare_unc_query(
-            tokenizer, inputs, outputs, loader.collate_fn
-        )
-        [
-            l.append(v)
-            for l, v in zip(
-                [all_y, all_logits], accelerator.gather_for_metrics((y, logits))
-            )
-        ]
+        _, y, logits = extract_qa_exact(tokenizer, inputs, outputs=outputs)
+
+        query_inputs = loader.collate_fn(prepare_unc_query(tokenizer, inputs, outputs))
 
         query_inputs = {k: v.to(device) for k, v in query_inputs.items()}
         query_outputs = model(**query_inputs)
@@ -45,11 +39,13 @@ def evaluate_via_eos(accelerator, model, tokenizer, loader):
         _, unc_y, unc_logits = extract_qa_exact(
             tokenizer, query_inputs, outputs=query_outputs
         )
+
+        ## Distributed bookkeeping.
         [
             l.append(v)
             for l, v in zip(
-                [all_unc_y, all_unc_logits],
-                accelerator.gather_for_metrics((unc_y, unc_logits)),
+                [all_y, all_logits, all_unc_y, all_unc_logits],
+                accelerator.gather_for_metrics((y, logits, unc_y, unc_logits)),
             )
         ]
 

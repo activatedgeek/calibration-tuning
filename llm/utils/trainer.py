@@ -85,8 +85,8 @@ class CalibrationTrainer(Trainer):
         self.add_callback(SchedulerInitCallback(self.unc_decay))
 
     def compute_unc_loss(self, model, inputs, outputs):
-        *_, query_inputs = prepare_unc_query(
-            self.tokenizer, inputs, outputs, self.data_collator
+        query_inputs = self.data_collator(
+            prepare_unc_query(self.tokenizer, inputs, outputs)
         )
 
         if self.args.unc_normalize:

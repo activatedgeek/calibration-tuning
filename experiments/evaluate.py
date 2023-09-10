@@ -44,10 +44,11 @@ def main(
 
     model = get_model(
         model_name,
-        # device_map="auto",
-        device_map={"": accelerator.local_process_index},
+        device_map="auto",
+        # device_map={"": accelerator.local_process_index},
         torch_dtype=torch.float16,
         model_dir=model_dir,
+        use_cache=False,
         tokenizer=tokenizer,
     )
 
