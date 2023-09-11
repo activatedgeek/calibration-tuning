@@ -1,5 +1,4 @@
 import os
-import torch
 from transformers import (
     LlamaTokenizer,
     LlamaForCausalLM,
@@ -52,19 +51,12 @@ def create_model(
         input_embeddings = model.get_input_embeddings().weight.data
         output_embeddings = model.get_output_embeddings().weight.data
 
-        # input_embeddings[-extra_token_count:] = input_embeddings[
-        #     :-extra_token_count
-        # ].mean(dim=0, keepdim=True)
-        # output_embeddings[-extra_token_count:] = output_embeddings[
-        #     :-extra_token_count
-        # ].mean(dim=0, keepdim=True)
-
-        input_embeddings[-extra_token_count:] = torch.zeros_like(
-            input_embeddings[-extra_token_count:]
-        )
-        output_embeddings[-extra_token_count:] = torch.zeros_like(
-            output_embeddings[-extra_token_count:]
-        )
+        input_embeddings[-extra_token_count:] = input_embeddings[
+            :-extra_token_count
+        ].mean(dim=0, keepdim=True)
+        output_embeddings[-extra_token_count:] = output_embeddings[
+            :-extra_token_count
+        ].mean(dim=0, keepdim=True)
 
     return model
 

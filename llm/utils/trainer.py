@@ -9,7 +9,7 @@ from transformers.trainer_utils import PREFIX_CHECKPOINT_DIR, get_last_checkpoin
 
 from ..datasets.llm_utils import (
     DataCollatorForSupervisedDataset,
-    get_uq_answer_token_vec,
+    get_options_token_vec,
     extract_qa_exact,
     prepare_unc_query,
 )
@@ -79,7 +79,7 @@ class CalibrationTrainer(Trainer):
 
         self.test_dataset = test_dataset
 
-        self.uq_ans_token_vec = get_uq_answer_token_vec(self.tokenizer)
+        self.opt_token_vec = get_options_token_vec(self.tokenizer, n=2)
 
         self.unc_decay = AnyCosineScheduler()
         self.add_callback(SchedulerInitCallback(self.unc_decay))
@@ -95,9 +95,8 @@ class CalibrationTrainer(Trainer):
             _, unc_y, unc_logits = extract_qa_exact(
                 self.tokenizer, query_inputs, outputs=query_outputs
             )
-
-            unc_y = (unc_y.unsqueeze(-1) == self.uq_ans_token_vec).long().argmax(dim=-1)
-            unc_logits = unc_logits[:, self.uq_ans_token_vec]
+            unc_y = (unc_y.unsqueeze(-1) == self.opt_token_vec).long().argmax(dim=-1)
+            unc_logits = unc_logits[:, self.opt_token_vec]
 
             unc_loss = F.cross_entropy(unc_logits, unc_y.to(unc_logits.device))
 

@@ -1,3 +1,4 @@
+import string
 from dataclasses import dataclass
 import torch
 import transformers
@@ -61,6 +62,15 @@ def get_uq_answer_token_vec(tokenizer):
     return torch.tensor([_no_token[-1], _yes_token[-1]])
 
 
+def get_options_token_vec(tokenizer, n=4):
+    options = [tokenizer(o).input_ids for o in string.ascii_lowercase[:n]]
+
+    for o, t in zip(options, string.ascii_lowercase[:n]):
+        assert len(o) == 2, f'Cannot handle "{t}" token, found {o}'
+
+    return torch.tensor([o[-1] for o in options])
+
+
 def extract_qa_exact(tokenizer, inputs, outputs=None):
     """
     Assumes all answers are 1 token and end immediately with EOS token.
@@ -101,8 +111,11 @@ def prepare_unc_query(tokenizer, inputs, outputs):
         tokenize_for_causal_lm(
             tokenizer,
             {
-                "source": f"{r}\n\nIs the proposed answer correct? ",
-                "target": ("yes" if a else "no") + tokenizer.eos_token,
+                "source": f"{r}\n\nIs the proposed answer correct?\n\nChoices:\n(a): no\n(b): yes\nAnswer: ",
+                "target": string.ascii_lowercase[
+                    ["no", "yes"].index("yes" if a else "no")
+                ]
+                + tokenizer.eos_token,
             },
         )
         for r, a in zip(responses, y == y_hat)

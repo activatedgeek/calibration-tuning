@@ -6,7 +6,7 @@ from .third_party.calibration import calibration
 from ..datasets import get_dataset, get_loader
 from ..datasets.llm_utils import (
     tokenize_for_causal_lm,
-    get_uq_answer_token_vec,
+    get_options_token_vec,
     extract_qa_exact,
     prepare_unc_query,
     DataCollatorForSupervisedDataset,
@@ -20,7 +20,7 @@ def evaluate_via_eos(accelerator, model, tokenizer, loader):
     """
     device = accelerator.device
 
-    uq_ans_token_vec = get_uq_answer_token_vec(tokenizer).to(device)
+    opt_token_vec = get_options_token_vec(tokenizer, n=2).to(device)
 
     all_y, all_logits = [], []
     all_unc_y, all_unc_logits = [], []
@@ -56,16 +56,12 @@ def evaluate_via_eos(accelerator, model, tokenizer, loader):
         all_y, all_y_hat, all_p[torch.arange(all_p.size(0)), all_y_hat]
     )
 
-    ## Only use yes/no token logits for unc accuracy.
-    all_unc_y, all_unc_logits = (
-        torch.cat(all_unc_y, dim=0),
-        torch.cat(all_unc_logits, dim=0),
-    )
     all_unc_y, all_unc_p = (
-        (all_unc_y.unsqueeze(-1) == uq_ans_token_vec).long().argmax(dim=-1),
-        all_unc_logits[:, uq_ans_token_vec].softmax(dim=-1),
+        (torch.cat(all_unc_y, dim=0).unsqueeze(-1) == opt_token_vec)
+        .long()
+        .argmax(dim=-1),
+        torch.cat(all_unc_logits, dim=0)[:, opt_token_vec].softmax(dim=-1),
     )
-
     all_unc_y_hat = all_unc_p.argmax(dim=-1)
     unc_acc = (all_unc_y == all_unc_y_hat).float().mean()
     unc_ece, _ = calibration(
