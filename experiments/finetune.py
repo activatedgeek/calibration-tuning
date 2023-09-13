@@ -9,7 +9,7 @@ from peft import (
 )
 
 from llm.datasets import get_dataset
-from llm.datasets.llm_utils import tokenize_for_causal_lm
+from llm.datasets.llm_utils import tokenize_datasets
 from llm.models import get_model
 from llm.logging import entrypoint
 from llm.utils.trainer import (
@@ -89,16 +89,9 @@ def main(
             use_cache=use_dataset_cache,
         )
 
-        train_data, val_data, test_data = [
-            data.map(
-                lambda x: tokenize_for_causal_lm(tokenizer, x),
-                num_proc=num_workers,
-                remove_columns=["source", "target"],
-            )
-            if data is not None
-            else None
-            for data in [train_data, val_data, test_data]
-        ]
+        train_data, val_data, test_data = tokenize_datasets(
+            tokenizer, train_data, val_data, test_data
+        )
 
     trainer = CalibrationTrainer(
         model=model,

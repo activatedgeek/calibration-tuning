@@ -51,6 +51,19 @@ def tokenize_for_causal_lm(tokenizer, sample):
     return tokenize_dict
 
 
+def tokenize_datasets(tokenizer, *datasets, num_workers=8):
+    return [
+        data.map(
+            lambda x: tokenize_for_causal_lm(tokenizer, x),
+            num_proc=num_workers,
+            remove_columns=["source", "target"],
+        )
+        if data is not None
+        else None
+        for data in datasets
+    ]
+
+
 def get_uq_answer_token_vec(tokenizer):
     _no_token = tokenizer("no").input_ids
     _yes_token = tokenizer("yes").input_ids
