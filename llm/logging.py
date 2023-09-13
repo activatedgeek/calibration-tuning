@@ -1,6 +1,6 @@
 from pathlib import Path
 from uuid import uuid4
-from functools import partial
+from time import perf_counter
 import logging.config
 import os
 import json
@@ -10,6 +10,15 @@ from accelerate import PartialState as AcceleratorState
 
 WANDB_KWARGS_NAME = "wandb_args.json"
 WANDB_SWEEP_ID_NAME = "WANDB_SWEEP_ID"
+
+
+class Timer:
+    def __enter__(self):
+        self.start = perf_counter()
+        return self
+
+    def __exit__(self, type, value, traceback):
+        self.elapsed = perf_counter() - self.start
 
 
 class WnBHandler(logging.Handler):

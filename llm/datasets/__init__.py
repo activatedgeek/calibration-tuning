@@ -29,6 +29,7 @@ def __setup():
         "obqa",
         "piqa",
         "sciq",
+        "siqa",
         "story_cloze",
         "super_glue",
         "trec",

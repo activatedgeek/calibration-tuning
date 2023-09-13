@@ -6,7 +6,7 @@ import torch
 from accelerate import Accelerator
 from peft import PeftModel
 
-from llm.logging import entrypoint
+from llm.logging import entrypoint, Timer
 from llm.datasets import list_datasets, get_dataset_attrs
 from llm.models import get_model
 from llm.utils.evaluation import evaluate_dataset_via_eos
@@ -77,21 +77,22 @@ def main(
 
     all_metrics = []
     for dataset in tqdm(all_datasets):
-        val_metrics, test_metrics = evaluate_dataset_via_eos(
-            accelerator,
-            model,
-            tokenizer,
-            dataset,
-            seed=seed,
-            batch_size=batch_size,
-            data_dir=data_dir,
-            eval_kshot=eval_kshot,
-            use_cache=use_dataset_cache,
-        )
+        with Timer() as t:
+            val_metrics, test_metrics = evaluate_dataset_via_eos(
+                accelerator,
+                model,
+                tokenizer,
+                dataset,
+                seed=seed,
+                batch_size=batch_size,
+                data_dir=data_dir,
+                eval_kshot=eval_kshot,
+                use_cache=use_dataset_cache,
+            )
 
         dataset_metrics = list(
             map(
-                lambda m: {**m, **config, "dataset": dataset},
+                lambda m: {**m, **config, "dataset": dataset, "ts": t.elapsed},
                 list(filter(lambda m: m is not None, [val_metrics, test_metrics])),
             )
         )
