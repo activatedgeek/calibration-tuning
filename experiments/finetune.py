@@ -43,6 +43,7 @@ def main(
     max_steps=1000,
     save_steps=1000,
     use_dataset_cache=True,
+    resume_dir=None,
 ):
     accelerator = AcceleratorState()
 
@@ -62,6 +63,8 @@ def main(
     )
     model = prepare_model_for_kbit_training(model)
 
+    ## If resuming, resume_dir takes priority. Otherwise, to avoid clashes with saved state.
+    peft_dir = resume_dir or peft_dir
     if peft_dir is not None:
         peft_dir = get_last_checkpoint_path(peft_dir)
 
@@ -133,6 +136,7 @@ def main(
                 model_name=model_name,
                 model_dir=model_dir,
                 peft_dir=peft_dir,
+                resume_dir=resume_dir,
                 fp8=fp8,
                 lora_rank=lora_rank,
                 lora_alpha=lora_alpha,
@@ -140,7 +144,7 @@ def main(
             ),
         ],
     )
-    trainer.train(resume_from_checkpoint=peft_dir)
+    trainer.train(resume_from_checkpoint=resume_dir)
     trainer.save_state()
 
 
