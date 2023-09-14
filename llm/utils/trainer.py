@@ -65,7 +65,7 @@ class TrainingArguments(TrainingArguments):
     unc_decay: float = field(default=0.0)
     unc_normalize: bool = field(default=True)
     loss_mode: str = field(default="reg")
-    query_format: str = field(default="bool_choice")
+    query_format: str = field(default="roman_choice")
 
 
 class CalibrationTrainer(Trainer):

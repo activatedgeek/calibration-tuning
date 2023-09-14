@@ -1,4 +1,3 @@
-import string
 from dataclasses import dataclass
 import torch
 import transformers
@@ -85,7 +84,7 @@ def extract_qa_exact(tokenizer, inputs, outputs=None):
     return eos_idx, y
 
 
-def get_token_vec(tokenizer, format="bool_choice"):
+def get_token_vec(tokenizer, format="roman_choice"):
     vocab = tokenizer.get_vocab()
 
     def _create_vec(raw_list):
@@ -95,14 +94,18 @@ def get_token_vec(tokenizer, format="bool_choice"):
         return torch.tensor([tokenizer(t).input_ids[-1] for t in raw_list])
 
     if format == "bool":
-        return _create_vec(["no", "yes"])
-    elif format == "bool_choice":
-        return _create_vec(string.ascii_lowercase[:2])
+        raw_strings = ["no", "yes"]
+    elif format == "alpha_choice":
+        raw_strings = ["a", "b"]
+    elif format == "roman_choice":
+        raw_strings = ["i", "ii"]
     else:
         raise NotImplementedError
 
+    return _create_vec(raw_strings)
 
-def prepare_query(tokenizer, inputs, outputs, format="bool_choice"):
+
+def prepare_query(tokenizer, inputs, outputs, format="roman_choice"):
     eos_idx, y, logits = extract_qa_exact(tokenizer, inputs, outputs=outputs)
     y_hat = logits.argmax(dim=-1)
 
@@ -129,16 +132,24 @@ def prepare_query(tokenizer, inputs, outputs, format="bool_choice"):
             )
             for r, a in zip(responses, y == y_hat)
         ]
-    elif format == "bool_choice":
+    elif format == "alpha_choice":
         query_inputs = [
             tokenize_for_causal_lm(
                 tokenizer,
                 {
                     "source": f"{r}\n\nIs the proposed answer correct?\n\nChoices:\n(a): no\n(b): yes\nAnswer: ",
-                    "target": string.ascii_lowercase[
-                        ["no", "yes"].index("yes" if a else "no")
-                    ]
-                    + tokenizer.eos_token,
+                    "target": ("b" if a else "a") + tokenizer.eos_token,
+                },
+            )
+            for r, a in zip(responses, y == y_hat)
+        ]
+    elif format == "roman_choice":
+        query_inputs = [
+            tokenize_for_causal_lm(
+                tokenizer,
+                {
+                    "source": f"{r}\n\nIs the proposed answer correct?\n\nChoices:\n(i): no\n(ii): yes\nAnswer: ",
+                    "target": ("ii" if a else "i") + tokenizer.eos_token,
                 },
             )
             for r, a in zip(responses, y == y_hat)

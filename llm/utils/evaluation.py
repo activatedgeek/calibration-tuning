@@ -13,7 +13,13 @@ from ..datasets.llm_utils import (
 
 
 @torch.inference_mode()
-def evaluate_via_eos(accelerator, model, tokenizer, loader, query_format="bool_choice"):
+def evaluate_via_eos(
+    accelerator,
+    model,
+    tokenizer,
+    loader,
+    query_format="roman_choice",
+):
     """
     Assumes all answers are 1 token and end immediately with EOS token.
     """
