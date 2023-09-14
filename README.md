@@ -27,7 +27,7 @@ pip install -e .
 An example command for evaluation.
 
 ```shell
-python experiments/evaluate.py --model_name=llama2_7b --dataset=mmlu:business_ethics
+./autotorchrun experiments/evaluate.py --model_name=llama2_7b --dataset=mmlu:business_ethics
 ```
 
 ### Fine-Tuning

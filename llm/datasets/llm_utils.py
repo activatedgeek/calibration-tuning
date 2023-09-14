@@ -64,26 +64,6 @@ def tokenize_datasets(tokenizer, *datasets, num_workers=8):
     ]
 
 
-def get_uq_answer_token_vec(tokenizer):
-    _no_token = tokenizer("no").input_ids
-    _yes_token = tokenizer("yes").input_ids
-
-    ## NOTE: Assumes yes/no are single token (length 2 including BOS token).
-    assert len(_no_token) == 2, f'Cannot handle "no" token {_no_token} yet.'
-    assert len(_yes_token) == 2, f'Cannot handle "yes" token {_yes_token} yet.'
-
-    return torch.tensor([_no_token[-1], _yes_token[-1]])
-
-
-def get_options_token_vec(tokenizer, n=4):
-    options = [tokenizer(o).input_ids for o in string.ascii_lowercase[:n]]
-
-    for o, t in zip(options, string.ascii_lowercase[:n]):
-        assert len(o) == 2, f'Cannot handle "{t}" token, found {o}'
-
-    return torch.tensor([o[-1] for o in options])
-
-
 def extract_qa_exact(tokenizer, inputs, outputs=None):
     """
     Assumes all answers are 1 token and end immediately with EOS token.
@@ -105,7 +85,24 @@ def extract_qa_exact(tokenizer, inputs, outputs=None):
     return eos_idx, y
 
 
-def prepare_unc_query(tokenizer, inputs, outputs):
+def get_token_vec(tokenizer, format="bool_choice"):
+    vocab = tokenizer.get_vocab()
+
+    def _create_vec(raw_list):
+        for t in raw_list:
+            assert t in vocab, f"Cannot handle {t} as a single token."
+
+        return torch.tensor([tokenizer(t).input_ids[-1] for t in raw_list])
+
+    if format == "bool":
+        return _create_vec(["no", "yes"])
+    elif format == "bool_choice":
+        return _create_vec(string.ascii_lowercase[:2])
+    else:
+        raise NotImplementedError
+
+
+def prepare_query(tokenizer, inputs, outputs, format="bool_choice"):
     eos_idx, y, logits = extract_qa_exact(tokenizer, inputs, outputs=outputs)
     y_hat = logits.argmax(dim=-1)
 
@@ -120,18 +117,33 @@ def prepare_unc_query(tokenizer, inputs, outputs):
 
     responses = tokenizer.batch_decode(response_ids)
 
-    query_inputs = [
-        tokenize_for_causal_lm(
-            tokenizer,
-            {
-                "source": f"{r}\n\nIs the proposed answer correct?\n\nChoices:\n(a): no\n(b): yes\nAnswer: ",
-                "target": string.ascii_lowercase[
-                    ["no", "yes"].index("yes" if a else "no")
-                ]
-                + tokenizer.eos_token,
-            },
-        )
-        for r, a in zip(responses, y == y_hat)
-    ]
+    if format == "bool":
+        ## NOTE: Probably don't use, often seems to be biased towards a yes.
+        query_inputs = [
+            tokenize_for_causal_lm(
+                tokenizer,
+                {
+                    "source": f"{r}\n\nIs the proposed answer correct? ",
+                    "target": ("yes" if a else "no") + tokenizer.eos_token,
+                },
+            )
+            for r, a in zip(responses, y == y_hat)
+        ]
+    elif format == "bool_choice":
+        query_inputs = [
+            tokenize_for_causal_lm(
+                tokenizer,
+                {
+                    "source": f"{r}\n\nIs the proposed answer correct?\n\nChoices:\n(a): no\n(b): yes\nAnswer: ",
+                    "target": string.ascii_lowercase[
+                        ["no", "yes"].index("yes" if a else "no")
+                    ]
+                    + tokenizer.eos_token,
+                },
+            )
+            for r, a in zip(responses, y == y_hat)
+        ]
+    else:
+        raise NotImplementedError
 
-    return query_inputs
+    return query_inputs, get_token_vec(tokenizer, format=format)

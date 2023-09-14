@@ -6,22 +6,20 @@ from .third_party.calibration import calibration
 from ..datasets import get_dataset, get_loader
 from ..datasets.llm_utils import (
     tokenize_datasets,
-    get_options_token_vec,
     extract_qa_exact,
-    prepare_unc_query,
+    prepare_query,
     DataCollatorForSupervisedDataset,
 )
 
 
 @torch.inference_mode()
-def evaluate_via_eos(accelerator, model, tokenizer, loader):
+def evaluate_via_eos(accelerator, model, tokenizer, loader, query_format="bool_choice"):
     """
     Assumes all answers are 1 token and end immediately with EOS token.
     """
     device = accelerator.device
 
-    opt_token_vec = get_options_token_vec(tokenizer, n=2).to(device)
-
+    query_token_vec = None
     all_y, all_logits = [], []
     all_unc_y, all_unc_logits = [], []
 
@@ -31,7 +29,12 @@ def evaluate_via_eos(accelerator, model, tokenizer, loader):
 
         _, y, logits = extract_qa_exact(tokenizer, inputs, outputs=outputs)
 
-        query_inputs = loader.collate_fn(prepare_unc_query(tokenizer, inputs, outputs))
+        query_inputs, query_token_vec = prepare_query(
+            tokenizer, inputs, outputs, format=query_format
+        )
+        query_inputs, query_token_vec = loader.collate_fn(
+            query_inputs
+        ), query_token_vec.to(device)
 
         query_inputs = {k: v.to(device) for k, v in query_inputs.items()}
         query_outputs = model(**query_inputs)
@@ -40,16 +43,19 @@ def evaluate_via_eos(accelerator, model, tokenizer, loader):
             tokenizer, query_inputs, outputs=query_outputs
         )
 
-        ## Distributed bookkeeping.
         [
             l.append(v)
             for l, v in zip(
-                [all_y, all_logits, all_unc_y, all_unc_logits],
+                (all_y, all_logits, all_unc_y, all_unc_logits),
                 accelerator.gather_for_metrics((y, logits, unc_y, unc_logits)),
             )
         ]
 
-    all_y, all_p = torch.cat(all_y, dim=0), torch.cat(all_logits, dim=0).softmax(dim=-1)
+    all_y, all_logits, all_unc_y, all_unc_logits = [
+        torch.cat(l, dim=0) for l in (all_y, all_logits, all_unc_y, all_unc_logits)
+    ]
+
+    all_p = all_logits.softmax(dim=-1)
     all_y_hat = all_p.argmax(dim=-1)
     acc = (all_y == all_y_hat).float().mean()
     ece, _ = calibration(
@@ -57,10 +63,8 @@ def evaluate_via_eos(accelerator, model, tokenizer, loader):
     )
 
     all_unc_y, all_unc_p = (
-        (torch.cat(all_unc_y, dim=0).unsqueeze(-1) == opt_token_vec)
-        .long()
-        .argmax(dim=-1),
-        torch.cat(all_unc_logits, dim=0)[:, opt_token_vec].softmax(dim=-1),
+        (all_unc_y.unsqueeze(-1) == query_token_vec).long().argmax(dim=-1),
+        all_unc_logits[:, query_token_vec].softmax(dim=-1),
     )
     all_unc_y_hat = all_unc_p.argmax(dim=-1)
     unc_acc = (all_unc_y == all_unc_y_hat).float().mean()

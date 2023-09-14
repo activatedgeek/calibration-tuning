@@ -9,9 +9,8 @@ from transformers.trainer_utils import PREFIX_CHECKPOINT_DIR, get_last_checkpoin
 
 from ..datasets.llm_utils import (
     DataCollatorForSupervisedDataset,
-    get_options_token_vec,
     extract_qa_exact,
-    prepare_unc_query,
+    prepare_query,
 )
 from .evaluation import evaluate_dataset_via_eos
 from .scheduler import AnyCosineScheduler
@@ -66,6 +65,7 @@ class TrainingArguments(TrainingArguments):
     unc_decay: float = field(default=0.0)
     unc_normalize: bool = field(default=True)
     loss_mode: str = field(default="reg")
+    query_format: str = field(default="bool_choice")
 
 
 class CalibrationTrainer(Trainer):
@@ -79,15 +79,14 @@ class CalibrationTrainer(Trainer):
 
         self.test_dataset = test_dataset
 
-        self.opt_token_vec = get_options_token_vec(self.tokenizer, n=2)
-
         self.unc_decay = AnyCosineScheduler()
         self.add_callback(SchedulerInitCallback(self.unc_decay))
 
     def compute_unc_loss(self, model, inputs, outputs):
-        query_inputs = self.data_collator(
-            prepare_unc_query(self.tokenizer, inputs, outputs)
+        query_inputs, query_token_vec = prepare_query(
+            self.tokenizer, inputs, outputs, format=self.args.query_format
         )
+        query_inputs = self.data_collator(query_inputs)
 
         if self.args.unc_normalize:
             query_outputs = model(**query_inputs)
@@ -95,8 +94,10 @@ class CalibrationTrainer(Trainer):
             _, unc_y, unc_logits = extract_qa_exact(
                 self.tokenizer, query_inputs, outputs=query_outputs
             )
-            unc_y = (unc_y.unsqueeze(-1) == self.opt_token_vec).long().argmax(dim=-1)
-            unc_logits = unc_logits[:, self.opt_token_vec]
+            unc_y, unc_logits = (
+                (unc_y.unsqueeze(-1) == query_token_vec).long().argmax(dim=-1),
+                unc_logits[:, query_token_vec],
+            )
 
             unc_loss = F.cross_entropy(unc_logits, unc_y.to(unc_logits.device))
 
