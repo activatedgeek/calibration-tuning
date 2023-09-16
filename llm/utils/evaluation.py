@@ -93,11 +93,12 @@ def evaluate_via_eos(
     }
 
 
-def evaluate_dataset_via_eos(
+def evaluate_dataset(
     accelerator,
     model,
     tokenizer,
     dataset,
+    evaluate_fn,
     val_data=None,
     test_data=None,
     seed=137,
@@ -121,6 +122,7 @@ def evaluate_dataset_via_eos(
                 root=data_dir,
                 tokenizer=tokenizer,
                 seed=seed,
+                num_workers=num_workers,
                 use_cache=use_cache,
                 **_extra_args,
             )
@@ -132,7 +134,7 @@ def evaluate_dataset_via_eos(
 
     val_metrics = None
     if val_data is not None:
-        val_metrics = evaluate_via_eos(
+        val_metrics = evaluate_fn(
             accelerator,
             model,
             tokenizer,
@@ -149,7 +151,7 @@ def evaluate_dataset_via_eos(
 
     test_metrics = None
     if test_data is not None:
-        test_metrics = evaluate_via_eos(
+        test_metrics = evaluate_fn(
             accelerator,
             model,
             tokenizer,

@@ -12,7 +12,7 @@ from ..datasets.llm_utils import (
     extract_qa_exact,
     prepare_query,
 )
-from .evaluation import evaluate_dataset_via_eos
+from .evaluation import evaluate_dataset, evaluate_via_eos
 from .scheduler import AnyCosineScheduler
 
 
@@ -143,11 +143,12 @@ class CalibrationTrainer(Trainer):
         # metrics = super().evaluate(eval_dataset, ignore_keys, metric_key_prefix)
         metrics = {}
 
-        val_metrics, test_metrics = evaluate_dataset_via_eos(
+        val_metrics, test_metrics = evaluate_dataset(
             self.accelerator,
             self.model,
             self.tokenizer,
             None,
+            evaluate_via_eos,
             val_data=self.eval_dataset,
             test_data=self.test_dataset,
         )
