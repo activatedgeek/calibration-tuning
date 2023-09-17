@@ -33,6 +33,24 @@ def __format_sample(sample, tokenizer, style):
         target = sample["answerKey"].lower() + tokenizer.eos_token
 
         return dict(source=source, target=target)
+    elif style == "oe":
+        question = sample["question"]
+        answer_map = sample["choices"]["text"]
+
+        source = "\n".join(
+            [
+                "Question:",
+                question,
+                f"\nAnswer: ",
+            ]
+        )
+
+        target = (
+            answer_map[string.ascii_lowercase.index(sample["answerKey"].lower())]
+            + tokenizer.eos_token
+        )
+
+        return dict(source=source, target=target)
 
     raise NotImplementedError
 

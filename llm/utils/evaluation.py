@@ -99,6 +99,7 @@ def evaluate_dataset(
     tokenizer,
     dataset,
     evaluate_fn,
+    train_data=None,
     val_data=None,
     test_data=None,
     seed=137,
@@ -107,6 +108,7 @@ def evaluate_dataset(
     data_dir=None,
     eval_kshot=None,
     use_cache=True,
+    prompt_style="choice",
 ):
     ## FIXME: See https://github.com/huggingface/transformers/issues/25790#issuecomment-1695846805.
     assert batch_size == 1, "Only support batch_size 1. See code comments."
@@ -117,20 +119,40 @@ def evaluate_dataset(
             ## NOTE: Conditional to avoid overriding default kshot specification in dataset definition.
             if eval_kshot is not None:
                 _extra_args["eval_kshot"] = eval_kshot
-            _, val_data, test_data = get_dataset(
+            train_data, val_data, test_data = get_dataset(
                 dataset,
                 root=data_dir,
                 tokenizer=tokenizer,
                 seed=seed,
                 num_workers=num_workers,
                 use_cache=use_cache,
+                prompt_style=prompt_style,
                 **_extra_args,
             )
-            val_data, test_data = tokenize_datasets(tokenizer, val_data, test_data)
+            train_data, val_data, test_data = tokenize_datasets(
+                tokenizer, train_data, val_data, test_data
+            )
     else:
         assert (val_data is not None) or (
             test_data is not None
         ), "Missing val_data or test_data."
+
+    train_metrics = None
+    if train_data is not None:
+        train_metrics = evaluate_fn(
+            accelerator,
+            model,
+            tokenizer,
+            get_loader(
+                train_data,
+                batch_size=batch_size,
+                collate_fn=DataCollatorForSupervisedDataset(tokenizer),
+                accelerator=accelerator,
+            ),
+        )
+        train_metrics["split"] = "train"
+
+        logging.debug(train_metrics)
 
     val_metrics = None
     if val_data is not None:
