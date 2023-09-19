@@ -149,7 +149,7 @@ def evaluate_dataset(
                 _train_data = None
 
             train_data, val_data, test_data = tokenize_datasets(
-                tokenizer, _train_data, val_data, test_data
+                tokenizer, _train_data, val_data, test_data, prompt_style=prompt_style
             )
     else:
         assert (val_data is not None) or (

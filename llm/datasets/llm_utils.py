@@ -29,7 +29,7 @@ class DataCollatorForSupervisedDataset(object):
         )
 
 
-def tokenize_for_causal_lm(tokenizer, sample):
+def tokenize_for_causal_lm(tokenizer, sample, prompt_style="choice"):
     ## NOTE: Hope that no truncation by model length is needed, or else the logic fails.
     tokenizer_args = dict(
         padding="longest",
@@ -43,18 +43,21 @@ def tokenize_for_causal_lm(tokenizer, sample):
 
     labels = torch.tensor(tokenize_dict["input_ids"])
 
-    ## When the target is 1 token length only.
-    # source_len = (
-    #     labels.eq(tokenizer.eos_token_id)
-    #     .nonzero()[labels.eq(tokenizer.eos_token_id).sum(dim=-1).cumsum(dim=0) - 1]
-    #     .item()
-    #     - 1
-    # )
-
-    target_ids = torch.tensor(
-        tokenizer(sample["target"].strip(), **tokenizer_args)["input_ids"]
-    )
-    source_len = len(labels) - len(target_ids) + 1  ## Add 1 for BOS token.
+    if prompt_style == "choice":
+        ## Target is 1 token length only.
+        source_len = (
+            labels.eq(tokenizer.eos_token_id)
+            .nonzero()[labels.eq(tokenizer.eos_token_id).sum(dim=-1).cumsum(dim=0) - 1]
+            .item()
+            - 1
+        )
+    elif prompt_style == "oe":
+        target_ids = torch.tensor(
+            tokenizer(sample["target"].strip(), **tokenizer_args)["input_ids"]
+        )
+        source_len = len(labels) - len(target_ids) + 1  ## Add 1 for BOS token.
+    else:
+        raise NotImplementedError
 
     labels[:source_len] = IGNORE_LABEL
     tokenize_dict["labels"] = labels.tolist()
@@ -62,10 +65,10 @@ def tokenize_for_causal_lm(tokenizer, sample):
     return tokenize_dict
 
 
-def tokenize_datasets(tokenizer, *datasets, num_workers=8):
+def tokenize_datasets(tokenizer, *datasets, num_workers=8, **kwargs):
     return [
         data.map(
-            lambda x: tokenize_for_causal_lm(tokenizer, x),
+            lambda x: tokenize_for_causal_lm(tokenizer, x, **kwargs),
             num_proc=num_workers,
             remove_columns=["source", "target"],
         )
@@ -141,6 +144,7 @@ def prepare_query(tokenizer, inputs, outputs, format="roman_choice"):
                     "source": f"{r}\n\nIs the proposed answer correct? ",
                     "target": ("yes" if a else "no") + tokenizer.eos_token,
                 },
+                prompt_style="choice",
             )
             for r, a in zip(responses, y == y_hat)
         ]
@@ -152,6 +156,7 @@ def prepare_query(tokenizer, inputs, outputs, format="roman_choice"):
                     "source": f"{r}\n\nIs the proposed answer correct?\n\nChoices:\n(a): no\n(b): yes\nAnswer: ",
                     "target": ("b" if a else "a") + tokenizer.eos_token,
                 },
+                prompt_style="choice",
             )
             for r, a in zip(responses, y == y_hat)
         ]
@@ -163,6 +168,7 @@ def prepare_query(tokenizer, inputs, outputs, format="roman_choice"):
                     "source": f"{r}\n\nIs the proposed answer correct?\n\nChoices:\n(i): no\n(ii): yes\nAnswer: ",
                     "target": ("ii" if a else "i") + tokenizer.eos_token,
                 },
+                prompt_style="choice",
             )
             for r, a in zip(responses, y == y_hat)
         ]
