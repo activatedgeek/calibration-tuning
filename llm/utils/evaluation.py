@@ -93,12 +93,28 @@ def evaluate_via_eos(
     }
 
 
+@torch.inference_mode()
+def evaluate_oe(
+    accelerator,
+    model,
+    tokenizer,
+    loader,
+    query_format="oe",
+):
+    raise NotImplementedError
+
+
+__EVALUATE_FN_MAP = {
+    "choice": evaluate_via_eos,
+    "oe": evaluate_oe,
+}
+
+
 def evaluate_dataset(
     accelerator,
     model,
     tokenizer,
     dataset,
-    evaluate_fn,
     train_data=None,
     val_data=None,
     test_data=None,
@@ -119,7 +135,7 @@ def evaluate_dataset(
             ## NOTE: Conditional to avoid overriding default kshot specification in dataset definition.
             if eval_kshot is not None:
                 _extra_args["eval_kshot"] = eval_kshot
-            train_data, val_data, test_data = get_dataset(
+            _train_data, val_data, test_data = get_dataset(
                 dataset,
                 root=data_dir,
                 tokenizer=tokenizer,
@@ -129,13 +145,19 @@ def evaluate_dataset(
                 prompt_style=prompt_style,
                 **_extra_args,
             )
+            if train_data == False:
+                _train_data = None
+
             train_data, val_data, test_data = tokenize_datasets(
-                tokenizer, train_data, val_data, test_data
+                tokenizer, _train_data, val_data, test_data
             )
     else:
         assert (val_data is not None) or (
             test_data is not None
         ), "Missing val_data or test_data."
+
+    assert prompt_style in __EVALUATE_FN_MAP.keys()
+    evaluate_fn = __EVALUATE_FN_MAP[prompt_style]
 
     train_metrics = None
     if train_data is not None:
@@ -153,6 +175,8 @@ def evaluate_dataset(
         train_metrics["split"] = "train"
 
         logging.debug(train_metrics)
+    else:
+        logging.debug(f"Skipping train data for {dataset}")
 
     val_metrics = None
     if val_data is not None:
@@ -170,6 +194,8 @@ def evaluate_dataset(
         val_metrics["split"] = "validation"
 
         logging.debug(val_metrics)
+    else:
+        logging.debug(f"Skipping validation data for {dataset}")
 
     test_metrics = None
     if test_data is not None:
@@ -187,5 +213,7 @@ def evaluate_dataset(
         test_metrics["split"] = "test"
 
         logging.debug(test_metrics)
+    else:
+        logging.debug(f"Skipping test data for {dataset}")
 
     return val_metrics, test_metrics

@@ -115,7 +115,7 @@ def get_arc(
         dataset.cleanup_cache_files()
 
     train_data, val_data, test_data = [
-        data.map(
+        data.filter(lambda x: x["answerKey"].lower() in string.ascii_lowercase).map(
             lambda x: __format_sample_with_prompt(
                 x, tokenizer, prompt_style, data, k, seed=seed
             ),

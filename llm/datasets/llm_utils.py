@@ -30,20 +30,32 @@ class DataCollatorForSupervisedDataset(object):
 
 
 def tokenize_for_causal_lm(tokenizer, sample):
-    tokenize_dict = tokenizer(
-        sample["source"] + sample["target"],
+    ## NOTE: Hope that no truncation by model length is needed, or else the logic fails.
+    tokenizer_args = dict(
         padding="longest",
         truncation=True,
         max_length=tokenizer.model_max_length,
     )
 
-    labels = torch.tensor(tokenize_dict["input_ids"])
-    source_len = (
-        labels.eq(tokenizer.eos_token_id)
-        .nonzero()[labels.eq(tokenizer.eos_token_id).sum(dim=-1).cumsum(dim=0) - 1]
-        .item()
-        - 1
+    tokenize_dict = tokenizer(
+        sample["source"].strip() + " " + sample["target"].strip(), **tokenizer_args
     )
+
+    labels = torch.tensor(tokenize_dict["input_ids"])
+
+    ## When the target is 1 token length only.
+    # source_len = (
+    #     labels.eq(tokenizer.eos_token_id)
+    #     .nonzero()[labels.eq(tokenizer.eos_token_id).sum(dim=-1).cumsum(dim=0) - 1]
+    #     .item()
+    #     - 1
+    # )
+
+    target_ids = torch.tensor(
+        tokenizer(sample["target"].strip(), **tokenizer_args)["input_ids"]
+    )
+    source_len = len(labels) - len(target_ids) + 1  ## Add 1 for BOS token.
+
     labels[:source_len] = IGNORE_LABEL
     tokenize_dict["labels"] = labels.tolist()
 

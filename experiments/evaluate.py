@@ -25,6 +25,7 @@ def main(
     peft_dir=None,
     use_dataset_cache=True,
     use_auto_device=False,
+    prompt_style="choice",
 ):
     accelerator = Accelerator()
 
@@ -34,6 +35,7 @@ def main(
         "model_dir": model_dir,
         "peft_dir": peft_dir,
         "eval_kshot": eval_kshot,
+        "prompt_style": prompt_style,
     }
     if accelerator.is_main_process:
         wandb.config.update(config)
@@ -83,12 +85,13 @@ def main(
                 model,
                 tokenizer,
                 dataset,
-                evaluate_via_eos,
+                train_data=False,
                 seed=seed,
                 batch_size=batch_size,
                 data_dir=data_dir,
                 eval_kshot=eval_kshot,
                 use_cache=use_dataset_cache,
+                prompt_style=prompt_style,
             )
 
         dataset_metrics = list(
