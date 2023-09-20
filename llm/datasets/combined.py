@@ -11,6 +11,7 @@ def get_combined_train_dataset(
     seed=None,
     num_workers=8,
     use_dataset_cache=True,
+    prompt_style="choice",
     **_,
 ):
     all_datasets = list(
@@ -29,6 +30,7 @@ def get_combined_train_dataset(
             seed=seed,
             num_workers=num_workers,
             use_cache=use_dataset_cache,
+            prompt_style=prompt_style,
         )
 
         if train_data is not None:

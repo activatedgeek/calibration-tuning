@@ -7,6 +7,7 @@ from ..datasets import get_dataset, get_loader
 from ..datasets.llm_utils import (
     tokenize_datasets,
     extract_qa_exact,
+    extract_oe_inputs,
     prepare_query,
     DataCollatorForSupervisedDataset,
 )
@@ -101,13 +102,22 @@ def evaluate_oe(
     loader,
     query_format="oe",
 ):
+    device = accelerator.device
+
+    for inputs in tqdm(loader, leave=False):
+        inputs = {k: v.to(device) for k, v in inputs.items()}
+
+        _, oe_inputs, oe_targets = extract_oe_inputs(tokenizer, inputs)
+        oe_inputs = loader.collate_fn(oe_inputs)
+        oe_inputs = {k: v.to(device) for k, v in oe_inputs.items()}
+
+        outputs = model.generate(**oe_inputs, do_sample=True, top_p=0.9)
+
+        gen_outputs = outputs[:, oe_inputs["input_ids"].size(-1) :]
+
+        ## TODO: create equality query for another model comparing oe_targets/gen_outputs.
+
     raise NotImplementedError
-
-
-__EVALUATE_FN_MAP = {
-    "choice": evaluate_via_eos,
-    "oe": evaluate_oe,
-}
 
 
 def evaluate_dataset(
@@ -149,15 +159,24 @@ def evaluate_dataset(
                 _train_data = None
 
             train_data, val_data, test_data = tokenize_datasets(
-                tokenizer, _train_data, val_data, test_data, prompt_style=prompt_style
+                tokenizer,
+                _train_data,
+                val_data,
+                test_data,
+                num_workers=num_workers,
+                prompt_style=prompt_style,
             )
     else:
         assert (val_data is not None) or (
             test_data is not None
         ), "Missing val_data or test_data."
 
-    assert prompt_style in __EVALUATE_FN_MAP.keys()
-    evaluate_fn = __EVALUATE_FN_MAP[prompt_style]
+    evaluate_fn_map = {
+        "choice": evaluate_via_eos,
+        "oe": evaluate_oe,
+    }
+    assert prompt_style in evaluate_fn_map.keys()
+    evaluate_fn = evaluate_fn_map[prompt_style]
 
     train_metrics = None
     if train_data is not None:

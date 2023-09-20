@@ -12,21 +12,24 @@ class DataCollatorForSupervisedDataset(object):
     tokenizer: transformers.PreTrainedTokenizer
 
     def __call__(self, instances):
-        input_ids, labels = tuple(
-            [torch.tensor(instance[key]) for instance in instances]
-            for key in ("input_ids", "labels")
-        )
+        input_ids = [torch.tensor(instance["input_ids"]) for instance in instances]
         input_ids = torch.nn.utils.rnn.pad_sequence(
             input_ids, batch_first=True, padding_value=self.tokenizer.pad_token_id
         )
-        labels = torch.nn.utils.rnn.pad_sequence(
-            labels, batch_first=True, padding_value=IGNORE_LABEL
-        )
-        return dict(
+
+        batch_dict = dict(
             input_ids=input_ids,
-            labels=labels,
             attention_mask=input_ids.ne(self.tokenizer.pad_token_id),
         )
+
+        if "labels" in instances[0].keys():
+            labels = [torch.tensor(instance["labels"]) for instance in instances]
+            labels = torch.nn.utils.rnn.pad_sequence(
+                labels, batch_first=True, padding_value=IGNORE_LABEL
+            )
+            batch_dict["labels"] = labels
+
+        return batch_dict
 
 
 def tokenize_for_causal_lm(tokenizer, sample, prompt_style="choice"):
@@ -52,10 +55,13 @@ def tokenize_for_causal_lm(tokenizer, sample, prompt_style="choice"):
             - 1
         )
     elif prompt_style == "oe":
+        ## Encoded answer, except first BOS token id.
         target_ids = torch.tensor(
             tokenizer(sample["target"].strip(), **tokenizer_args)["input_ids"]
-        )
-        source_len = len(labels) - len(target_ids) + 1  ## Add 1 for BOS token.
+        )[1:]
+        source_len = len(labels) - len(target_ids)
+
+        assert torch.allclose(labels[source_len:], target_ids)
     else:
         raise NotImplementedError
 
@@ -97,6 +103,35 @@ def extract_qa_exact(tokenizer, inputs, outputs=None):
         return eos_idx, y, logits
 
     return eos_idx, y
+
+
+def extract_oe_inputs(tokenizer, inputs):
+    target_start_idx = (
+        inputs.get("labels")
+        .eq(-100)
+        .nonzero()[inputs.get("labels").eq(IGNORE_LABEL).sum(dim=-1).cumsum(dim=-1) - 1][:, -1]
+        + 1
+    )
+
+    oe_inputs = [
+        tokenizer(
+            tokenizer.decode(inp[1:t].tolist()),
+            padding="longest",
+            truncation=True,
+            max_length=tokenizer.model_max_length,
+        )
+        for inp, t in zip(inputs.get("input_ids"), target_start_idx)
+    ]
+
+    oe_targets = torch.cat(
+        [
+            inp[t:].unsqueeze(0)
+            for inp, t in zip(inputs.get("input_ids"), target_start_idx)
+        ],
+        dim=0,
+    )
+
+    return target_start_idx, oe_inputs, oe_targets
 
 
 def get_token_vec(tokenizer, format="roman_choice"):
