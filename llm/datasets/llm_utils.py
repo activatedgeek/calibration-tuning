@@ -109,7 +109,9 @@ def extract_oe_inputs(tokenizer, inputs):
     target_start_idx = (
         inputs.get("labels")
         .eq(-100)
-        .nonzero()[inputs.get("labels").eq(IGNORE_LABEL).sum(dim=-1).cumsum(dim=-1) - 1][:, -1]
+        .nonzero()[
+            inputs.get("labels").eq(IGNORE_LABEL).sum(dim=-1).cumsum(dim=-1) - 1
+        ][:, -1]
         + 1
     )
 

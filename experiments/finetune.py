@@ -42,6 +42,7 @@ def main(
     warmup_steps=100,
     max_steps=1000,
     save_steps=1000,
+    eval_steps=1000,
     use_dataset_cache=True,
     resume_dir=None,
 ):
@@ -99,13 +100,14 @@ def main(
     trainer = CalibrationTrainer(
         model=model,
         args=TrainingArguments(
+            seed=seed,
             fsdp=False,
             fp16=not fp8,
             bf16=False,
             gradient_checkpointing=False,
             ddp_find_unused_parameters=False,
             max_steps=max_steps,
-            eval_steps=1000,
+            eval_steps=eval_steps,
             save_steps=save_steps,
             logging_steps=100,
             log_on_each_node=False,
@@ -130,7 +132,6 @@ def main(
         tokenizer=tokenizer,
         callbacks=[
             WandbConfigUpdateCallback(
-                seed=seed,
                 dataset=dataset,
                 data_dir=data_dir,
                 model_name=model_name,

@@ -179,7 +179,7 @@ def evaluate_dataset(
     evaluate_fn = evaluate_fn_map[prompt_style]
 
     train_metrics = None
-    if train_data is not None:
+    if train_data:
         train_metrics = evaluate_fn(
             accelerator,
             model,
@@ -198,7 +198,7 @@ def evaluate_dataset(
         logging.debug(f"Skipping train data for {dataset}")
 
     val_metrics = None
-    if val_data is not None:
+    if val_data:
         val_metrics = evaluate_fn(
             accelerator,
             model,
@@ -217,7 +217,7 @@ def evaluate_dataset(
         logging.debug(f"Skipping validation data for {dataset}")
 
     test_metrics = None
-    if test_data is not None:
+    if test_data:
         test_metrics = evaluate_fn(
             accelerator,
             model,
