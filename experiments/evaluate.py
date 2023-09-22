@@ -7,9 +7,9 @@ from accelerate import Accelerator
 from peft import PeftModel
 
 from llm.logging import entrypoint, Timer
-from llm.datasets import list_datasets, get_dataset_attrs
+from llm.datasets import get_all_train_datasets, get_all_eval_datasets
 from llm.models import get_model
-from llm.utils.evaluation import evaluate_dataset, evaluate_via_eos
+from llm.utils.evaluation import evaluate_dataset
 from llm.utils.trainer import get_last_checkpoint_path
 
 
@@ -61,20 +61,12 @@ def main(
 
         logging.info(f"Loaded PEFT checkpoint from '{peft_dir}'")
 
-    if dataset is None:
-        all_datasets = sorted(
-            list(
-                filter(
-                    lambda x: ("combined" not in x)
-                    and ("mmlu" not in x)
-                    and ("bbh" not in x),
-                    list_datasets(),
-                )
-            )
-            + [f"mmlu:{task}" for task in get_dataset_attrs("mmlu").get("tasks")]
-        )
-        logging.warning("No dataset argument used. Evaluating all datasets.")
+    if dataset == "all":
+        all_datasets = get_all_train_datasets() + get_all_eval_datasets()
+    elif dataset == "eval":
+        all_datasets = get_all_eval_datasets()
     else:
+        assert dataset is not None, "Missing dataset."
         all_datasets = [dataset]
 
     all_metrics = []

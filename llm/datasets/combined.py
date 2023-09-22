@@ -1,7 +1,20 @@
 import numpy as np
 from datasets import concatenate_datasets
 
-from .registry import get_dataset, list_datasets, register_dataset
+from .registry import get_dataset, list_datasets, register_dataset, get_dataset_attrs
+
+
+def get_all_train_datasets():
+    return list(
+        filter(
+            lambda x: ("combined" not in x) and ("mmlu" not in x) and ("bbh" not in x),
+            list_datasets(),
+        )
+    )
+
+
+def get_all_eval_datasets():
+    return [f"mmlu:{task}" for task in get_dataset_attrs("mmlu").get("tasks")]
 
 
 def get_combined_train_dataset(
@@ -14,12 +27,7 @@ def get_combined_train_dataset(
     prompt_style="choice",
     **_,
 ):
-    all_datasets = list(
-        filter(
-            lambda x: ("combined" not in x) and ("mmlu" not in x) and ("bbh" not in x),
-            list_datasets(),
-        )
-    )
+    all_datasets = get_all_train_datasets()
 
     all_train_data, all_n = [], []
     for dataset in all_datasets:
