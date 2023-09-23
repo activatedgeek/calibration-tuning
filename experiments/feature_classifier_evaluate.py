@@ -7,14 +7,19 @@ from accelerate import Accelerator
 from peft import PeftModel
 
 
-from llm.logging import entrypoint
+from llm.logging import entrypoint, Timer
 from llm.models import get_model, get_special_tokens
 from llm.utils.trainer import get_last_checkpoint_path
-from llm.datasets import get_dataset, get_loader
+from llm.datasets import (
+    get_dataset, get_loader, list_datasets, get_dataset_attrs
+)
 from llm.datasets.llm_utils import (
+    tokenize_datasets,
     DataCollatorForSupervisedDataset,
 )
-from llm.utils.evaluation import extract_eos_pos
+# from llm.utils.evaluation import (
+#     extract_eos_pos, evaluate_via_eos
+# )
 from llm.utils.third_party.calibration import calibration
 
 def prepare_model(
@@ -26,6 +31,7 @@ def prepare_model(
     model_dir,
     peft_dir,
     fp8,
+    base_model=None,
 ):
     model = get_model(
         model_name,
@@ -33,31 +39,16 @@ def prepare_model(
         load_in_8bit=fp8,
         model_dir=model_dir,
         causal_lm=causal_lm,
+        tokenizer=tokenizer,
+        base_model=base_model,
     )
 
-    model.resize_token_embeddings(len(tokenizer))
-    if special_token_count:
-        input_embeddings = model.get_input_embeddings().weight.data
+    if peft_dir is not None:
+        peft_dir = get_last_checkpoint_path(peft_dir)
 
-        input_embeddings[-special_token_count:] = input_embeddings[
-            :-special_token_count
-        ].mean(dim=0, keepdim=True)
+        model = PeftModel.from_pretrained(model, peft_dir)
 
-        if causal_lm:
-            output_embeddings = model.get_output_embeddings().weight.data
-
-            output_embeddings[-special_token_count:] = output_embeddings[
-                :-special_token_count
-            ].mean(dim=0, keepdim=True)
-
-    # model = prepare_model_for_kbit_training(model)
-
-    # if peft_dir is not None:
-    #     peft_dir = get_last_checkpoint_path(peft_dir)
-
-    #     model = PeftModel.from_pretrained(model, peft_dir)
-
-    #     logging.info(f"Loaded PEFT checkpoint from '{peft_dir}'")
+        logging.info(f"Loaded PEFT checkpoint from '{peft_dir}'")
 
     return model
 
@@ -82,7 +73,10 @@ def evaluate_classifier(
 
         logits = base_model(**inputs).logits[..., :-1, :]
 
-        eos_idx = extract_eos_pos(tokenizer, labels)
+        eos_idx = labels.eq(tokenizer.eos_token_id).nonzero()[
+            labels.eq(tokenizer.eos_token_id).sum(dim=-1).cumsum(dim=0) - 1
+        ][:, -1]
+
         y = labels[torch.arange(labels.size(0)), eos_idx - 1]
         p_hat = logits[torch.arange(logits.size(0)), eos_idx - 1]
 
@@ -167,6 +161,7 @@ def evaluate_dataset(
             use_cache=use_cache,
             **_extra_args,
         )
+        val_data, test_data = tokenize_datasets(tokenizer, val_data, test_data)
 
     val_metrics = None
     if val_data is not None:
@@ -215,7 +210,15 @@ def main(
     model_dir=None,
     peft_dir=None,
     use_dataset_cache=True,
+    **kwargs,
 ):
+    model_name = 'llama2_7b'
+    dataset = 'hellaswag'
+    peft_dir = '/data/home/ngruver/llm-calibration/checkpoint-17000'
+    model_dir = '/fsx-open-catalyst/ngruver/calibration_exps/checkpoint-6600'
+    log_dir = './eval_classifier'
+    batch_size = 1
+
     accelerator = Accelerator()
 
     config = {
@@ -242,7 +245,7 @@ def main(
         model_name=model_name,
         tokenizer=tokenizer,
         special_token_count=special_token_count,
-        model_dir=model_dir,
+        model_dir=None,
         peft_dir=peft_dir,
         fp8=fp8,
     )
@@ -254,32 +257,54 @@ def main(
         tokenizer=tokenizer,
         special_token_count=special_token_count,
         model_dir=model_dir,
-        peft_dir=peft_dir,
+        peft_dir=None,
         fp8=fp8,
+        base_model=base_model,
     )
 
-    val_metrics, test_metrics = evaluate_dataset(
-        accelerator,
-        base_model,
-        classifier_model,
-        tokenizer,
-        dataset,
-        seed=seed,
-        batch_size=batch_size,
-        data_dir=data_dir,
-        eval_kshot=eval_kshot,
-        use_cache=use_dataset_cache,
-    )
+    if dataset is None:
+        all_datasets = sorted(
+            list(
+                filter(
+                    lambda x: ("combined" not in x)
+                    and ("mmlu" not in x)
+                    and ("bbh" not in x),
+                    list_datasets(),
+                )
+            )
+            + [f"mmlu:{task}" for task in get_dataset_attrs("mmlu").get("tasks")]
+        )
+        logging.warning("No dataset argument used. Evaluating all datasets.")
+    else:
+        all_datasets = [dataset]
 
-    all_metrics = map(
-        lambda m: {**m, **config, "dataset": dataset},
-        list(filter(lambda m: m is not None, [val_metrics, test_metrics])),
-    )
-    logging.info(
-        {"metrics": wandb.Table(dataframe=pd.DataFrame(all_metrics))},
-        extra=dict(metrics=True),
-    )
+    all_metrics = []
+    for dataset in tqdm(all_datasets):
+        with Timer() as t:
+            val_metrics, test_metrics = evaluate_dataset(
+                accelerator,
+                base_model,
+                classifier_model,
+                tokenizer,
+                dataset,
+                seed=seed,
+                batch_size=batch_size,
+                data_dir=data_dir,
+                eval_kshot=eval_kshot,
+                use_cache=use_dataset_cache,
+            )
 
+        dataset_metrics = list(
+            map(
+                lambda m: {**m, **config, "dataset": dataset, "ts": t.elapsed},
+                list(filter(lambda m: m is not None, [val_metrics, test_metrics])),
+            )
+        )
+        all_metrics += dataset_metrics
+        logging.info(
+            {"metrics": wandb.Table(dataframe=pd.DataFrame(all_metrics))},
+            extra=dict(metrics=True),
+        )
 
 if __name__ == "__main__":
     import fire

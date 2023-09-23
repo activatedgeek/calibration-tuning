@@ -9,7 +9,7 @@ from peft import PeftModel
 
 from llm.logging import entrypoint
 from llm.models import get_model, get_special_tokens
-from llm.utils.evaluation import evaluate_dataset
+from llm.datasets.llm_utils import tokenize_datasets
 from llm.utils.trainer import get_last_checkpoint_path
 from llm.datasets import get_dataset, get_loader
 from llm.utils.trainer import (
@@ -28,6 +28,7 @@ def prepare_model(
     model_dir,
     peft_dir,
     fp8,
+    base_model=None,
 ):
     model = get_model(
         model_name,
@@ -35,31 +36,16 @@ def prepare_model(
         load_in_8bit=fp8,
         model_dir=model_dir,
         causal_lm=causal_lm,
+        tokenizer=tokenizer,
+        base_model=base_model,
     )
 
-    model.resize_token_embeddings(len(tokenizer))
-    if special_token_count:
-        input_embeddings = model.get_input_embeddings().weight.data
+    if peft_dir is not None:
+        peft_dir = get_last_checkpoint_path(peft_dir)
 
-        input_embeddings[-special_token_count:] = input_embeddings[
-            :-special_token_count
-        ].mean(dim=0, keepdim=True)
+        model = PeftModel.from_pretrained(model, peft_dir)
 
-        if causal_lm:
-            output_embeddings = model.get_output_embeddings().weight.data
-
-            output_embeddings[-special_token_count:] = output_embeddings[
-                :-special_token_count
-            ].mean(dim=0, keepdim=True)
-
-    # model = prepare_model_for_kbit_training(model)
-
-    # if peft_dir is not None:
-    #     peft_dir = get_last_checkpoint_path(peft_dir)
-
-    #     model = PeftModel.from_pretrained(model, peft_dir)
-
-    #     logging.info(f"Loaded PEFT checkpoint from '{peft_dir}'")
+        logging.info(f"Loaded PEFT checkpoint from '{peft_dir}'")
 
     return model
 
@@ -91,7 +77,22 @@ def main(
     save_steps=1000,
     logging_steps=25,
     use_dataset_cache=True,
+    **kwargs,
 ):
+    # model_name = 'llama2_7b'
+    # dataset = 'combined_100k'
+    # batch_size = 16
+    # peft_dir = '/data/home/ngruver/llm-calibration/checkpoint-17000'
+    # save_steps = 200
+    # log_dir = '/fsx-open-catalyst/ngruver/calibration_exps'
+
+    model_name = 'llama2_13b'
+    dataset = 'combined_100k'
+    batch_size = 8
+    peft_dir = '/data/home/ngruver/llm-calibration/checkpoint-10000'
+    save_steps = 200
+    log_dir = '/fsx-open-catalyst/ngruver/calibration_exps/13b_it_bigger_bs'
+
     accelerator = AcceleratorState()
 
     config = {
@@ -122,6 +123,10 @@ def main(
         peft_dir=peft_dir,
         fp8=fp8,
     )
+
+    for param in base_model.parameters():
+        param.requires_grad = False
+
     model = prepare_model(
         causal_lm=False,
         accelerator=accelerator,
@@ -129,14 +134,11 @@ def main(
         tokenizer=tokenizer,
         special_token_count=special_token_count,
         model_dir=model_dir,
-        peft_dir=peft_dir,
+        peft_dir=None,
         fp8=fp8,
+        base_model=base_model if peft_dir else base_model.model,
     )
     model.config.use_cache = False
-    model.model = base_model.model #will have to change for peft
-
-    for param in base_model.parameters():
-        param.requires_grad = False
 
     with accelerator.main_process_first():
         train_data, val_data, test_data = get_dataset(
@@ -147,6 +149,10 @@ def main(
             num_workers=num_workers,
             use_cache=use_dataset_cache,
             eval_kshot=kshot,
+        )
+
+        train_data, val_data, test_data = tokenize_datasets(
+            tokenizer, train_data, val_data, test_data
         )
 
     trainer = ClassificationTrainer(
@@ -202,7 +208,7 @@ def main(
             ),
         ],
     )
-    trainer.train(resume_from_checkpoint=peft_dir)
+    trainer.train()#resume_from_checkpoint=peft_dir)
     trainer.save_state()
 
 

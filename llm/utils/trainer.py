@@ -187,7 +187,9 @@ class ClassificationTrainer(Trainer):
         )
         attn_mask = inputs.get("attention_mask")
 
-        eos_idx = extract_eos_pos(self.tokenizer, labels)
+        eos_idx = labels.eq(self.tokenizer.eos_token_id).nonzero()[
+            labels.eq(self.tokenizer.eos_token_id).sum(dim=-1).cumsum(dim=0) - 1
+        ][:, -1]
 
         targets = (
             labels[torch.arange(labels.size(0)), eos_idx - 1]
