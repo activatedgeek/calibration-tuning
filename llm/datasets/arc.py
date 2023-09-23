@@ -33,6 +33,24 @@ def __format_sample(sample, tokenizer, style):
         target = sample["answerKey"].lower() + tokenizer.eos_token
 
         return dict(source=source, target=target)
+    elif style == "oe":
+        question = sample["question"]
+        answer_map = sample["choices"]["text"]
+
+        source = "\n".join(
+            [
+                "Question:",
+                question,
+                f"\nAnswer: ",
+            ]
+        )
+
+        target = (
+            answer_map[string.ascii_lowercase.index(sample["answerKey"].lower())]
+            + tokenizer.eos_token
+        )
+
+        return dict(source=source, target=target)
 
     raise NotImplementedError
 
@@ -97,7 +115,7 @@ def get_arc(
         dataset.cleanup_cache_files()
 
     train_data, val_data, test_data = [
-        data.map(
+        data.filter(lambda x: x["answerKey"].lower() in string.ascii_lowercase).map(
             lambda x: __format_sample_with_prompt(
                 x, tokenizer, prompt_style, data, k, seed=seed
             ),

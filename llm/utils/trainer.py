@@ -12,7 +12,7 @@ from ..datasets.llm_utils import (
     extract_qa_exact,
     prepare_query,
 )
-from .evaluation import evaluate_dataset_via_eos
+from .evaluation import evaluate_dataset, evaluate_via_eos
 from .scheduler import AnyCosineScheduler
 
 
@@ -139,26 +139,30 @@ class CalibrationTrainer(Trainer):
 
         return (total_loss, outputs) if return_outputs else total_loss
 
+    @torch.inference_mode()
     def evaluate(self, *_, **__):
         # metrics = super().evaluate(eval_dataset, ignore_keys, metric_key_prefix)
         metrics = {}
 
-        val_metrics, test_metrics = evaluate_dataset_via_eos(
+        val_metrics, test_metrics = evaluate_dataset(
             self.accelerator,
             self.model,
             self.tokenizer,
             None,
+            train_data=False,
+            seed=self.args.seed,
             val_data=self.eval_dataset,
             test_data=self.test_dataset,
+            prompt_style="choice",
         )
 
         if val_metrics is not None:
-            val_metrics = {f"eval_{k}": v for k, v in val_metrics.items()}
+            val_metrics = {f"eval/{k}": v for k, v in val_metrics.items()}
             self.log(val_metrics)
             metrics.update(val_metrics)
 
         if test_metrics is not None:
-            test_metrics = {f"test_{k}": v for k, v in test_metrics.items()}
+            test_metrics = {f"test/{k}": v for k, v in test_metrics.items()}
             self.log(test_metrics)
             metrics.update(test_metrics)
 

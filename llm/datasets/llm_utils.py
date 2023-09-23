@@ -12,48 +12,69 @@ class DataCollatorForSupervisedDataset(object):
     tokenizer: transformers.PreTrainedTokenizer
 
     def __call__(self, instances):
-        input_ids, labels = tuple(
-            [torch.tensor(instance[key]) for instance in instances]
-            for key in ("input_ids", "labels")
-        )
+        input_ids = [torch.tensor(instance["input_ids"]) for instance in instances]
         input_ids = torch.nn.utils.rnn.pad_sequence(
             input_ids, batch_first=True, padding_value=self.tokenizer.pad_token_id
         )
-        labels = torch.nn.utils.rnn.pad_sequence(
-            labels, batch_first=True, padding_value=IGNORE_LABEL
-        )
-        return dict(
+
+        batch_dict = dict(
             input_ids=input_ids,
-            labels=labels,
             attention_mask=input_ids.ne(self.tokenizer.pad_token_id),
         )
 
+        if "labels" in instances[0].keys():
+            labels = [torch.tensor(instance["labels"]) for instance in instances]
+            labels = torch.nn.utils.rnn.pad_sequence(
+                labels, batch_first=True, padding_value=IGNORE_LABEL
+            )
+            batch_dict["labels"] = labels
 
-def tokenize_for_causal_lm(tokenizer, sample):
-    tokenize_dict = tokenizer(
-        sample["source"] + sample["target"],
+        return batch_dict
+
+
+def tokenize_for_causal_lm(tokenizer, sample, prompt_style="choice"):
+    ## NOTE: Hope that no truncation by model length is needed, or else the logic fails.
+    tokenizer_args = dict(
         padding="longest",
         truncation=True,
         max_length=tokenizer.model_max_length,
     )
 
-    labels = torch.tensor(tokenize_dict["input_ids"])
-    source_len = (
-        labels.eq(tokenizer.eos_token_id)
-        .nonzero()[labels.eq(tokenizer.eos_token_id).sum(dim=-1).cumsum(dim=0) - 1]
-        .item()
-        - 1
+    tokenize_dict = tokenizer(
+        sample["source"].strip() + " " + sample["target"].strip(), **tokenizer_args
     )
+
+    labels = torch.tensor(tokenize_dict["input_ids"])
+
+    if prompt_style == "choice":
+        ## Target is 1 token length only.
+        source_len = (
+            labels.eq(tokenizer.eos_token_id)
+            .nonzero()[labels.eq(tokenizer.eos_token_id).sum(dim=-1).cumsum(dim=0) - 1]
+            .item()
+            - 1
+        )
+    elif prompt_style == "oe":
+        ## Encoded answer, except first BOS token id.
+        target_ids = torch.tensor(
+            tokenizer(sample["target"].strip(), **tokenizer_args)["input_ids"]
+        )[1:]
+        source_len = len(labels) - len(target_ids)
+
+        assert torch.allclose(labels[source_len:], target_ids)
+    else:
+        raise NotImplementedError
+
     labels[:source_len] = IGNORE_LABEL
     tokenize_dict["labels"] = labels.tolist()
 
     return tokenize_dict
 
 
-def tokenize_datasets(tokenizer, *datasets, num_workers=8):
+def tokenize_datasets(tokenizer, *datasets, num_workers=8, **kwargs):
     return [
         data.map(
-            lambda x: tokenize_for_causal_lm(tokenizer, x),
+            lambda x: tokenize_for_causal_lm(tokenizer, x, **kwargs),
             num_proc=num_workers,
             remove_columns=["source", "target"],
         )
@@ -82,6 +103,37 @@ def extract_qa_exact(tokenizer, inputs, outputs=None):
         return eos_idx, y, logits
 
     return eos_idx, y
+
+
+def extract_oe_inputs(tokenizer, inputs):
+    target_start_idx = (
+        inputs.get("labels")
+        .eq(-100)
+        .nonzero()[
+            inputs.get("labels").eq(IGNORE_LABEL).sum(dim=-1).cumsum(dim=-1) - 1
+        ][:, -1]
+        + 1
+    )
+
+    oe_inputs = [
+        tokenizer(
+            tokenizer.decode(inp[1:t].tolist()),
+            padding="longest",
+            truncation=True,
+            max_length=tokenizer.model_max_length,
+        )
+        for inp, t in zip(inputs.get("input_ids"), target_start_idx)
+    ]
+
+    oe_targets = torch.cat(
+        [
+            inp[t:].unsqueeze(0)
+            for inp, t in zip(inputs.get("input_ids"), target_start_idx)
+        ],
+        dim=0,
+    )
+
+    return target_start_idx, oe_inputs, oe_targets
 
 
 def get_token_vec(tokenizer, format="roman_choice"):
@@ -129,6 +181,7 @@ def prepare_query(tokenizer, inputs, outputs, format="roman_choice"):
                     "source": f"{r}\n\nIs the proposed answer correct? ",
                     "target": ("yes" if a else "no") + tokenizer.eos_token,
                 },
+                prompt_style="choice",
             )
             for r, a in zip(responses, y == y_hat)
         ]
@@ -140,6 +193,7 @@ def prepare_query(tokenizer, inputs, outputs, format="roman_choice"):
                     "source": f"{r}\n\nIs the proposed answer correct?\n\nChoices:\n(a): no\n(b): yes\nAnswer: ",
                     "target": ("b" if a else "a") + tokenizer.eos_token,
                 },
+                prompt_style="choice",
             )
             for r, a in zip(responses, y == y_hat)
         ]
@@ -151,6 +205,7 @@ def prepare_query(tokenizer, inputs, outputs, format="roman_choice"):
                     "source": f"{r}\n\nIs the proposed answer correct?\n\nChoices:\n(i): no\n(ii): yes\nAnswer: ",
                     "target": ("ii" if a else "i") + tokenizer.eos_token,
                 },
+                prompt_style="choice",
             )
             for r, a in zip(responses, y == y_hat)
         ]
