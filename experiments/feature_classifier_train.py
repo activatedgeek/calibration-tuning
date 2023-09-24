@@ -86,12 +86,12 @@ def main(
     # save_steps = 200
     # log_dir = '/fsx-open-catalyst/ngruver/calibration_exps'
 
-    model_name = 'llama2_13b'
-    dataset = 'combined_100k'
-    batch_size = 8
-    peft_dir = '/data/home/ngruver/llm-calibration/checkpoint-10000'
-    save_steps = 200
-    log_dir = '/fsx-open-catalyst/ngruver/calibration_exps/13b_it_bigger_bs'
+    # model_name = 'llama2_13b'
+    # dataset = 'combined_100k'
+    # batch_size = 8
+    # peft_dir = '/data/home/ngruver/llm-calibration/checkpoint-10000'
+    # save_steps = 200
+    # log_dir = '/fsx-open-catalyst/ngruver/calibration_exps/13b_it_bigger_bs'
 
     accelerator = AcceleratorState()
 

@@ -11,7 +11,7 @@ from llm.logging import entrypoint, Timer
 from llm.models import get_model, get_special_tokens
 from llm.utils.trainer import get_last_checkpoint_path
 from llm.datasets import (
-    get_dataset, get_loader, list_datasets, get_dataset_attrs
+    get_dataset, get_loader, get_all_train_datasets, get_all_eval_datasets
 )
 from llm.datasets.llm_utils import (
     tokenize_datasets,
@@ -179,6 +179,8 @@ def evaluate_dataset(
         )
         val_metrics["split"] = "validation"
 
+        logging.debug(val_metrics)
+
     test_metrics = None
     if test_data is not None:
         test_metrics = evaluate_classifier(
@@ -194,6 +196,8 @@ def evaluate_dataset(
             ),
         )
         test_metrics["split"] = "test"
+
+        logging.debug(test_metrics)
 
     return val_metrics, test_metrics
 
@@ -212,12 +216,12 @@ def main(
     use_dataset_cache=True,
     **kwargs,
 ):
-    model_name = 'llama2_7b'
-    dataset = 'hellaswag'
-    peft_dir = '/data/home/ngruver/llm-calibration/checkpoint-17000'
-    model_dir = '/fsx-open-catalyst/ngruver/calibration_exps/checkpoint-6600'
-    log_dir = './eval_classifier'
-    batch_size = 1
+    # model_name = 'llama2_7b'
+    # dataset = 'hellaswag'
+    # peft_dir = '/data/home/ngruver/llm-calibration/checkpoint-17000'
+    # model_dir = '/fsx-open-catalyst/ngruver/calibration_exps/checkpoint-6600'
+    # log_dir = './eval_classifier'
+    # batch_size = 1
 
     accelerator = Accelerator()
 
@@ -262,20 +266,12 @@ def main(
         base_model=base_model,
     )
 
-    if dataset is None:
-        all_datasets = sorted(
-            list(
-                filter(
-                    lambda x: ("combined" not in x)
-                    and ("mmlu" not in x)
-                    and ("bbh" not in x),
-                    list_datasets(),
-                )
-            )
-            + [f"mmlu:{task}" for task in get_dataset_attrs("mmlu").get("tasks")]
-        )
-        logging.warning("No dataset argument used. Evaluating all datasets.")
+    if dataset == "all":
+        all_datasets = get_all_train_datasets() + get_all_eval_datasets()
+    elif dataset == "eval":
+        all_datasets = get_all_eval_datasets()
     else:
+        assert dataset is not None, "Missing dataset."
         all_datasets = [dataset]
 
     all_metrics = []
