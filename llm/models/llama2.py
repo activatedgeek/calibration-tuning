@@ -7,14 +7,8 @@ import torch.nn as nn
 from torch.nn import BCEWithLogitsLoss, CrossEntropyLoss, MSELoss
 from peft import PeftModel
 
-from transformers import (
-    LlamaTokenizer,
-    LlamaModel,
-    LlamaForCausalLM,
-    LlamaForSequenceClassification,
-    LlamaPreTrainedModel
-)
-from transformers.modeling_outputs import BaseModelOutputWithPast, CausalLMOutputWithPast, SequenceClassifierOutputWithPast
+from transformers import LlamaTokenizer, LlamaForCausalLM, LlamaPreTrainedModel
+from transformers.modeling_outputs import SequenceClassifierOutputWithPast
 from transformers.utils import WEIGHTS_NAME
 
 from .registry import register_model
@@ -40,12 +34,12 @@ class LlamaForSequenceClassificationFFNN(LlamaPreTrainedModel):
             nn.ReLU(),
             nn.Linear(64, self.num_labels, bias=False),
         )
-        
+
         for module in self.score.modules():
             if isinstance(module, nn.Linear):
-                nn.init.xavier_normal_(module.weight) 
+                nn.init.xavier_normal_(module.weight)
 
-        self.score.to(self.model.device)       
+        self.score.to(self.model.device)
 
     def forward(
         self,
@@ -66,7 +60,9 @@ class LlamaForSequenceClassificationFFNN(LlamaPreTrainedModel):
             config.num_labels - 1]`. If `config.num_labels == 1` a regression loss is computed (Mean-Square loss), If
             `config.num_labels > 1` a classification loss is computed (Cross-Entropy).
         """
-        return_dict = return_dict if return_dict is not None else self.config.use_return_dict
+        return_dict = (
+            return_dict if return_dict is not None else self.config.use_return_dict
+        )
 
         if self.base_model_is_peft:
             output_hidden_states = True
@@ -96,18 +92,22 @@ class LlamaForSequenceClassificationFFNN(LlamaPreTrainedModel):
             batch_size = inputs_embeds.shape[0]
 
         if self.config.pad_token_id is None and batch_size != 1:
-            raise ValueError("Cannot handle batch sizes > 1 if no padding token is defined.")
+            raise ValueError(
+                "Cannot handle batch sizes > 1 if no padding token is defined."
+            )
         if self.config.pad_token_id is None:
             sequence_lengths = -1
         else:
             if input_ids is not None:
-                sequence_lengths = (torch.eq(input_ids, self.config.pad_token_id).long().argmax(-1) - 1).to(
-                    logits.device
-                )
+                sequence_lengths = (
+                    torch.eq(input_ids, self.config.pad_token_id).long().argmax(-1) - 1
+                ).to(logits.device)
             else:
                 sequence_lengths = -1
 
-        pooled_logits = logits[torch.arange(batch_size, device=logits.device), sequence_lengths]
+        pooled_logits = logits[
+            torch.arange(batch_size, device=logits.device), sequence_lengths
+        ]
 
         loss = None
         if labels is not None:
@@ -115,7 +115,9 @@ class LlamaForSequenceClassificationFFNN(LlamaPreTrainedModel):
             if self.config.problem_type is None:
                 if self.num_labels == 1:
                     self.config.problem_type = "regression"
-                elif self.num_labels > 1 and (labels.dtype == torch.long or labels.dtype == torch.int):
+                elif self.num_labels > 1 and (
+                    labels.dtype == torch.long or labels.dtype == torch.int
+                ):
                     self.config.problem_type = "single_label_classification"
                 else:
                     self.config.problem_type = "multi_label_classification"
@@ -128,7 +130,9 @@ class LlamaForSequenceClassificationFFNN(LlamaPreTrainedModel):
                     loss = loss_fct(pooled_logits, labels)
             elif self.config.problem_type == "single_label_classification":
                 loss_fct = CrossEntropyLoss()
-                loss = loss_fct(pooled_logits.view(-1, self.num_labels), labels.view(-1))
+                loss = loss_fct(
+                    pooled_logits.view(-1, self.num_labels), labels.view(-1)
+                )
             elif self.config.problem_type == "multi_label_classification":
                 loss_fct = BCEWithLogitsLoss()
                 loss = loss_fct(pooled_logits, labels)
@@ -163,6 +167,7 @@ class LlamaForSequenceClassificationFFNN(LlamaPreTrainedModel):
 
         return model
 
+
 def create_tokenizer(size=None, model_dir=None, cache_dir=None, **_):
     tokenizer = LlamaTokenizer.from_pretrained(
         model_dir or f"meta-llama/Llama-2-{size}-hf",
@@ -180,14 +185,14 @@ def create_tokenizer(size=None, model_dir=None, cache_dir=None, **_):
 def create_model(
     size=None, model_dir=None, cache_dir=None, causal_lm=True, tokenizer=None, **kwargs
 ):
-    base_model = kwargs.pop('base_model', None)
+    base_model = kwargs.pop("base_model", None)
     if causal_lm:
         model = LlamaForCausalLM.from_pretrained(
             model_dir or f"meta-llama/Llama-2-{size}-hf",
             cache_dir=os.environ.get("MODELDIR", cache_dir),
             **kwargs,
         )
-    else:        
+    else:
         if model_dir is None:
             model = LlamaForSequenceClassificationFFNN(base_model, **kwargs)
         else:

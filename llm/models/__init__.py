@@ -16,6 +16,7 @@ def __setup():
 
     for n in [
         "llama2",
+        "mistral",
     ]:
         import_module(f".{n}", __name__)
 
