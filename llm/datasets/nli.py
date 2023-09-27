@@ -127,11 +127,11 @@ def get_snli(
 
 
 @register_dataset(attrs=__ATTRS)
-def snli(*args, **kwargs):
+def snli(*args, prompt_style="choice", **kwargs):
     return get_snli(
         *args,
         **kwargs,
-        prompt_style="choice",
+        prompt_style=prompt_style,
     )
 
 

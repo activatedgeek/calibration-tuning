@@ -56,6 +56,7 @@ class SchedulerInitCallback(TrainerCallback):
             init_value=args.unc_decay,
             T_max=int(args.unc_decay_ratio * args.max_steps),
             last_epoch=state.global_step,
+            eta_min=0.0 if args.loss_mode == "reg" else args.unc_decay,
         )
 
 
