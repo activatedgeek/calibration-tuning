@@ -1,3 +1,9 @@
+import logging
+from peft import PeftModel, PeftConfig, get_peft_model
+
+from ..utils.trainer import get_last_checkpoint_path
+
+
 DEFAULT_PAD_TOKEN = "[PAD]"
 DEFAULT_EOS_TOKEN = "</s>"
 DEFAULT_BOS_TOKEN = "<s>"
@@ -22,3 +28,28 @@ def get_special_tokens(tokenizer):
 
 def get_custom_tokens():
     return [DEFAULT_BOA_TOKEN, DEFAULT_EOA_TOKEN]
+
+
+def load_peft_model_from_pretrained(model, peft_dir=None, query_peft_dir=None):
+    if peft_dir is not None:
+        peft_dir = get_last_checkpoint_path(peft_dir)
+
+        model = PeftModel.from_pretrained(model, peft_dir)
+
+        logging.info(f"Loaded PEFT checkpoint from '{peft_dir}'")
+
+    if query_peft_dir is not None:
+        query_peft_dir = get_last_checkpoint_path(query_peft_dir)
+
+        ## NOTE: Hack to add a zero "default" adapter, for uniform downstream usage.
+        if not isinstance(model, PeftModel):
+            model = get_peft_model(model, PeftConfig.from_pretrained(query_peft_dir))
+            for n, p in model.named_parameters():
+                if "lora" in n:
+                    p.data.fill_(0.0)
+
+        model.load_adapter(query_peft_dir, adapter_name="query")
+
+        logging.info(f"Loaded PEFT query checkpoint from '{query_peft_dir}'")
+
+    return model

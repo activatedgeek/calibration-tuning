@@ -1,5 +1,5 @@
 from .registry import register_model, get_model, get_model_attrs, list_models
-from .llm_utils import get_special_tokens
+from .llm_utils import get_special_tokens, load_peft_model_from_pretrained
 
 
 __all__ = [
@@ -8,6 +8,7 @@ __all__ = [
     "get_model_attrs",
     "list_models",
     "get_special_tokens",
+    "load_peft_model_from_pretrained",
 ]
 
 

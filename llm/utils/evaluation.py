@@ -1,6 +1,7 @@
 import logging
 from tqdm.auto import tqdm
 import torch
+from peft import PeftModel
 
 from .third_party.calibration import calibration
 from ..datasets import get_dataset, get_loader
@@ -31,7 +32,9 @@ def evaluate_via_eos(
     all_unc_y, all_unc_logits = [], []
 
     for inputs in tqdm(loader, leave=False):
-        inputs = {k: v.to(device) for k, v in inputs.items()}
+        if isinstance(model, PeftModel):
+            model.set_adapter("default")
+
         outputs = model(**inputs)
 
         _, y, logits = extract_qa_exact(tokenizer, inputs, outputs=outputs)
@@ -42,6 +45,9 @@ def evaluate_via_eos(
         query_inputs, query_token_vec = loader.collate_fn(
             query_inputs
         ), query_token_vec.to(device)
+
+        if isinstance(model, PeftModel) and "query" in model.peft_config:
+            model.set_adapter("query")
 
         query_inputs = {k: v.to(device) for k, v in query_inputs.items()}
         query_outputs = model(**query_inputs)

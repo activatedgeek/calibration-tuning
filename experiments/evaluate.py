@@ -4,13 +4,11 @@ import wandb
 import pandas as pd
 import torch
 from accelerate import Accelerator
-from peft import PeftModel
 
 from llm.logging import entrypoint, Timer
 from llm.datasets import get_all_train_datasets, get_all_eval_datasets
-from llm.models import get_model
+from llm.models import get_model, load_peft_model_from_pretrained
 from llm.utils.evaluation import evaluate_dataset
-from llm.utils.trainer import get_last_checkpoint_path
 
 
 def main(
@@ -23,6 +21,7 @@ def main(
     model_name=None,
     model_dir=None,
     peft_dir=None,
+    query_peft_dir=None,
     use_dataset_cache=True,
     use_auto_device=False,
     prompt_style="choice",
@@ -54,12 +53,9 @@ def main(
         tokenizer=tokenizer,
     )
 
-    if peft_dir is not None:
-        peft_dir = get_last_checkpoint_path(peft_dir)
-
-        model = PeftModel.from_pretrained(model, peft_dir)
-
-        logging.info(f"Loaded PEFT checkpoint from '{peft_dir}'")
+    model = load_peft_model_from_pretrained(
+        model, peft_dir=peft_dir, query_peft_dir=query_peft_dir
+    )
 
     if dataset == "all":
         all_datasets = get_all_train_datasets() + get_all_eval_datasets()
