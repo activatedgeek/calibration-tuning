@@ -33,6 +33,7 @@ def main(
         "model_name": model_name,
         "model_dir": model_dir,
         "peft_dir": peft_dir,
+        "query_peft_dir": query_peft_dir,
         "eval_kshot": eval_kshot,
         "prompt_style": prompt_style,
     }
