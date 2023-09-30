@@ -68,6 +68,15 @@ def evaluate_via_eos(
         torch.cat(l, dim=0) for l in (all_y, all_logits, all_unc_y, all_unc_logits)
     ]
 
+    ## Renormalize over options.
+    # from ..datasets.llm_utils import get_token_vec
+    #
+    # qa_token_vec = get_token_vec(tokenizer, format="mcq").to(all_y.device)
+    # all_y, all_p = (
+    #     (all_y.unsqueeze(-1) == qa_token_vec).long().argmax(dim=-1),
+    #     all_logits[:, qa_token_vec].softmax(dim=-1),
+    # )
+
     all_p = all_logits.softmax(dim=-1)
     all_y_hat = all_p.argmax(dim=-1)
     acc = (all_y == all_y_hat).float().mean()

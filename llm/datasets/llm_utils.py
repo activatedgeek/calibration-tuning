@@ -149,6 +149,8 @@ def get_token_vec(tokenizer, format="roman_choice"):
         raw_strings = ["no", "yes"]
     elif format == "alpha_choice":
         raw_strings = ["a", "b"]
+    elif format == "mcq":
+        raw_strings = ["a", "b", "c", "d"]
     elif format == "roman_choice":
         raw_strings = ["i", "ii"]
     else:
