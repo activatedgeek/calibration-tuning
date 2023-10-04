@@ -5,13 +5,12 @@ from .registry import get_dataset, list_datasets, register_dataset, get_dataset_
 
 
 def get_all_train_datasets():
-    return list(
-        filter(
-            lambda x: ("all" not in x)
-            and ("combined" not in x)
-            and ("mmlu" not in x)
-            and ("bbh" not in x),
-            list_datasets(),
+    return sorted(
+        list(
+            filter(
+                lambda x: ("all" not in x) and ("mmlu" not in x) and ("bbh" not in x),
+                list_datasets(),
+            )
         )
     )
 
@@ -21,6 +20,7 @@ def get_all_eval_datasets():
 
 
 def get_combined_train_dataset(
+    all_dataset_names,
     max_n=100,
     root=None,
     tokenizer=None,
@@ -31,8 +31,6 @@ def get_combined_train_dataset(
     complement=False,
     **_,
 ):
-    all_dataset_names = get_all_train_datasets()
-
     all_train_data, all_n = [], []
     for dataset in all_dataset_names:
         train_data, _, _ = get_dataset(
@@ -74,15 +72,53 @@ def get_combined_train_dataset(
 
 
 @register_dataset
-def combined_100k(*args, **kwargs):
-    return get_combined_train_dataset(*args, **kwargs, max_n=100_000)
+def all_100k(*args, **kwargs):
+    return get_combined_train_dataset(
+        all_dataset_names=get_all_train_datasets(), *args, **kwargs, max_n=100_000
+    )
 
 
 @register_dataset
 def all_200k(*args, **kwargs):
-    return get_combined_train_dataset(*args, **kwargs, max_n=200_000)
+    return get_combined_train_dataset(
+        all_dataset_names=get_all_train_datasets(),
+        *args,
+        **kwargs,
+        max_n=200_000,
+        complement=False,
+    )
 
 
 @register_dataset
 def all_200k_c(*args, **kwargs):
-    return get_combined_train_dataset(*args, **kwargs, max_n=200_000, complement=True)
+    return get_combined_train_dataset(
+        all_dataset_names=get_all_train_datasets(),
+        *args,
+        **kwargs,
+        max_n=200_000,
+        complement=True,
+    )
+
+
+@register_dataset
+def sub_all_200k(*args, **kwargs):
+    all_dataset_names = get_all_train_datasets()
+    all_dataset_names = all_dataset_names[: len(all_dataset_names) // 2]
+    return get_combined_train_dataset(
+        all_dataset_names=all_dataset_names,
+        *args,
+        **kwargs,
+        max_n=200_000,
+    )
+
+
+@register_dataset
+def sub_all_200k_c(*args, **kwargs):
+    all_dataset_names = get_all_train_datasets()
+    all_dataset_names = all_dataset_names[len(all_dataset_names) // 2 :]
+    return get_combined_train_dataset(
+        all_dataset_names=all_dataset_names,
+        *args,
+        **kwargs,
+        max_n=800_000,
+    )
