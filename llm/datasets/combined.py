@@ -7,7 +7,10 @@ from .registry import get_dataset, list_datasets, register_dataset, get_dataset_
 def get_all_train_datasets():
     return list(
         filter(
-            lambda x: ("combined" not in x) and ("mmlu" not in x) and ("bbh" not in x),
+            lambda x: ("all" not in x)
+            and ("combined" not in x)
+            and ("mmlu" not in x)
+            and ("bbh" not in x),
             list_datasets(),
         )
     )
@@ -25,12 +28,13 @@ def get_combined_train_dataset(
     num_workers=8,
     use_dataset_cache=True,
     prompt_style="choice",
+    complement=False,
     **_,
 ):
-    all_datasets = get_all_train_datasets()
+    all_dataset_names = get_all_train_datasets()
 
     all_train_data, all_n = [], []
-    for dataset in all_datasets:
+    for dataset in all_dataset_names:
         train_data, _, _ = get_dataset(
             dataset,
             root=root,
@@ -42,16 +46,18 @@ def get_combined_train_dataset(
         )
 
         if train_data is not None:
+            train_data = train_data.shuffle(seed=seed)
+
             all_train_data.append(train_data)
             all_n.append(len(train_data))
 
     max_n = min(max_n, sum(all_n))
-    all_n = ((np.array(all_n) / sum(all_n)) * max_n).astype(int)
+    select_n = ((np.array(all_n) / sum(all_n)) * max_n).astype(int)
 
     all_train_data = concatenate_datasets(
         [
-            train_data.shuffle(seed=seed).select(range(n))
-            for train_data, n in zip(all_train_data, all_n)
+            train_data.select(range(n, N) if complement else range(n))
+            for train_data, N, n in zip(all_train_data, all_n, select_n)
         ]
     )
 
@@ -70,3 +76,13 @@ def get_combined_train_dataset(
 @register_dataset
 def combined_100k(*args, **kwargs):
     return get_combined_train_dataset(*args, **kwargs, max_n=100_000)
+
+
+@register_dataset
+def all_200k(*args, **kwargs):
+    return get_combined_train_dataset(*args, **kwargs, max_n=200_000)
+
+
+@register_dataset
+def all_200k_c(*args, **kwargs):
+    return get_combined_train_dataset(*args, **kwargs, max_n=200_000, complement=True)
