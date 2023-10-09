@@ -67,6 +67,7 @@ class TrainingArguments(TrainingArguments):
     unc_normalize: bool = field(default=True)
     loss_mode: str = field(default="reg")
     query_format: str = field(default="roman_choice")
+    label_smoothing: float = field(default=0.0)
 
 
 class CalibrationTrainer(Trainer):
@@ -100,7 +101,11 @@ class CalibrationTrainer(Trainer):
                 unc_logits[:, query_token_vec],
             )
 
-            unc_loss = F.cross_entropy(unc_logits, unc_y.to(unc_logits.device))
+            unc_loss = F.cross_entropy(
+                unc_logits,
+                unc_y.to(unc_logits.device),
+                label_smoothing=self.args.label_smoothing,
+            )
 
             return unc_loss
 
