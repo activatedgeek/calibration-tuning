@@ -8,7 +8,7 @@ from transformers import get_linear_schedule_with_warmup
 from llm.datasets import get_dataset, get_loader
 from llm.datasets.llm_utils import tokenize_datasets, DataCollatorForSupervisedDataset
 from llm.models import get_model
-from llm.models.peft import get_prompt_tuning_model
+from llm.models.peft import get_temperature_scaled_model, save_temperature_scaled_model
 from llm.logging import entrypoint
 
 
@@ -17,8 +17,7 @@ def main(
     log_dir=None,
     model_name=None,
     model_dir=None,
-    num_tokens=32,
-    peft_dir=None,
+    checkpoint_dir=None,
     fp8=True,
     dataset=None,
     data_dir=None,
@@ -40,8 +39,7 @@ def main(
                 "log_dir": log_dir,
                 "model_name": model_name,
                 "model_dir": model_dir,
-                "peft_dir": peft_dir,
-                "num_tokens": num_tokens,
+                "checkpoint_dir": checkpoint_dir,
                 "fp8": fp8,
                 "dataset": dataset,
                 "data_dir": data_dir,
@@ -69,7 +67,11 @@ def main(
         tokenizer=tokenizer,
         load_in_8bit=fp8,
     )
-    model = get_prompt_tuning_model(model, peft_dir=peft_dir, num_tokens=num_tokens)
+    model = get_temperature_scaled_model(
+        model,
+        module_name="lm_head",
+        checkpoint_dir=checkpoint_dir,
+    )
 
     with accelerator.main_process_first():
         train_data, _, _ = get_dataset(
@@ -123,13 +125,23 @@ def main(
             scheduler.step()
 
         if s % log_steps == 0:
-            logging.info({"loss": loss.detach().float()}, extra=dict(metrics=True))
-            logging.debug({"loss": loss.detach().float()})
+            temperature = (
+                accelerator.unwrap_model(model)
+                .lm_head[-1]
+                .log_temperature.detach()
+                .exp()
+            )
+            logging.info(
+                {"loss": loss.detach().float(), "temperature": temperature},
+                extra=dict(metrics=True),
+            )
+            logging.debug({"loss": loss.detach().float(), "temperature": temperature})
 
         if s % save_steps == 0:
-            save_dir = f"{log_dir}/checkpoint-{s}"
             if accelerator.is_main_process:
-                accelerator.unwrap_model(model).save_pretrained(save_dir)
+                save_temperature_scaled_model(
+                    accelerator.unwrap_model(model), f"{log_dir}/checkpoint-{s}"
+                )
 
 
 if __name__ == "__main__":
