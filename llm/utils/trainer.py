@@ -19,7 +19,7 @@ from .scheduler import AnyCosineScheduler
 __all__ = [
     "WandbConfigUpdateCallback",
     "TrainingArguments",
-    "CalibrationTrainer",
+    "UncertaintyTrainer",
 ]
 
 
@@ -70,7 +70,7 @@ class TrainingArguments(TrainingArguments):
     label_smoothing: float = field(default=0.0)
 
 
-class CalibrationTrainer(Trainer):
+class UncertaintyTrainer(Trainer):
     def __init__(self, *args, tokenizer=None, test_dataset=None, **kwargs):
         super().__init__(
             *args,

@@ -1,22 +1,16 @@
 import torch
 from accelerate import PartialState as AcceleratorState
-from peft import (
-    PeftModel,
-    LoraConfig,
-    TaskType,
-    get_peft_model,
-    prepare_model_for_kbit_training,
-)
+from peft import prepare_model_for_kbit_training
 
 from llm.datasets import get_dataset
 from llm.datasets.llm_utils import tokenize_datasets
 from llm.models import get_model
+from llm.models.peft import get_lora_model
 from llm.logging import entrypoint
 from llm.utils.trainer import (
     TrainingArguments,
-    CalibrationTrainer,
+    UncertaintyTrainer,
     WandbConfigUpdateCallback,
-    get_last_checkpoint_path,
 )
 
 
@@ -67,22 +61,13 @@ def main(
 
     ## If resuming, resume_dir takes priority. Otherwise, to avoid clashes with saved state.
     peft_dir = resume_dir or peft_dir
-    if peft_dir is not None:
-        peft_dir = get_last_checkpoint_path(peft_dir)
-
-        model = PeftModel.from_pretrained(model, peft_dir, is_trainable=True)
-
-        if accelerator.is_main_process:
-            print(f"[INFO]: Loaded PEFT checkpoint from '{peft_dir}'")
-    else:
-        peft_config = LoraConfig(
-            task_type=TaskType.CAUSAL_LM,
-            bias="none",
-            r=lora_rank,
-            lora_alpha=lora_alpha,
-            lora_dropout=lora_dropout,
-        )
-        model = get_peft_model(model, peft_config)
+    model = get_lora_model(
+        model,
+        peft_dir=peft_dir,
+        lora_rank=lora_rank,
+        lora_alpha=lora_alpha,
+        lora_dropout=lora_dropout,
+    )
 
     with accelerator.main_process_first():
         train_data, val_data, test_data = get_dataset(
@@ -98,7 +83,7 @@ def main(
             tokenizer, train_data, val_data, test_data
         )
 
-    trainer = CalibrationTrainer(
+    trainer = UncertaintyTrainer(
         model=model,
         args=TrainingArguments(
             seed=seed,

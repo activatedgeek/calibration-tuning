@@ -32,11 +32,17 @@ class WnBHandler(logging.Handler):
     `metrics_dict` (optionally prefixed) is directly consumed by `wandb.log`.
     """
 
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+        self.accelerator = AcceleratorState()
+
     def emit(self, record):
         metrics = record.msg
         if hasattr(record, "prefix"):
             metrics = {f"{record.prefix}/{k}": v for k, v in metrics.items()}
-        wandb.log(metrics)
+        if self.accelerator.is_main_process:
+            wandb.log(metrics)
 
 
 class MetricsFilter(logging.Filter):
