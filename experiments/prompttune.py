@@ -4,7 +4,6 @@ import wandb
 import torch
 from accelerate import Accelerator
 from transformers import get_linear_schedule_with_warmup
-from peft import prepare_model_for_kbit_training
 
 from llm.datasets import get_dataset, get_loader
 from llm.datasets.llm_utils import tokenize_datasets, DataCollatorForSupervisedDataset
@@ -70,7 +69,6 @@ def main(
         tokenizer=tokenizer,
         load_in_8bit=fp8,
     )
-    model = prepare_model_for_kbit_training(model)
 
     with accelerator.main_process_first():
         train_data, _, _ = get_dataset(

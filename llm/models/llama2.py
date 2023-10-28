@@ -10,6 +10,7 @@ from peft import PeftModel
 from transformers import LlamaTokenizer, LlamaForCausalLM, LlamaPreTrainedModel
 from transformers.modeling_outputs import SequenceClassifierOutputWithPast
 from transformers.utils import WEIGHTS_NAME
+from peft import prepare_model_for_kbit_training
 
 from .registry import register_model
 from .llm_utils import get_special_tokens
@@ -183,23 +184,33 @@ def create_tokenizer(size=None, model_dir=None, cache_dir=None, **_):
 
 
 def create_model(
-    size=None, model_dir=None, cache_dir=None, causal_lm=True, tokenizer=None, **kwargs
+    size=None,
+    model_dir=None,
+    cache_dir=None,
+    causal_lm=True,
+    tokenizer=None,
+    load_in_8bit=True,
+    base_model=None,
+    **kwargs,
 ):
-    base_model = kwargs.pop("base_model", None)
     if causal_lm:
         model = LlamaForCausalLM.from_pretrained(
             model_dir or f"meta-llama/Llama-2-{size}-hf",
             cache_dir=os.environ.get("MODELDIR", cache_dir),
+            load_in_8bit=load_in_8bit,
             **kwargs,
         )
     else:
         if model_dir is None:
-            model = LlamaForSequenceClassificationFFNN(base_model, **kwargs)
+            model = LlamaForSequenceClassificationFFNN(
+                base_model, load_in_8bit=load_in_8bit, **kwargs
+            )
         else:
             model = LlamaForSequenceClassificationFFNN.from_pretrained(
                 base_model,
                 model_dir,
                 cache_dir=os.environ.get("MODELDIR", cache_dir),
+                load_in_8bit=load_in_8bit,
                 **kwargs,
             )
 
@@ -223,6 +234,10 @@ def create_model(
             output_embeddings[-extra_token_count:] = output_embeddings[
                 :-extra_token_count
             ].mean(dim=0, keepdim=True)
+
+    ## NOTE: probably needs to be more general.
+    if load_in_8bit:
+        model = prepare_model_for_kbit_training(model)
 
     return model
 

@@ -1,6 +1,5 @@
 import torch
 from accelerate import PartialState as AcceleratorState
-from peft import prepare_model_for_kbit_training
 
 from llm.datasets import get_dataset
 from llm.datasets.llm_utils import tokenize_datasets
@@ -57,7 +56,6 @@ def main(
         tokenizer=tokenizer,
         load_in_8bit=fp8,
     )
-    model = prepare_model_for_kbit_training(model)
 
     ## If resuming, resume_dir takes priority. Otherwise, to avoid clashes with saved state.
     peft_dir = resume_dir or peft_dir
