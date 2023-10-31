@@ -1,6 +1,8 @@
 import os
 import string
+from tqdm.auto import tqdm
 import torch
+from datasets import concatenate_datasets
 
 from .registry import register_dataset
 
@@ -207,3 +209,17 @@ def mmlu(*args, dataset_str=None, prompt_style="choice", **kwargs):
         instance=instance,
         prompt_style=prompt_style,
     )
+
+
+@register_dataset
+def mmlu_calibration(*args, prompt_style="choice", **kwargs):
+    all_data = [
+        get_mmlu(*args, **kwargs, instance=instance, prompt_style=prompt_style)
+        for instance in tqdm(__TASKS, leave=False)
+    ]
+    _, all_val_data, _ = list(zip(*all_data))
+
+    ## Use validation data as training data for calibration.
+    all_val_data = concatenate_datasets(all_val_data)
+
+    return all_val_data, None, None

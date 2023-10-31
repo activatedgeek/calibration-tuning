@@ -8,6 +8,7 @@ from accelerate import Accelerator
 from llm.logging import entrypoint, Timer
 from llm.datasets import get_all_train_datasets, get_all_eval_datasets
 from llm.models import get_model, load_peft_model_from_pretrained
+from llm.models.peft import get_temperature_scaled_model
 from llm.utils.evaluation import evaluate_dataset
 
 
@@ -22,6 +23,7 @@ def main(
     model_dir=None,
     peft_dir=None,
     query_peft_dir=None,
+    scale_temp=False,
     use_dataset_cache=True,
     use_auto_device=False,
     prompt_style="choice",
@@ -57,6 +59,8 @@ def main(
     model = load_peft_model_from_pretrained(
         model, peft_dir=peft_dir, query_peft_dir=query_peft_dir
     )
+
+    model = get_temperature_scaled_model(model, checkpoint_dir=query_peft_dir or peft_dir)
 
     if dataset == "all":
         all_datasets = get_all_train_datasets() + get_all_eval_datasets()

@@ -5,6 +5,10 @@ from llm.datasets import get_dataset
 from llm.datasets.llm_utils import tokenize_datasets
 from llm.models import get_model
 from llm.models.peft import get_lora_model
+from llm.models.peft.temperature_scaling import (
+    get_temperature_scaled_model,
+    TemperatureSaveCallback,
+)
 from llm.logging import entrypoint
 from llm.utils.trainer import (
     TrainingArguments,
@@ -33,8 +37,10 @@ def main(
     label_smoothing=0.0,
     weight_decay=0.0,
     loss_mode="reg",
+    scale_temp=False,
     warmup_steps=100,
     max_steps=1000,
+    log_steps=100,
     save_steps=1000,
     eval_steps=1000,
     use_dataset_cache=True,
@@ -67,6 +73,9 @@ def main(
         lora_dropout=lora_dropout,
     )
 
+    if scale_temp:
+        model = get_temperature_scaled_model(model, checkpoint_dir=peft_dir)
+
     with accelerator.main_process_first():
         train_data, val_data, test_data = get_dataset(
             dataset,
@@ -93,7 +102,7 @@ def main(
             max_steps=max_steps,
             eval_steps=eval_steps,
             save_steps=save_steps,
-            logging_steps=100,
+            logging_steps=log_steps,
             log_on_each_node=False,
             evaluation_strategy="steps",
             per_device_train_batch_size=batch_size,
@@ -128,7 +137,8 @@ def main(
                 lora_alpha=lora_alpha,
                 lora_dropout=lora_dropout,
             ),
-        ],
+        ]
+        + ([TemperatureSaveCallback()] if scale_temp else []),
     )
     trainer.train(resume_from_checkpoint=resume_dir)
     trainer.save_state()
