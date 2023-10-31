@@ -73,8 +73,7 @@ def main(
         lora_dropout=lora_dropout,
     )
 
-    if scale_temp:
-        model = get_temperature_scaled_model(model, checkpoint_dir=peft_dir)
+    model = get_temperature_scaled_model(model, checkpoint_dir=peft_dir, is_trainable=scale_temp)
 
     with accelerator.main_process_first():
         train_data, val_data, test_data = get_dataset(
@@ -137,8 +136,8 @@ def main(
                 lora_alpha=lora_alpha,
                 lora_dropout=lora_dropout,
             ),
-        ]
-        + ([TemperatureSaveCallback()] if scale_temp else []),
+            TemperatureSaveCallback(),
+        ],
     )
     trainer.train(resume_from_checkpoint=resume_dir)
     trainer.save_state()

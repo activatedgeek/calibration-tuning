@@ -25,7 +25,7 @@ class TemperatureScale(nn.Module):
         return logits / t
 
 
-def get_temperature_scaled_model(model, module_name="lm_head", checkpoint_dir=None):
+def get_temperature_scaled_model(model, module_name="lm_head", checkpoint_dir=None, is_trainable=True):
     assert hasattr(model, module_name), f"{module_name} not found in model."
 
     accelerator = AcceleratorState()
@@ -53,9 +53,13 @@ def get_temperature_scaled_model(model, module_name="lm_head", checkpoint_dir=No
 
     module_name = target_module_names[0]
 
-    logging.debug(f"Freezing existing model parameters.")
-    for _, p in model.named_parameters():
-        p.requires_grad_(False)
+    if is_trainable:
+        logging.debug(f"Freezing existing model parameters.")
+        for _, p in model.named_parameters():
+            p.requires_grad_(False)
+    else:
+        for _, p in temperature_module.parameters():
+            p.requires_grad_(False)
 
     ## Hotpatch temperature module.
     setchainattr(

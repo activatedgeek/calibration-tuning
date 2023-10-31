@@ -23,7 +23,6 @@ def main(
     model_dir=None,
     peft_dir=None,
     query_peft_dir=None,
-    scale_temp=False,
     use_dataset_cache=True,
     use_auto_device=False,
     prompt_style="choice",
