@@ -60,7 +60,7 @@ def get_temperature_scaled_model(
         for _, p in model.named_parameters():
             p.requires_grad_(False)
     else:
-        for _, p in temperature_module.parameters():
+        for _, p in temperature_module.named_parameters():
             p.requires_grad_(False)
 
     ## Hotpatch temperature module.

@@ -4,6 +4,7 @@ import torch
 import numpy as np
 
 from .registry import register_dataset
+from .llm_utils import LMText
 
 
 __all__ = [
@@ -12,6 +13,8 @@ __all__ = [
 
 
 def __format_sample(sample, tokenizer, style):
+    target_prompt = "\nAnswer: "
+
     if style == "choice":
         support = sample["support"]
         question = sample["question"]
@@ -25,7 +28,7 @@ def __format_sample(sample, tokenizer, style):
         ]
         answer_map = [answer_map[idx] for idx in answer_order]
 
-        source = "\n".join(
+        context = "\n".join(
             (["Support:", support] if len(support) else [])
             + [
                 f"\nQuestion:\n{question}",
@@ -36,15 +39,14 @@ def __format_sample(sample, tokenizer, style):
                         string.ascii_lowercase[: len(answer_map)], answer_map
                     )
                 ],
-                f"Answer: ",
             ]
         )
 
         target = string.ascii_lowercase[answer_order.index(3)] + tokenizer.eos_token
+    else:
+        raise NotImplementedError
 
-        return dict(source=source, target=target)
-
-    raise NotImplementedError
+    return LMText(context=context, target_prompt=target_prompt, target=target)
 
 
 def __generate_fewshot_prompts(
@@ -53,13 +55,12 @@ def __generate_fewshot_prompts(
     if kshot <= 0:
         return ""
 
-    _c = lambda s: s["source"] + s["target"]
-
     fewshot_prompt = "\n".join(
         [
             "The following are multiple choice science exam questions.\n",
             *[
-                _c(__format_sample(prompt_dataset[idx], tokenizer, prompt_style)) + "\n"
+                str(__format_sample(prompt_dataset[idx], tokenizer, prompt_style))
+                + "\n"
                 for idx in torch.randperm(
                     len(prompt_dataset), generator=torch.Generator().manual_seed(seed)
                 )[:kshot].tolist()
@@ -74,17 +75,16 @@ def __generate_fewshot_prompts(
 def __format_sample_with_prompt(
     sample, tokenizer, prompt_style, prompt_dataset, kshot, seed=None
 ):
-    sample_dict = __format_sample(sample, tokenizer, prompt_style)
-
-    prompt_str = __generate_fewshot_prompts(
+    prompt = __generate_fewshot_prompts(
         tokenizer, prompt_style, prompt_dataset, kshot, seed=seed
     )
-    if len(prompt_str):
-        prompt_str += "\n\n"
+    if len(prompt):
+        prompt += "\n\n"
 
-    sample_dict["source"] = prompt_str + sample_dict["source"]
+    sample = __format_sample(sample, tokenizer, prompt_style)
+    sample.prompt = prompt
 
-    return sample_dict
+    return sample
 
 
 def get_sciq(
@@ -107,7 +107,7 @@ def get_sciq(
         data.map(
             lambda x: __format_sample_with_prompt(
                 x, tokenizer, prompt_style, data, k, seed=seed
-            ),
+            ).to_pydict(),
             num_proc=num_workers,
             remove_columns=[
                 "question",

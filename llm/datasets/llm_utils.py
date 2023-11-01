@@ -1,6 +1,7 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, asdict as dataclassasdict
 import torch
 import transformers
+from datasets.formatting.formatting import LazyRow
 
 
 ## NOTE: HF Convention. See https://huggingface.co/docs/transformers/en/tasks/token_classification#preprocess.
@@ -8,7 +9,7 @@ IGNORE_LABEL = -100
 
 
 @dataclass
-class DataCollatorForSupervisedDataset(object):
+class DataCollatorForSupervisedDataset:
     tokenizer: transformers.PreTrainedTokenizer
 
     def __call__(self, instances):
@@ -32,6 +33,34 @@ class DataCollatorForSupervisedDataset(object):
         return batch_dict
 
 
+@dataclass
+class LMText:
+    context: str
+    target: str
+    target_prompt: str = ""
+    prompt: str = ""
+
+    def __str__(self):
+        return self.prompt + self.context + self.target_prompt + self.target
+
+    def to_pydict(self):
+        return dataclassasdict(self)
+
+    @staticmethod
+    def from_(instance):
+        if isinstance(instance, LMText):
+            return instance
+
+        if isinstance(instance, LazyRow):
+            instance = {k: v for k, v in zip(instance.keys(), instance.values())}
+
+        assert isinstance(
+            instance, dict
+        ), "Could not convert instance to dict. Found {type(instance)}"
+
+        return LMText(**instance)
+
+
 def tokenize_for_causal_lm(tokenizer, sample, prompt_style="choice"):
     ## NOTE: Hope that no truncation by model length is needed, or else the logic fails.
     tokenizer_args = dict(
@@ -40,13 +69,7 @@ def tokenize_for_causal_lm(tokenizer, sample, prompt_style="choice"):
         max_length=tokenizer.model_max_length,
     )
 
-    tokenize_dict = tokenizer(
-        sample.get("prompt", "").strip()
-        + sample["source"].strip()
-        + " "
-        + sample["target"].strip(),
-        **tokenizer_args,
-    )
+    tokenize_dict = tokenizer(str(LMText.from_(sample)), **tokenizer_args)
 
     labels = torch.tensor(tokenize_dict["input_ids"])
 
@@ -183,7 +206,7 @@ def prepare_query(tokenizer, inputs, outputs, format="roman_choice"):
             tokenize_for_causal_lm(
                 tokenizer,
                 {
-                    "source": f"{r}\n\nIs the proposed answer correct? ",
+                    "context": f"{r}\n\nIs the proposed answer correct? ",
                     "target": ("yes" if a else "no") + tokenizer.eos_token,
                 },
                 prompt_style="choice",
@@ -195,7 +218,8 @@ def prepare_query(tokenizer, inputs, outputs, format="roman_choice"):
             tokenize_for_causal_lm(
                 tokenizer,
                 {
-                    "source": f"{r}\n\nIs the proposed answer correct?\n\nChoices:\n(a): no\n(b): yes\nAnswer: ",
+                    "context": f"{r}\n\nIs the proposed answer correct?\n\nChoices:\n(a): no\n(b): yes",
+                    "target_prompt": "\nAnswer: ",
                     "target": ("b" if a else "a") + tokenizer.eos_token,
                 },
                 prompt_style="choice",
@@ -207,7 +231,8 @@ def prepare_query(tokenizer, inputs, outputs, format="roman_choice"):
             tokenize_for_causal_lm(
                 tokenizer,
                 {
-                    "source": f"{r}\n\nIs the proposed answer correct?\n\nChoices:\n(i): no\n(ii): yes\nAnswer: ",
+                    "context": f"{r}\n\nIs the proposed answer correct?\n\nChoices:\n(i): no\n(ii): yes",
+                    "target_prompt": "\nAnswer: ",
                     "target": ("ii" if a else "i") + tokenizer.eos_token,
                 },
                 prompt_style="choice",

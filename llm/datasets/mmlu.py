@@ -5,6 +5,7 @@ import torch
 from datasets import concatenate_datasets
 
 from .registry import register_dataset
+from .llm_utils import LMText
 
 
 __all__ = [
@@ -76,11 +77,13 @@ __ATTRS = dict(tasks=__TASKS)
 
 
 def __format_sample(sample, tokenizer, style):
+    target_prompt = "\nAnswer: "
+
     if style == "choice":
         question = sample["question"]
         choices = sample["choices"]
 
-        source = "\n".join(
+        context = "\n".join(
             [
                 f"Question:\n{question}",
                 "\nChoices:",
@@ -88,28 +91,20 @@ def __format_sample(sample, tokenizer, style):
                     f"  ({n}): {c}"
                     for n, c in zip(string.ascii_lowercase[: len(choices)], choices)
                 ],
-                f"Answer: ",
             ]
         )
 
         target = string.ascii_lowercase[sample["answer"]] + tokenizer.eos_token
-
-        return dict(source=source, target=target)
     elif style == "oe":
         question = sample["question"]
 
-        source = "\n".join(
-            [
-                f"Question:\n{question}",
-                f"Answer: ",
-            ]
-        )
+        context = f"Question:\n{question}"
 
         target = sample["choices"][sample["answer"]] + tokenizer.eos_token
+    else:
+        raise NotImplementedError
 
-        return dict(source=source, target=target)
-
-    raise NotImplementedError
+    return LMText(context=context, target_prompt=target_prompt, target=target)
 
 
 def __generate_fewshot_prompts(
@@ -118,13 +113,12 @@ def __generate_fewshot_prompts(
     if kshot <= 0:
         return ""
 
-    _c = lambda s: s["source"] + s["target"]
-
     fewshot_prompt = "\n".join(
         [
             f"The following are multiple choice questions (with answers) about {' '.join(instance.split('_'))}.\n",
             *[
-                _c(__format_sample(prompt_dataset[idx], tokenizer, prompt_style)) + "\n"
+                str(__format_sample(prompt_dataset[idx], tokenizer, prompt_style))
+                + "\n"
                 for idx in torch.randperm(
                     len(prompt_dataset), generator=torch.Generator().manual_seed(seed)
                 )[:kshot].tolist()
@@ -139,17 +133,16 @@ def __generate_fewshot_prompts(
 def __format_sample_with_prompt(
     sample, tokenizer, prompt_style, prompt_dataset, instance, kshot, seed=None
 ):
-    sample_dict = __format_sample(sample, tokenizer, prompt_style)
-
-    prompt_str = __generate_fewshot_prompts(
+    prompt = __generate_fewshot_prompts(
         tokenizer, prompt_style, prompt_dataset, instance, kshot, seed=seed
     )
-    if len(prompt_str):
-        prompt_str += "\n\n"
+    if len(prompt):
+        prompt += "\n\n"
 
-    sample_dict = dict(**sample_dict, prompt=prompt_str)
+    sample = __format_sample(sample, tokenizer, prompt_style)
+    sample.prompt = prompt
 
-    return sample_dict
+    return sample
 
 
 def get_mmlu(
@@ -177,7 +170,7 @@ def get_mmlu(
         dataset.pop(split).map(
             lambda x: __format_sample_with_prompt(
                 x, tokenizer, prompt_style, dev_data, instance, k, seed=seed
-            ),
+            ).to_pydict(),
             num_proc=num_workers,
             remove_columns=[
                 "question",

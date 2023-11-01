@@ -3,6 +3,7 @@ import string
 import torch
 
 from .registry import register_dataset
+from .llm_utils import LMText
 
 
 __all__ = [
@@ -31,12 +32,14 @@ def get_cb(
         dataset.cleanup_cache_files()
 
     def __format_sample(sample, tokenizer, style):
+        target_prompt = "\nAnswer: "
+
         if style == "choice":
             premise = sample["premise"]
             hypothesis = sample["hypothesis"]
             answer_map = ["Yes", "No", "It's impossible to say"]
 
-            source = "\n".join(
+            context = "\n".join(
                 [
                     "Premise:",
                     premise,
@@ -49,15 +52,14 @@ def get_cb(
                             string.ascii_lowercase[: len(answer_map)], answer_map
                         )
                     ],
-                    f"Answer: ",
                 ]
             )
 
             target = string.ascii_lowercase[sample["label"]] + tokenizer.eos_token
+        else:
+            raise NotImplementedError
 
-            return dict(source=source, target=target)
-
-        raise NotImplementedError
+        return LMText(context=context, target_prompt=target_prompt, target=target)
 
     def __generate_fewshot_prompts(
         tokenizer, prompt_style, prompt_dataset, kshot, seed=None
@@ -65,13 +67,11 @@ def get_cb(
         if kshot <= 0:
             return ""
 
-        _c = lambda s: s["source"] + s["target"]
-
         fewshot_prompt = "\n".join(
             [
                 "The following are multiple choice questions (with premise, hypothesis, and answers) about entailment.\n",
                 *[
-                    _c(__format_sample(prompt_dataset[idx], tokenizer, prompt_style))
+                    str(__format_sample(prompt_dataset[idx], tokenizer, prompt_style))
                     + "\n"
                     for idx in torch.randperm(
                         len(prompt_dataset),
@@ -87,17 +87,16 @@ def get_cb(
     def __format_sample_with_prompt(
         sample, tokenizer, prompt_style, prompt_dataset, kshot, seed=None
     ):
-        sample_dict = __format_sample(sample, tokenizer, prompt_style)
-
-        prompt_str = __generate_fewshot_prompts(
+        prompt = __generate_fewshot_prompts(
             tokenizer, prompt_style, prompt_dataset, kshot, seed=seed
         )
-        if len(prompt_str):
-            prompt_str += "\n\n"
+        if len(prompt):
+            prompt += "\n\n"
 
-        sample_dict["source"] = prompt_str + sample_dict["source"]
+        sample = __format_sample(sample, tokenizer, prompt_style)
+        sample.prompt = prompt
 
-        return sample_dict
+        return sample
 
     data_splits = [
         data.filter(lambda x: x["label"] in [0, 1, 2], num_proc=num_workers)
@@ -110,7 +109,7 @@ def get_cb(
         data.map(
             lambda x: __format_sample_with_prompt(
                 x, tokenizer, prompt_style, data, k, seed=seed
-            ),
+            ).to_pydict(),
             num_proc=num_workers,
             remove_columns=[
                 "premise",
@@ -153,12 +152,14 @@ def get_multirc(
         dataset.cleanup_cache_files()
 
     def __format_sample(sample, tokenizer, style):
+        target_prompt = "\nAnswer: "
+
         if style == "choice":
             paragraph = sample["paragraph"]
             question = sample["question"]
             answer_map = ["No", "Yes"]
 
-            source = "\n".join(
+            context = "\n".join(
                 [
                     "Paragraph:",
                     paragraph,
@@ -170,15 +171,14 @@ def get_multirc(
                             string.ascii_lowercase[: len(answer_map)], answer_map
                         )
                     ],
-                    f"Answer: ",
                 ]
             )
 
             target = string.ascii_lowercase[sample["label"]] + tokenizer.eos_token
+        else:
+            raise NotImplementedError
 
-            return dict(source=source, target=target)
-
-        raise NotImplementedError
+        return LMText(context=context, target_prompt=target_prompt, target=target)
 
     def __generate_fewshot_prompts(
         tokenizer, prompt_style, prompt_dataset, kshot, seed=None
@@ -186,13 +186,11 @@ def get_multirc(
         if kshot <= 0:
             return ""
 
-        _c = lambda s: s["source"] + s["target"]
-
         fewshot_prompt = "\n".join(
             [
                 "The following are reading comprehensions (with answers).\n",
                 *[
-                    _c(__format_sample(prompt_dataset[idx], tokenizer, prompt_style))
+                    str(__format_sample(prompt_dataset[idx], tokenizer, prompt_style))
                     + "\n"
                     for idx in torch.randperm(
                         len(prompt_dataset),
@@ -208,17 +206,16 @@ def get_multirc(
     def __format_sample_with_prompt(
         sample, tokenizer, prompt_style, prompt_dataset, kshot, seed=None
     ):
-        sample_dict = __format_sample(sample, tokenizer, prompt_style)
-
-        prompt_str = __generate_fewshot_prompts(
+        prompt = __generate_fewshot_prompts(
             tokenizer, prompt_style, prompt_dataset, kshot, seed=seed
         )
-        if len(prompt_str):
-            prompt_str += "\n\n"
+        if len(prompt):
+            prompt += "\n\n"
 
-        sample_dict["source"] = prompt_str + sample_dict["source"]
+        sample = __format_sample(sample, tokenizer, prompt_style)
+        sample.prompt = prompt
 
-        return sample_dict
+        return sample
 
     data_splits = [
         data.filter(lambda x: x["label"] in [0, 1, 2], num_proc=num_workers)
@@ -231,7 +228,7 @@ def get_multirc(
         data.map(
             lambda x: __format_sample_with_prompt(
                 x, tokenizer, prompt_style, data, k, seed=seed
-            ),
+            ).to_pydict(),
             num_proc=num_workers,
             remove_columns=[
                 "paragraph",
@@ -275,11 +272,13 @@ def get_copa(
         dataset.cleanup_cache_files()
 
     def __format_sample(sample, tokenizer, style):
+        target_prompt = "\nAnswer: "
+
         if style == "choice":
             premise = sample["premise"]
             answer_map = [sample["choice1"], sample["choice2"]]
 
-            source = "\n".join(
+            context = "\n".join(
                 [
                     "Premise:",
                     premise,
@@ -290,15 +289,14 @@ def get_copa(
                             string.ascii_lowercase[: len(answer_map)], answer_map
                         )
                     ],
-                    f"Answer: ",
                 ]
             )
 
             target = string.ascii_lowercase[sample["label"]] + tokenizer.eos_token
+        else:
+            raise NotImplementedError
 
-            return dict(source=source, target=target)
-
-        raise NotImplementedError
+        return LMText(context=context, target_prompt=target_prompt, target=target)
 
     def __generate_fewshot_prompts(
         tokenizer, prompt_style, prompt_dataset, kshot, seed=None
@@ -306,13 +304,11 @@ def get_copa(
         if kshot <= 0:
             return ""
 
-        _c = lambda s: s["source"] + s["target"]
-
         fewshot_prompt = "\n".join(
             [
                 "The following are reading comprehensions (with answers).\n",
                 *[
-                    _c(__format_sample(prompt_dataset[idx], tokenizer, prompt_style))
+                    str(__format_sample(prompt_dataset[idx], tokenizer, prompt_style))
                     + "\n"
                     for idx in torch.randperm(
                         len(prompt_dataset),
@@ -328,17 +324,16 @@ def get_copa(
     def __format_sample_with_prompt(
         sample, tokenizer, prompt_style, prompt_dataset, kshot, seed=None
     ):
-        sample_dict = __format_sample(sample, tokenizer, prompt_style)
-
-        prompt_str = __generate_fewshot_prompts(
+        prompt = __generate_fewshot_prompts(
             tokenizer, prompt_style, prompt_dataset, kshot, seed=seed
         )
-        if len(prompt_str):
-            prompt_str += "\n\n"
+        if len(prompt):
+            prompt += "\n\n"
 
-        sample_dict["source"] = prompt_str + sample_dict["source"]
+        sample = __format_sample(sample, tokenizer, prompt_style)
+        sample.prompt = prompt
 
-        return sample_dict
+        return sample
 
     data_splits = [
         data.filter(lambda x: x["label"] in [0, 1, 2], num_proc=num_workers)
@@ -351,7 +346,7 @@ def get_copa(
         data.map(
             lambda x: __format_sample_with_prompt(
                 x, tokenizer, prompt_style, data, k, seed=seed
-            ),
+            ).to_pydict(),
             num_proc=num_workers,
             remove_columns=[
                 "premise",

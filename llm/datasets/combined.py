@@ -72,13 +72,6 @@ def get_combined_train_dataset(
 
 
 @register_dataset
-def all_100k(*args, **kwargs):
-    return get_combined_train_dataset(
-        all_dataset_names=get_all_train_datasets(), *args, **kwargs, max_n=100_000
-    )
-
-
-@register_dataset
 def all_200k(*args, **kwargs):
     return get_combined_train_dataset(
         all_dataset_names=get_all_train_datasets(),
