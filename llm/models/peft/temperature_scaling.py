@@ -25,7 +25,9 @@ class TemperatureScale(nn.Module):
         return logits / t
 
 
-def get_temperature_scaled_model(model, module_name="lm_head", checkpoint_dir=None, is_trainable=True):
+def get_temperature_scaled_model(
+    model, module_name="lm_head", checkpoint_dir=None, is_trainable=True
+):
     assert hasattr(model, module_name), f"{module_name} not found in model."
 
     accelerator = AcceleratorState()

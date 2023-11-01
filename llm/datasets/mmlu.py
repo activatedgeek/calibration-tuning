@@ -217,9 +217,10 @@ def mmlu_calibration(*args, prompt_style="choice", **kwargs):
         get_mmlu(*args, **kwargs, instance=instance, prompt_style=prompt_style)
         for instance in tqdm(__TASKS, leave=False)
     ]
-    _, all_val_data, _ = list(zip(*all_data))
+    _, all_val_data, all_test_data = list(zip(*all_data))
 
     ## Use validation data as training data for calibration.
     all_val_data = concatenate_datasets(all_val_data)
+    all_test_data = concatenate_datasets(all_test_data)
 
-    return all_val_data, None, None
+    return all_val_data, all_test_data, None
