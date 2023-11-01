@@ -103,6 +103,7 @@ def tokenize_datasets(tokenizer, *datasets, num_workers=8, **kwargs):
         data.map(
             lambda x: tokenize_for_causal_lm(tokenizer, x, **kwargs),
             num_proc=num_workers,
+            remove_columns=list(LMText.__annotations__.keys()),
         )
         if data is not None
         else None
@@ -183,6 +184,23 @@ def get_token_vec(tokenizer, format="roman_choice"):
         raise NotImplementedError
 
     return _create_vec(raw_strings)
+
+
+def prepare_batch(tokenizer, inputs, prompt_style="choice"):
+    """
+    Assumes dictionary inputs with item values as lists.
+    """
+    if all([isinstance(v, torch.Tensor) for v in inputs.values()]):
+        return inputs
+
+    return [
+        tokenize_for_causal_lm(
+            tokenizer,
+            dict(zip(inputs.keys(), vals)),
+            prompt_style=prompt_style,
+        )
+        for vals in zip(*inputs.values())
+    ]
 
 
 def prepare_query(tokenizer, inputs, outputs, format="roman_choice"):

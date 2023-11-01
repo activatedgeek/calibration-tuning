@@ -6,10 +6,10 @@ from peft import PeftModel
 from .third_party.calibration import calibration
 from ..datasets import get_dataset, get_loader
 from ..datasets.llm_utils import (
-    tokenize_datasets,
+    prepare_batch,
+    prepare_query,
     extract_qa_exact,
     extract_oe_inputs,
-    prepare_query,
     DataCollatorForSupervisedDataset,
 )
 
@@ -26,15 +26,20 @@ def evaluate_via_eos(
     Assumes all answers are 1 token and end immediately with EOS token.
     """
     device = accelerator.device
+    collate_fn = DataCollatorForSupervisedDataset(tokenizer)
 
     query_token_vec = None
     all_y, all_logits = [], []
     all_unc_y, all_unc_logits = [], []
 
     for inputs in tqdm(loader, leave=False):
+        inputs = prepare_batch(tokenizer, inputs)
+        inputs = collate_fn(inputs)
+
         if isinstance(model, PeftModel):
             model.set_adapter("default")
 
+        inputs = {k: v.to(device) for k, v in inputs.items()}
         outputs = model(**inputs)
 
         _, y, logits = extract_qa_exact(tokenizer, inputs, outputs=outputs)
@@ -42,9 +47,7 @@ def evaluate_via_eos(
         query_inputs, query_token_vec = prepare_query(
             tokenizer, inputs, outputs, format=query_format
         )
-        query_inputs, query_token_vec = loader.collate_fn(
-            query_inputs
-        ), query_token_vec.to(device)
+        query_inputs = collate_fn(query_inputs)
 
         if isinstance(model, PeftModel) and "query" in model.peft_config:
             model.set_adapter("query")
@@ -64,6 +67,7 @@ def evaluate_via_eos(
             )
         ]
 
+    query_token_vec = query_token_vec.to(device)
     all_y, all_logits, all_unc_y, all_unc_logits = [
         torch.cat(l, dim=0) for l in (all_y, all_logits, all_unc_y, all_unc_logits)
     ]
@@ -172,15 +176,6 @@ def evaluate_dataset(
             )
             if train_data == False:
                 _train_data = None
-
-            train_data, val_data, test_data = tokenize_datasets(
-                tokenizer,
-                _train_data,
-                val_data,
-                test_data,
-                num_workers=num_workers,
-                prompt_style=prompt_style,
-            )
     else:
         assert (val_data is not None) or (
             test_data is not None
@@ -202,7 +197,7 @@ def evaluate_dataset(
             get_loader(
                 train_data,
                 batch_size=batch_size,
-                collate_fn=DataCollatorForSupervisedDataset(tokenizer),
+                pin_memory=True,
                 accelerator=accelerator,
             ),
         )
@@ -221,7 +216,7 @@ def evaluate_dataset(
             get_loader(
                 val_data,
                 batch_size=batch_size,
-                collate_fn=DataCollatorForSupervisedDataset(tokenizer),
+                pin_memory=True,
                 accelerator=accelerator,
             ),
         )
@@ -240,7 +235,7 @@ def evaluate_dataset(
             get_loader(
                 test_data,
                 batch_size=batch_size,
-                collate_fn=DataCollatorForSupervisedDataset(tokenizer),
+                pin_memory=True,
                 accelerator=accelerator,
             ),
         )

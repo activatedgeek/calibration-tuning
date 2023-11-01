@@ -73,7 +73,9 @@ def main(
         lora_dropout=lora_dropout,
     )
 
-    model = get_temperature_scaled_model(model, checkpoint_dir=peft_dir, is_trainable=scale_temp)
+    model = get_temperature_scaled_model(
+        model, checkpoint_dir=peft_dir, is_trainable=scale_temp
+    )
 
     with accelerator.main_process_first():
         train_data, val_data, test_data = get_dataset(
@@ -83,10 +85,6 @@ def main(
             seed=seed,
             num_workers=num_workers,
             use_cache=use_dataset_cache,
-        )
-
-        train_data, val_data, test_data = tokenize_datasets(
-            tokenizer, train_data, val_data, test_data
         )
 
     trainer = UncertaintyTrainer(
@@ -119,9 +117,9 @@ def main(
             dataloader_num_workers=4,
             label_smoothing=label_smoothing,
         ),
-        train_dataset=train_data,
-        eval_dataset=val_data,
-        test_dataset=test_data,
+        train_dataset=tokenize_datasets(tokenizer, train_data)[0],
+        val_data=val_data,
+        test_data=test_data,
         tokenizer=tokenizer,
         callbacks=[
             WandbConfigUpdateCallback(

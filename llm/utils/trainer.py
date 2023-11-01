@@ -12,7 +12,7 @@ from ..datasets.llm_utils import (
     extract_qa_exact,
     prepare_query,
 )
-from .evaluation import evaluate_dataset, evaluate_via_eos
+from .evaluation import evaluate_dataset
 from .scheduler import AnyCosineScheduler
 
 
@@ -71,7 +71,7 @@ class TrainingArguments(TrainingArguments):
 
 
 class UncertaintyTrainer(Trainer):
-    def __init__(self, *args, tokenizer=None, test_dataset=None, **kwargs):
+    def __init__(self, *args, tokenizer=None, val_data=None, test_data=None, **kwargs):
         super().__init__(
             *args,
             **kwargs,
@@ -79,7 +79,8 @@ class UncertaintyTrainer(Trainer):
             data_collator=DataCollatorForSupervisedDataset(tokenizer),
         )
 
-        self.test_dataset = test_dataset
+        self.val_data = val_data
+        self.test_data = test_data
 
         self.unc_decay = AnyCosineScheduler()
         self.add_callback(SchedulerInitCallback(self.unc_decay))
@@ -157,8 +158,8 @@ class UncertaintyTrainer(Trainer):
             None,
             train_data=False,
             seed=self.args.seed,
-            val_data=self.eval_dataset,
-            test_data=self.test_dataset,
+            val_data=self.val_data,
+            test_data=self.test_data,
             prompt_style="choice",
         )
 
