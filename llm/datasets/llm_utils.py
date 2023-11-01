@@ -41,7 +41,11 @@ def tokenize_for_causal_lm(tokenizer, sample, prompt_style="choice"):
     )
 
     tokenize_dict = tokenizer(
-        sample["source"].strip() + " " + sample["target"].strip(), **tokenizer_args
+        sample.get("prompt", "").strip()
+        + sample["source"].strip()
+        + " "
+        + sample["target"].strip(),
+        **tokenizer_args,
     )
 
     labels = torch.tensor(tokenize_dict["input_ids"])
@@ -76,7 +80,6 @@ def tokenize_datasets(tokenizer, *datasets, num_workers=8, **kwargs):
         data.map(
             lambda x: tokenize_for_causal_lm(tokenizer, x, **kwargs),
             num_proc=num_workers,
-            remove_columns=["source", "target"],
         )
         if data is not None
         else None

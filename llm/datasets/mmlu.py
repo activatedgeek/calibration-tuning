@@ -147,7 +147,7 @@ def __format_sample_with_prompt(
     if len(prompt_str):
         prompt_str += "\n\n"
 
-    sample_dict["source"] = prompt_str + sample_dict["source"]
+    sample_dict = dict(**sample_dict, prompt=prompt_str)
 
     return sample_dict
 
@@ -181,6 +181,7 @@ def get_mmlu(
             num_proc=num_workers,
             remove_columns=[
                 "question",
+                "subject",
                 "choices",
                 "answer",
             ],
