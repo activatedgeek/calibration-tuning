@@ -156,8 +156,6 @@ def evaluate_contextual_calibration_via_eos(
         ## Ensemble over context-free strings.
         platt_logits = torch.stack(platt_logits).mean(dim=0)
 
-        breakpoint()
-
         inputs = prepare_batch(tokenizer, raw_inputs)
         inputs = collate_fn(inputs)
 
