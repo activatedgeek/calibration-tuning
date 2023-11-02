@@ -132,7 +132,11 @@ def evaluate_contextual_calibration_via_eos(
     for raw_inputs in tqdm(loader, leave=False):
         platt_logits = []
 
-        for cf_str in ["N/A", "", "[PAD]"]:
+        for cf_str in [
+            "Question: N/A",
+            "Question: ",
+            f"Question: {tokenizer.pad_token}",
+        ]:
             calib_inputs = {
                 **raw_inputs,
                 "context": [cf_str] * len(raw_inputs["context"]),
@@ -149,7 +153,10 @@ def evaluate_contextual_calibration_via_eos(
 
             platt_logits.append(_c_logits)
 
+        ## Ensemble over context-free strings.
         platt_logits = torch.stack(platt_logits).mean(dim=0)
+
+        breakpoint()
 
         inputs = prepare_batch(tokenizer, raw_inputs)
         inputs = collate_fn(inputs)
