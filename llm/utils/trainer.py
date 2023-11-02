@@ -12,7 +12,7 @@ from ..datasets.llm_utils import (
     extract_qa_exact,
     prepare_query,
 )
-from .evaluation import evaluate_dataset
+from ..eval import evaluate_dataset
 from .scheduler import AnyCosineScheduler
 
 
