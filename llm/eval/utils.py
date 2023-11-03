@@ -1,12 +1,17 @@
 import logging
 
 from ..datasets import get_dataset, get_loader
-from .eos import evaluate_via_eos, evaluate_contextual_calibration_via_eos
+from .eos import (
+    evaluate_via_eos,
+    evaluate_contextual_calibration_via_eos,
+    evaluate_candidate_via_eos,
+)
 
 
 EVALUATE_MODE_FN_MAP = {
     "eos": evaluate_via_eos,
     "cc_eos": evaluate_contextual_calibration_via_eos,
+    "cand_eos": evaluate_candidate_via_eos,
 }
 
 

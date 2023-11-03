@@ -4,6 +4,7 @@ from peft import PeftModel
 
 from ..datasets.llm_utils import (
     DataCollatorForSupervisedDataset,
+    get_token_vec,
     prepare_batch,
     extract_qa_exact,
     prepare_query,
@@ -197,4 +198,61 @@ def evaluate_contextual_calibration_via_eos(
         "ece": ece,
         "cal_acc": cal_acc.item(),
         "cal_ece": cal_ece,
+    }
+
+
+@torch.inference_mode()
+def evaluate_candidate_via_eos(
+    accelerator,
+    model,
+    tokenizer,
+    loader,
+):
+    """
+    Assumes all answers are 1 token and end immediately with EOS token.
+    """
+    device = accelerator.device
+    collate_fn = DataCollatorForSupervisedDataset(tokenizer)
+
+    if isinstance(model, PeftModel):
+        model.set_adapter("default")
+
+    all_y, all_logits = [], []
+
+    for inputs in tqdm(loader, leave=False):
+        inputs = prepare_batch(tokenizer, inputs)
+        inputs = collate_fn(inputs)
+
+        inputs = {k: v.to(device) for k, v in inputs.items()}
+        outputs = model(**inputs)
+
+        _, y, logits = extract_qa_exact(tokenizer, inputs, outputs=outputs)
+
+        qa_token_vec = get_token_vec(tokenizer, format="mcq").to(y.device)
+        y, logits = (
+            (y.unsqueeze(-1) == qa_token_vec).long().argmax(dim=-1),
+            logits[:, qa_token_vec],
+        )
+
+        [
+            l.append(v)
+            for l, v in zip(
+                (all_y, all_logits),
+                accelerator.gather_for_metrics((y, logits)),
+            )
+        ]
+
+    all_y, all_logits = [torch.cat(l, dim=0) for l in (all_y, all_logits)]
+
+    all_p = all_logits.softmax(dim=-1)
+    all_y_hat = all_p.argmax(dim=-1)
+    acc = (all_y == all_y_hat).float().mean()
+    ece, _ = calibration(
+        all_y, all_y_hat, all_p[torch.arange(all_p.size(0)), all_y_hat]
+    )
+
+    return {
+        "N": all_y.size(0),
+        "acc": acc.item(),
+        "ece": ece,
     }
