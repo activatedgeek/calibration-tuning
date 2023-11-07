@@ -8,7 +8,7 @@ def get_all_train_datasets():
     return sorted(
         list(
             filter(
-                lambda x: ("all" not in x) and ("mmlu" not in x) and ("bbh" not in x),
+                lambda x: ("all" not in x) and ("mmlu" not in x) and ("bbh" not in x) and ("story_cloze" not in x),
                 list_datasets(),
             )
         )
