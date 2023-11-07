@@ -115,7 +115,7 @@ def __generate_fewshot_prompts(
 
     fewshot_prompt = "\n".join(
         [
-            f"The following are multiple choice questions (with answers) about {' '.join(instance.split('_'))}.\n",
+            f"The following are questions (with answers) about {' '.join(instance.split('_'))}.\n",
             *[
                 str(__format_sample(prompt_dataset[idx], tokenizer, prompt_style))
                 + "\n"
