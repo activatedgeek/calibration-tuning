@@ -70,6 +70,7 @@ def evaluate_dataset(
                 pin_memory=True,
                 accelerator=accelerator,
             ),
+            prompt_style=prompt_style
         )
         train_metrics["split"] = "train"
 

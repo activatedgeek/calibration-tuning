@@ -6,10 +6,10 @@ from ..datasets.llm_utils import (
     DataCollatorForSupervisedDataset,
     prepare_batch,
     extract_qa_exact,
+    extract_oe_inputs,
     prepare_query,
 )
 from .third_party.calibration import calibration
-
 
 @torch.inference_mode()
 def evaluate_via_eos(
@@ -17,6 +17,7 @@ def evaluate_via_eos(
     model,
     tokenizer,
     loader,
+    prompt_style="oe",
     query_format="roman_choice",
 ):
     """
@@ -30,7 +31,7 @@ def evaluate_via_eos(
     all_unc_y, all_unc_logits = [], []
 
     for inputs in tqdm(loader, leave=False):
-        inputs = prepare_batch(tokenizer, inputs)
+        inputs = prepare_batch(tokenizer, inputs, prompt_style=prompt_style)
         inputs = collate_fn(inputs)
 
         if isinstance(model, PeftModel):
@@ -116,6 +117,7 @@ def evaluate_contextual_calibration_via_eos(
     model,
     tokenizer,
     loader,
+    prompt_style="choice"
 ):
     """
     Assumes all answers are 1 token and end immediately with EOS token.
