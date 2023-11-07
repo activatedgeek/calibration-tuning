@@ -131,6 +131,29 @@ def extract_qa_exact(tokenizer, inputs, outputs=None):
 
     return eos_idx, y
 
+def extract_qa_oe(tokenizer, inputs, outputs=None):
+    """
+    TBD: for @arka to adapt
+    Assumes all answers are open ended and end with EOS token.
+    """
+    labels = inputs.get("labels")[..., 1:]
+
+    eos_idx = labels.eq(tokenizer.eos_token_id).nonzero()[
+        labels.eq(tokenizer.eos_token_id).sum(dim=-1).cumsum(dim=0) - 1
+    ][:, -1]
+
+    y = labels[torch.arange(labels.size(0)), :]
+    
+
+    if outputs is not None:
+        logits = outputs.logits[..., :-1, :]
+        logits = logits[torch.arange(logits.size(0)), :]
+
+        return eos_idx, y, logits
+
+    return eos_idx, y
+
+
 
 def extract_oe_inputs(tokenizer, inputs):
     target_start_idx = (

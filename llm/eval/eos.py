@@ -7,6 +7,7 @@ from ..datasets.llm_utils import (
     get_token_vec,
     prepare_batch,
     extract_qa_exact,
+    extract_qa_oe, extract_oe_inputs,
     prepare_query,
 )
 from .third_party.calibration import calibration
@@ -41,6 +42,31 @@ def evaluate_via_eos(
         outputs = model(**inputs)
 
         _, y, logits = extract_qa_exact(tokenizer, inputs, outputs=outputs)
+        _, y_oe, logits_oe = extract_qa_oe(tokenizer, inputs, outputs=outputs)
+        # print("y_oe")
+        # print(y_oe)
+        # print(y_oe.shape)
+        # print("logits_oe")
+        # print(logits_oe)
+        # print(logits_oe.shape)
+        # all_p = logits_oe.softmax(dim=-1)
+        # all_y_hat = all_p.argmax(dim=-1)
+        # print("all_p")
+        # print(all_p)
+        # print(all_p.shape)
+        # print("all_y_hat")
+        # print(all_y_hat)
+        # print(all_y_hat.shape)
+        # print("decoded all_y_hat")
+        # print(tokenizer.batch_decode(all_y_hat))
+        
+        # get decoded string from model forward pass(es)
+        # @arka
+
+
+        # ask a model whetehr the string is the same as the answer
+        # how do we get the correct answer to iniput to this question
+        # @manley
 
         query_inputs, query_token_vec = prepare_query(
             tokenizer, inputs, outputs, format=query_format
@@ -64,6 +90,8 @@ def evaluate_via_eos(
                 accelerator.gather_for_metrics((y, logits, unc_y, unc_logits)),
             )
         ]
+    import sys
+    sys.exit()
 
     query_token_vec = query_token_vec.to(device)
     all_y, all_logits, all_unc_y, all_unc_logits = [
@@ -79,9 +107,20 @@ def evaluate_via_eos(
     #     all_logits[:, qa_token_vec].softmax(dim=-1),
     # )
 
+    # print("all_logits")
     all_p = all_logits.softmax(dim=-1)
     all_y_hat = all_p.argmax(dim=-1)
+    # print("all_p")
+    # print(all_p)
+    # print(all_p.shape)
+    # print("all_y_hat")
+    # print(all_y_hat)
+    # print(all_y_hat.shape)
+    # print("decoded all_y_hat")
+    # print(tokenizer.batch_decode([all_y_hat]))
     acc = (all_y == all_y_hat).float().mean()
+    # print("acc")
+    # print(acc)
     ece, _ = calibration(
         all_y, all_y_hat, all_p[torch.arange(all_p.size(0)), all_y_hat]
     )
