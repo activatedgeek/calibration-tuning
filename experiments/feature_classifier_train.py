@@ -21,6 +21,10 @@ def prepare_model(
     fp8,
     base_model=None,
 ):
+    ## FIXME: hack to avoid batching errors.
+    if base_model is not None:
+        base_model.config.pad_token_id = tokenizer.pad_token_id
+
     model = get_model(
         model_name,
         device_map={"": accelerator.local_process_index},
