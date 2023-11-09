@@ -8,7 +8,7 @@ from ..datasets.llm_utils import (
     prepare_batch,
     extract_qa_exact,
     extract_qa_oe, extract_oe_inputs,
-    prepare_query,
+    prepare_query, prepare_oe_calibration_query,
 )
 from .third_party.calibration import calibration
 
@@ -25,12 +25,14 @@ def evaluate_via_eos(
     """
     Assumes all answers are 1 token and end immediately with EOS token.
     """
+    print("evaluate_via_eos")
     device = accelerator.device
     collate_fn = DataCollatorForSupervisedDataset(tokenizer)
 
     query_token_vec = None
-    all_y, all_logits = [], []
+    all_oe_inputs, all_logits = [], []
     all_unc_y, all_unc_logits = [], []
+    all_acc = []
 
     for inputs in tqdm(loader, leave=False):
         inputs = prepare_batch(tokenizer, inputs, prompt_style=prompt_style)
@@ -50,76 +52,52 @@ def evaluate_via_eos(
 
         # generate 30 more tokens
         outputs = model.generate(**oe_inputs, max_new_tokens=30)
+        logits = []
+
         # convert those new tokens to the generated strings 
         output_strings = tokenizer.batch_decode(outputs[...,target_start_idx:], skip_special_tokens=True, clean_up_tokenization_spaces=False)
-        print('Ground Truth:')
-        print(oe_target_strings)
-        print('Generated Strings:')
-        print(output_strings)
 
-        # at this point we have two lists of strings:
-        # - oe_target_strings is a batch of the true strings
-        # - output_strings is a batch of the predicted strings
+        # prepare the calibration query with open ended text
+        # the calculation of the accuracy is done within this function
+        query_inputs, query_token_vec, acc = prepare_oe_calibration_query(
+            tokenizer, oe_target_strings, output_strings, format=query_format
+        )
+        query_inputs = collate_fn(query_inputs)
 
+        if isinstance(model, PeftModel) and "query" in model.peft_config:
+            model.set_adapter("query")
 
-        # ask a model whetehr the string is the same as the answer
-        # how do we get the correct answer to iniput to this question
-        # @manley
+        query_inputs = {k: v.to(device) for k, v in query_inputs.items()}
+        query_outputs = model(**query_inputs)
 
-        # query_inputs, query_token_vec = prepare_query(
-        #     tokenizer, inputs, outputs, format=query_format
-        # )
-        # query_inputs = collate_fn(query_inputs)
+        _, unc_y, unc_logits = extract_qa_exact(
+            tokenizer, query_inputs, outputs=query_outputs
+        )
 
-        # if isinstance(model, PeftModel) and "query" in model.peft_config:
-        #     model.set_adapter("query")
-
-        # query_inputs = {k: v.to(device) for k, v in query_inputs.items()}
-        # query_outputs = model(**query_inputs)
-
-        # _, unc_y, unc_logits = extract_qa_exact(
-        #     tokenizer, query_inputs, outputs=query_outputs
-        # )
-
-        # [
-        #     l.append(v)
-        #     for l, v in zip(
-        #         (all_y, all_logits, all_unc_y, all_unc_logits),
-        #         accelerator.gather_for_metrics((y, logits, unc_y, unc_logits)),
-        #     )
-        # ]
+        [
+            l.append(v)
+            for l, v in zip(
+                (all_oe_inputs, all_logits, all_unc_y, all_unc_logits, all_acc),
+                accelerator.gather_for_metrics((oe_inputs, logits, unc_y, unc_logits, acc)),
+            )
+        ]
 
     query_token_vec = query_token_vec.to(device)
-    all_y, all_logits, all_unc_y, all_unc_logits = [
-        torch.cat(l, dim=0) for l in (all_y, all_logits, all_unc_y, all_unc_logits)
-    ]
+    all_unc_y, all_unc_logits, all_acc = [torch.cat(l, dim=0) for l in (all_unc_y, all_unc_logits, all_acc)]
 
     ## Renormalize over options.
     # from ..datasets.llm_utils import get_token_vec
     #
-    # qa_token_vec = get_token_vec(tokenizer, format="mcq").to(all_y.device)
-    # all_y, all_p = (
-    #     (all_y.unsqueeze(-1) == qa_token_vec).long().argmax(dim=-1),
+    # qa_token_vec = get_token_vec(tokenizer, format="mcq").to(all_oe_inputs.device)
+    # all_oe_inputs, all_p = (
+    #     (all_oe_inputs.unsqueeze(-1) == qa_token_vec).long().argmax(dim=-1),
     #     all_logits[:, qa_token_vec].softmax(dim=-1),
     # )
 
-    # print("all_logits")
-    all_p = all_logits.softmax(dim=-1)
-    all_y_hat = all_p.argmax(dim=-1)
-    # print("all_p")
-    # print(all_p)
-    # print(all_p.shape)
-    # print("all_y_hat")
-    # print(all_y_hat)
-    # print(all_y_hat.shape)
-    # print("decoded all_y_hat")
-    # print(tokenizer.batch_decode([all_y_hat]))
-    acc = (all_y == all_y_hat).float().mean()
-    # print("acc")
-    # print(acc)
-    ece, _ = calibration(
-        all_y, all_y_hat, all_p[torch.arange(all_p.size(0)), all_y_hat]
-    )
+    acc = all_acc.float().mean()
+    # ece, _ = calibration(
+    #     all_oe_inputs, all_oe_inputs_hat, all_p[torch.arange(all_p.size(0)), all_oe_inputs_hat]
+    # )
 
     all_unc_y, all_unc_p = (
         (all_unc_y.unsqueeze(-1) == query_token_vec).long().argmax(dim=-1),
@@ -134,15 +112,15 @@ def evaluate_via_eos(
     )
 
     ## Using confidence scores from "yes" (idx 1) always.
-    qa_unc_ece, _ = calibration(all_y, all_y_hat, all_unc_p[:, 1])
-
+    import pdb; pdb.set_trace()
+    # qa_unc_ece, _ = calibration(all_oe_inputs, all_oe_inputs_hat, all_unc_p[:, 1])
     return {
-        "N": all_y.size(0),
+        "N": len(all_oe_inputs),
         "acc": acc.item(),
-        "ece": ece,
+        # "ece": ece,
         "unc_acc": unc_acc.item(),
         "unc_ece": unc_ece,
-        "qa_unc_ece": qa_unc_ece,
+        # "qa_unc_ece": qa_unc_ece,
     }
 
 

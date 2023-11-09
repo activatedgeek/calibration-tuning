@@ -284,3 +284,52 @@ def prepare_query(tokenizer, inputs, outputs, format="roman_choice"):
         raise NotImplementedError
 
     return query_inputs, get_token_vec(tokenizer, format=format)
+
+def prepare_oe_calibration_query(tokenizer, true, pred, format="roman_choice"):
+
+    # calculate accuracy
+    acc = [torch.Tensor([t in p]) for t, p in zip(true, pred)]
+
+    if format == "bool":
+        ## NOTE: Probably don't use, often seems to be biased towards a yes.
+        query_inputs = [
+            tokenize_for_causal_lm(
+                tokenizer,
+                {
+                    "context": f"{r}\n\nIs the proposed answer correct? ",
+                    "target": ("yes" if a else "no") + tokenizer.eos_token,
+                },
+                prompt_style="choice",
+            )
+            for r, a in zip(pred, acc)
+        ]
+    elif format == "alpha_choice":
+        query_inputs = [
+            tokenize_for_causal_lm(
+                tokenizer,
+                {
+                    "context": f"{r}\n\nIs the proposed answer correct?\n\nChoices:\n(a): no\n(b): yes",
+                    "target_prompt": "\nAnswer: ",
+                    "target": ("b" if a else "a") + tokenizer.eos_token,
+                },
+                prompt_style="choice",
+            )
+            for r, a in zip(pred, acc)
+        ]
+    elif format == "roman_choice":
+        query_inputs = [
+            tokenize_for_causal_lm(
+                tokenizer,
+                {
+                    "context": f"{r}\n\nIs the proposed answer correct?\n\nChoices:\n(i): no\n(ii): yes",
+                    "target_prompt": "\nAnswer: ",
+                    "target": ("ii" if a else "i") + tokenizer.eos_token,
+                },
+                prompt_style="choice",
+            )
+            for r, a in zip(pred, acc)
+        ]
+    else:
+        raise NotImplementedError
+
+    return query_inputs, get_token_vec(tokenizer, format=format), acc[0]
