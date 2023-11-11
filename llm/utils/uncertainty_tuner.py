@@ -62,21 +62,21 @@ class UncertaintyTuner(Trainer):
 
         return unc_loss
 
-    def compute_js_loss(self, model, inputs, outputs):
-        model.eval()
+    def compute_jsd_loss(self, model, inputs, outputs):
         with torch.inference_mode():
-            model.module.set_adapter(self.args.ref_adapter_name)
-            ref_outputs = model(**inputs)
-        model.train()
+            # model.module.set_adapter(self.args.ref_adapter_name)
+            ref_outputs = self.ref_model(**inputs)
 
         labels = inputs.get("labels")[..., 1:]
-        logits = outputs.logits[..., :-1, :]
-        ref_logits = ref_outputs.logits[..., :-1, :]
+        probs = outputs.logits[..., :-1, :].softmax(dim=-1)
+        ref_probs = ref_outputs.logits[..., :-1, :].softmax(dim=-1)
+        mix_probs = (probs + ref_probs) / 2
 
-        p = Categorical(logits=logits)
-        p_ref = Categorical(logits=ref_logits)
+        p = Categorical(probs=probs)
+        p_ref = Categorical(probs=ref_probs)
+        p_mix = Categorical(probs=mix_probs)
 
-        raw_loss = (kl_divergence(p, p_ref) + kl_divergence(p_ref, p)) / 2
+        raw_loss = (kl_divergence(p, p_mix) + kl_divergence(p_ref, p_mix)) / 2
         loss_mask = labels != IGNORE_LABEL
 
         loss = (raw_loss * loss_mask).sum(dim=-1).mean(dim=0)
@@ -84,20 +84,17 @@ class UncertaintyTuner(Trainer):
         return loss
 
     def compute_loss(self, model, inputs, return_outputs=False):
-        model.train()
-        model.module.set_adapter("default")
-
         loss, outputs = super().compute_loss(model, inputs, return_outputs=True)
 
         unc_loss = self.compute_unc_loss(model, inputs, outputs)
-        kl_loss = self.compute_js_loss(model, inputs, outputs)
+        # jsd_loss = self.compute_jsd_loss(model, inputs, outputs)
 
-        total_loss = unc_loss + kl_loss
+        total_loss = unc_loss
 
         loss_metrics = {
             "lm_loss": loss.detach().item(),
             "unc_loss": unc_loss.detach().item(),
-            "kl_loss": kl_loss.detach().item(),
+            # "jsd_loss": jsd_loss.detach().item(),
         }
 
         if (self.state.global_step + 1) % self.args.logging_steps == 0:
