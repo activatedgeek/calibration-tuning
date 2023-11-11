@@ -21,6 +21,7 @@ class UncertaintyTuner(Trainer):
         unc_normalize: bool = field(default=True)
         unc_label_smoothing: float = field(default=0.0)
         ref_adapter_name: str = field(default="_ref")
+        jsd_decay: float = field(default=1.0)
 
     def __init__(self, *args, tokenizer=None, val_data=None, test_data=None, **kwargs):
         super().__init__(
@@ -64,8 +65,9 @@ class UncertaintyTuner(Trainer):
 
     def compute_jsd_loss(self, model, inputs, outputs):
         with torch.inference_mode():
-            # model.module.set_adapter(self.args.ref_adapter_name)
-            ref_outputs = self.ref_model(**inputs)
+            model.module.set_adapter(self.args.ref_adapter_name)
+            ref_outputs = model.module(**inputs)
+            model.module.set_adapter("default")
 
         labels = inputs.get("labels")[..., 1:]
         probs = outputs.logits[..., :-1, :].softmax(dim=-1)
@@ -87,14 +89,14 @@ class UncertaintyTuner(Trainer):
         loss, outputs = super().compute_loss(model, inputs, return_outputs=True)
 
         unc_loss = self.compute_unc_loss(model, inputs, outputs)
-        # jsd_loss = self.compute_jsd_loss(model, inputs, outputs)
+        jsd_loss = self.compute_jsd_loss(model, inputs, outputs)
 
-        total_loss = unc_loss
+        total_loss = unc_loss + self.args.jsd_decay * jsd_loss
 
         loss_metrics = {
             "lm_loss": loss.detach().item(),
             "unc_loss": unc_loss.detach().item(),
-            # "jsd_loss": jsd_loss.detach().item(),
+            "jsd_loss": jsd_loss.detach().item(),
         }
 
         if (self.state.global_step + 1) % self.args.logging_steps == 0:
