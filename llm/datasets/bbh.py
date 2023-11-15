@@ -68,7 +68,7 @@ __MC_TASKS = [
     "international_phonetic_alphabet_nli",
     "intersect_geometry",
     "irony_identification",
-    "kanji_ascii",
+    # "kanji_ascii",
     "kannada",
     "key_value_maps",
     "known_unknowns",
@@ -224,7 +224,10 @@ def get_bigbench_mc(
 
     train_data, val_data = [
         data.filter(
-            lambda x: len(x["multiple_choice_scores"]) <= len(string.ascii_lowercase),
+            lambda x: bool(
+                len(x["multiple_choice_scores"])
+                and (len(x["multiple_choice_scores"]) <= len(string.ascii_lowercase))
+            ),
             num_proc=num_workers,
         ).map(
             lambda x: __format_sample_with_prompt(
