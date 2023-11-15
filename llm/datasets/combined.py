@@ -8,7 +8,7 @@ def get_all_train_datasets():
     return sorted(
         list(
             filter(
-                lambda x: ("all" not in x) and ("mmlu" not in x) and ("bbh" not in x),
+                lambda x: ("all" not in x) and ("mmlu" not in x) and ("bbmc" not in x),
                 list_datasets(),
             )
         )
@@ -16,7 +16,9 @@ def get_all_train_datasets():
 
 
 def get_all_eval_datasets():
-    return [f"mmlu:{task}" for task in get_dataset_attrs("mmlu").get("tasks")]
+    mmlu_tasks = [f"mmlu:{task}" for task in get_dataset_attrs("mmlu").get("tasks")]
+    bbmc_tasks = [f"bbmc:{task}" for task in get_dataset_attrs("bbmc").get("tasks")]
+    return mmlu_tasks + bbmc_tasks
 
 
 def get_combined_train_dataset(
