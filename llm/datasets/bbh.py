@@ -245,8 +245,6 @@ def get_bigbench_mc(
         )
     ]
 
-    breakpoint()
-
     return train_data, val_data, None
 
 
