@@ -223,7 +223,10 @@ def get_bigbench_mc(
         dataset.cleanup_cache_files()
 
     train_data, val_data = [
-        data.map(
+        data.filter(
+            lambda x: len(x["multiple_choice_scores"]) <= len(string.ascii_lowercase),
+            num_proc=num_workers,
+        ).map(
             lambda x: __format_sample_with_prompt(
                 x, tokenizer, prompt_style, data, subset, k, seed=seed
             ).to_pydict(),
@@ -238,9 +241,11 @@ def get_bigbench_mc(
         )
         for data, k in zip(
             [dataset.pop("train"), dataset.pop("validation")],
-            [eval_kshot, eval_kshot],
+            [0, eval_kshot],
         )
     ]
+
+    breakpoint()
 
     return train_data, val_data, None
 
