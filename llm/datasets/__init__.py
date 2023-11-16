@@ -21,7 +21,7 @@ def __setup():
 
     for n in [
         "arc",
-        "bbh",
+        "bb",
         "boolq",
         "combined",
         "commonsense_qa",
