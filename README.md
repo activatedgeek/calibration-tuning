@@ -40,7 +40,7 @@ An example command to run fine-tuning with Llama2-7b:
 ./autotorchrun experiments/finetune.py \
     --model_name=llama2_7b \
     --peft-dir=</optional/path/to/checkpoint/dir> \
-    --dataset=sub_all_200k \
+    --dataset=sub_200k \
     --max-steps=10000
 ```
 
@@ -51,7 +51,7 @@ An example command to run fine-tuning with Llama2-7b:
 ./autotorchrun experiments/uncertainty_tune.py \
     --model_name=llama2_7b \
     --peft-dir=</optional/path/to/checkpoint/dir> \
-    --dataset=sub_all_200k_c \
+    --dataset=sub_200k_c \
     --max-steps=10000
 ```
 

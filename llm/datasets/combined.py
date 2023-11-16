@@ -5,34 +5,41 @@ from .registry import get_dataset, list_datasets, register_dataset, get_dataset_
 
 
 def get_all_datasets_list(dataset_str):
-    dataset, ds = dataset_str.split(":")
+    dataset, sub_dataset = dataset_str.split(":")
 
-    assert dataset == "eval", f"Format strings as eval:<split>, found {dataset_str}"
+    assert dataset in [
+        "all",
+        "eval",
+    ], f"Format strings as <all|eval>:<split>, found {dataset_str}"
 
     all_datasets_list = []
 
-    mmlu_tasks = [f"mmlu:{task}" for task in get_dataset_attrs("mmlu").get("tasks")]
-    bbmc_tasks = [f"bbmc:{task}" for task in get_dataset_attrs("bbmc").get("tasks")]
-
-    if ds == "train":
-        all_datasets_list += sorted(
-            list(
-                filter(
-                    lambda x: ("all" not in x)
-                    and ("mmlu" not in x)
-                    and ("bbmc" not in x),
-                    list_datasets(),
+    if dataset == "all":
+        if sub_dataset == "train":
+            all_datasets_list += sorted(
+                list(
+                    filter(
+                        lambda x: not any(
+                            s in x for s in ["all", "sub", "mmlu", "bbmc"]
+                        ),
+                        list_datasets(),
+                    )
                 )
             )
-        )
-    elif ds == "all":
-        all_datasets_list += mmlu_tasks + bbmc_tasks
-    elif ds == "mmlu":
-        all_datasets_list += mmlu_tasks
-    elif ds == "bbmc":
-        all_datasets_list += bbmc_tasks
-    else:
-        raise NotImplementedError
+        else:
+            raise NotImplementedError
+    elif dataset == "eval":
+        mmlu_tasks = [f"mmlu:{task}" for task in get_dataset_attrs("mmlu").get("tasks")]
+        bbmc_tasks = [f"bbmc:{task}" for task in get_dataset_attrs("bbmc").get("tasks")]
+
+        if sub_dataset == "all":
+            all_datasets_list += mmlu_tasks + bbmc_tasks
+        elif sub_dataset == "mmlu":
+            all_datasets_list += mmlu_tasks
+        elif sub_dataset == "bbmc":
+            all_datasets_list += bbmc_tasks
+        else:
+            raise NotImplementedError
 
     return all_datasets_list
 
@@ -112,7 +119,7 @@ def all_200k_c(*args, **kwargs):
 
 
 @register_dataset
-def sub_all_200k(*args, **kwargs):
+def sub_200k(*args, **kwargs):
     all_dataset_names = get_all_datasets_list("all:train")
     all_dataset_names = all_dataset_names[: len(all_dataset_names) // 2]
     return get_combined_train_dataset(
@@ -124,7 +131,7 @@ def sub_all_200k(*args, **kwargs):
 
 
 @register_dataset
-def sub_all_200k_c(*args, **kwargs):
+def sub_200k_c(*args, **kwargs):
     all_dataset_names = get_all_datasets_list("all:train")
     all_dataset_names = all_dataset_names[len(all_dataset_names) // 2 :]
     return get_combined_train_dataset(
