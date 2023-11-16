@@ -20,6 +20,9 @@ pip install -e .
 
 ## Run
 
+All arguments from the `main` method in each of the scripts below
+qualify as command line arguments.
+
 **NOTE**: Use `CUDA_VISIBLE_DEVICES` to limit the GPUs used.
 
 ### Evaluate
@@ -27,14 +30,29 @@ pip install -e .
 An example command for evaluation.
 
 ```shell
-./autotorchrun experiments/evaluate.py --model_name=llama2_7b --dataset=mmlu:business_ethics
+./autotorchrun experiments/evaluate.py --model_name=llama2_7b --dataset=eval:all
 ```
 
-### Fine-Tuning
+### Fine-Tune
 
 An example command to run fine-tuning with Llama2-7b:
 ```shell
-./autotorchrun experiments/finetune.py --model_name=llama2_7b --dataset=mmlu:business_ethics
+./autotorchrun experiments/finetune.py \
+    --model_name=llama2_7b \
+    --peft-dir=</optional/path/to/checkpoint/dir> \
+    --dataset=sub_all_200k \
+    --max-steps=10000
+```
+
+### Uncertainty-Tune
+
+An example command to run fine-tuning with Llama2-7b:
+```shell
+./autotorchrun experiments/uncertainty_tune.py \
+    --model_name=llama2_7b \
+    --peft-dir=</optional/path/to/checkpoint/dir> \
+    --dataset=sub_all_200k_c \
+    --max-steps=10000
 ```
 
 ## Details
