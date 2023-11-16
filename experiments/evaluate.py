@@ -65,7 +65,7 @@ def main(
         model, checkpoint_dir=query_peft_dir or peft_dir
     )
 
-    if dataset.startswith("all"):
+    if dataset.startswith("eval"):
         all_datasets = get_all_datasets_list(dataset)
     else:
         assert dataset is not None, "Missing dataset."

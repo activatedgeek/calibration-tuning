@@ -7,7 +7,7 @@ from .registry import get_dataset, list_datasets, register_dataset, get_dataset_
 def get_all_datasets_list(dataset_str):
     dataset, ds = dataset_str.split(":")
 
-    assert dataset == "all", f"Format strings as all:<ds>, found {dataset_str}"
+    assert dataset == "eval", f"Format strings as eval:<split>, found {dataset_str}"
 
     all_datasets_list = []
 
@@ -25,7 +25,7 @@ def get_all_datasets_list(dataset_str):
                 )
             )
         )
-    elif ds == "eval":
+    elif ds == "all":
         all_datasets_list += mmlu_tasks + bbmc_tasks
     elif ds == "mmlu":
         all_datasets_list += mmlu_tasks
