@@ -21,7 +21,7 @@ class UncertaintyTuner(Trainer):
         unc_normalize: bool = field(default=True)
         unc_label_smoothing: float = field(default=0.0)
         ref_adapter_name: str = field(default="_ref")
-        jsd_decay: float = field(default=1.0)
+        kl_decay: float = field(default=1.0)
 
     def __init__(self, *args, tokenizer=None, val_data=None, test_data=None, **kwargs):
         super().__init__(
@@ -63,7 +63,7 @@ class UncertaintyTuner(Trainer):
 
         return unc_loss
 
-    def compute_jsd_loss(self, model, inputs, outputs):
+    def compute_kl_loss(self, model, inputs, outputs):
         with torch.inference_mode():
             model.module.set_adapter(self.args.ref_adapter_name)
             ref_outputs = model.module(**inputs)
@@ -72,15 +72,17 @@ class UncertaintyTuner(Trainer):
         labels = inputs.get("labels")[..., 1:]
         probs = outputs.logits[..., :-1, :].softmax(dim=-1)
         ref_probs = ref_outputs.logits[..., :-1, :].softmax(dim=-1)
-        mix_probs = (probs + ref_probs) / 2
+        # mix_probs = (probs + ref_probs) / 2
 
         p = Categorical(probs=probs)
         p_ref = Categorical(probs=ref_probs)
-        p_mix = Categorical(probs=mix_probs)
 
-        raw_loss = (kl_divergence(p, p_mix) + kl_divergence(p_ref, p_mix)) / 2
+        # p_mix = Categorical(probs=mix_probs)
+        # raw_loss = (kl_divergence(p, p_mix) + kl_divergence(p_ref, p_mix)) / 2
+
+        raw_loss = kl_divergence(p, p_ref)
+
         loss_mask = labels != IGNORE_LABEL
-
         loss = (raw_loss * loss_mask).sum(dim=-1).mean(dim=0)
 
         return loss
@@ -89,14 +91,14 @@ class UncertaintyTuner(Trainer):
         loss, outputs = super().compute_loss(model, inputs, return_outputs=True)
 
         unc_loss = self.compute_unc_loss(model, inputs, outputs)
-        jsd_loss = self.compute_jsd_loss(model, inputs, outputs)
+        kl_loss = self.compute_kl_loss(model, inputs, outputs)
 
-        total_loss = unc_loss + self.args.jsd_decay * jsd_loss
+        total_loss = unc_loss + self.args.kl_decay * kl_loss
 
         loss_metrics = {
             "lm_loss": loss.detach().item(),
             "unc_loss": unc_loss.detach().item(),
-            "jsd_loss": jsd_loss.detach().item(),
+            "kl_loss": kl_loss.detach().item(),
         }
 
         if (self.state.global_step + 1) % self.args.logging_steps == 0:
