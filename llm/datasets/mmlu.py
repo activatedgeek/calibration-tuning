@@ -113,18 +113,34 @@ def __generate_fewshot_prompts(
     if kshot <= 0:
         return ""
 
-    fewshot_prompt = "\n".join(
-        [
-            f"The following are questions (with answers) about {' '.join(instance.split('_'))}.\n",
-            *[
-                str(__format_sample(prompt_dataset[idx], tokenizer, prompt_style))
-                + "\n"
-                for idx in torch.randperm(
-                    len(prompt_dataset), generator=torch.Generator().manual_seed(seed)
-                )[:kshot].tolist()
-            ],
-        ]
-    )
+    if prompt_style == "oe":
+        fewshot_prompt = "\n".join(
+            [
+                f"The following are questions (with answers) about {' '.join(instance.split('_'))}.\n",
+                *[
+                    str(__format_sample(prompt_dataset[idx], tokenizer, prompt_style))
+                    + "\n"
+                    for idx in torch.randperm(
+                        len(prompt_dataset), generator=torch.Generator().manual_seed(seed)
+                    )[:kshot].tolist()
+                ],
+            ]
+        )
+    elif prompt_style == "choice":
+        fewshot_prompt = "\n".join(
+            [
+                f"The following are multiple choice questions (with answers) about {' '.join(instance.split('_'))}.\n",
+                *[
+                    str(__format_sample(prompt_dataset[idx], tokenizer, prompt_style))
+                    + "\n"
+                    for idx in torch.randperm(
+                        len(prompt_dataset), generator=torch.Generator().manual_seed(seed)
+                    )[:kshot].tolist()
+                ],
+            ]
+        )  
+    else:
+        raise ValueError(f'Invalid prompt style: {prompt_style}')
     fewshot_prompt = fewshot_prompt + "\nNow, answer the next question."
 
     return fewshot_prompt
