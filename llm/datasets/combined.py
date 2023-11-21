@@ -44,6 +44,20 @@ def get_all_datasets_list(dataset_str):
     return all_datasets_list
 
 
+def _concat_datasets(datasets, max_n, complement=False):
+    all_n = [len(ds) for ds in datasets]
+    total_n = min(max_n, sum(all_n))
+
+    select_n = ((np.array(all_n) / sum(all_n)) * total_n).astype(int)
+
+    return concatenate_datasets(
+        [
+            ds.select(range(n, N) if complement else range(n))
+            for ds, N, n in zip(datasets, all_n, select_n)
+        ]
+    )
+
+
 def get_combined_train_dataset(
     all_dataset_names,
     max_n=100,
@@ -56,9 +70,9 @@ def get_combined_train_dataset(
     complement=False,
     **_,
 ):
-    all_train_data, all_n = [], []
+    all_train_data, all_val_data, all_test_data = [], [], []
     for dataset in all_dataset_names:
-        train_data, _, _ = get_dataset(
+        train_data, val_data, test_data = get_dataset(
             dataset,
             root=root,
             tokenizer=tokenizer,
@@ -66,77 +80,99 @@ def get_combined_train_dataset(
             num_workers=num_workers,
             use_cache=use_dataset_cache,
             prompt_style=prompt_style,
+            eval_kshot=1,  ## if val/test set is used for temp scaling.
         )
 
         if train_data is not None:
             train_data = train_data.shuffle(seed=seed)
-
             all_train_data.append(train_data)
-            all_n.append(len(train_data))
 
-    max_n = min(max_n, sum(all_n))
-    select_n = ((np.array(all_n) / sum(all_n)) * max_n).astype(int)
+        if val_data is not None:
+            val_data = val_data.shuffle(seed=seed)
+            all_val_data.append(val_data)
 
-    all_train_data = concatenate_datasets(
-        [
-            train_data.select(range(n, N) if complement else range(n))
-            for train_data, N, n in zip(all_train_data, all_n, select_n)
-        ]
-    )
+        if test_data is not None:
+            test_data = test_data.shuffle(seed=seed)
+            all_test_data.append(test_data)
 
-    _, a_val_data, a_test_data = get_dataset(
-        "mmlu:business_ethics",
-        root=root,
-        tokenizer=tokenizer,
-        seed=seed,
-        num_workers=num_workers,
-        use_cache=use_dataset_cache,
-    )
+    all_train_data = _concat_datasets(all_train_data, max_n, complement=complement)
+    all_val_data = _concat_datasets(all_val_data, max_n, complement=complement)
+    all_test_data = _concat_datasets(all_test_data, max_n, complement=complement)
 
-    return all_train_data, a_val_data, a_test_data
+    return all_train_data, all_val_data, all_test_data
 
 
 @register_dataset
 def all_200k(*args, **kwargs):
-    return get_combined_train_dataset(
+    tr, _, _ = get_combined_train_dataset(
         all_dataset_names=get_all_datasets_list("all:train"),
         *args,
         **kwargs,
         max_n=200_000,
         complement=False,
     )
+    return tr, None, None
 
 
 @register_dataset
 def all_200k_c(*args, **kwargs):
-    return get_combined_train_dataset(
+    tr, _, _ = get_combined_train_dataset(
         all_dataset_names=get_all_datasets_list("all:train"),
         *args,
         **kwargs,
         max_n=200_000,
         complement=True,
     )
+    return tr, None, None
+
+
+@register_dataset
+def cal_all_200k_c(*args, **kwargs):
+    _, vl, _ = get_combined_train_dataset(
+        all_dataset_names=get_all_datasets_list("all:train"),
+        *args,
+        **kwargs,
+        max_n=200_000,
+        complement=True,
+    )
+    return vl, None, None
 
 
 @register_dataset
 def sub_200k(*args, **kwargs):
     all_dataset_names = get_all_datasets_list("all:train")
     all_dataset_names = all_dataset_names[: len(all_dataset_names) // 2]
-    return get_combined_train_dataset(
+    tr, _, _ = get_combined_train_dataset(
         all_dataset_names=all_dataset_names,
         *args,
         **kwargs,
         max_n=200_000,
+        complement=False,
     )
+    return tr, None, None
 
 
 @register_dataset
 def sub_200k_c(*args, **kwargs):
     all_dataset_names = get_all_datasets_list("all:train")
     all_dataset_names = all_dataset_names[len(all_dataset_names) // 2 :]
-    return get_combined_train_dataset(
+    tr, _, _ = get_combined_train_dataset(
         all_dataset_names=all_dataset_names,
         *args,
         **kwargs,
         max_n=800_000,
     )
+    return tr, None, None
+
+
+@register_dataset
+def cal_sub_200k_c(*args, **kwargs):
+    all_dataset_names = get_all_datasets_list("all:train")
+    all_dataset_names = all_dataset_names[len(all_dataset_names) // 2 :]
+    _, vl, _ = get_combined_train_dataset(
+        all_dataset_names=all_dataset_names,
+        *args,
+        **kwargs,
+        max_n=800_000,
+    )
+    return vl, None, None

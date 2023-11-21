@@ -58,9 +58,8 @@ def evaluate_dataset(
             )
             train_data = _train_data if train_data else None
     else:
-        assert (val_data is not None) or (
-            test_data is not None
-        ), "Missing val_data or test_data."
+        if (val_data is not None) and (test_data is not None):
+            logging.warning(f"Missing val_data or test_data.")
 
     if isinstance(evaluate_fn, str):
         assert (
