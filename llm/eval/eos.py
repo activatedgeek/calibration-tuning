@@ -18,11 +18,15 @@ def evaluate_via_eos(
     model,
     tokenizer,
     loader,
+    prompt_style="choice",
     query_format="roman_choice",
 ):
     """
     Assumes all answers are 1 token and end immediately with EOS token.
     """
+
+    assert(prompt_style == "choice")
+
     device = accelerator.device
     collate_fn = DataCollatorForSupervisedDataset(tokenizer)
 
@@ -117,6 +121,7 @@ def evaluate_contextual_calibration_via_eos(
     model,
     tokenizer,
     loader,
+    prompt_style="choice"
 ):
     """
     Assumes all answers are 1 token and end immediately with EOS token.

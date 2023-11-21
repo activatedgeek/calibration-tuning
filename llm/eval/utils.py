@@ -2,14 +2,19 @@ import logging
 
 from ..datasets import get_dataset, get_loader
 from .eos import (
-    evaluate_via_eos,
     evaluate_contextual_calibration_via_eos,
     evaluate_candidate_via_eos,
+    evaluate_via_eos
 )
-
+from .oe import (
+    evaluate_oe_via_substring,
+    evaluate_oe_via_fuzzy_gpt4
+)
 
 EVALUATE_MODE_FN_MAP = {
     "eos": evaluate_via_eos,
+    "oe_substring": evaluate_oe_via_substring,
+    "oe_fuzzy_gpt4": evaluate_oe_via_fuzzy_gpt4,
     "cc_eos": evaluate_contextual_calibration_via_eos,
     "cand_eos": evaluate_candidate_via_eos,
 }
@@ -75,6 +80,7 @@ def evaluate_dataset(
                 pin_memory=True,
                 accelerator=accelerator,
             ),
+            prompt_style=prompt_style
         )
         train_metrics["split"] = "train"
 
@@ -94,6 +100,7 @@ def evaluate_dataset(
                 pin_memory=True,
                 accelerator=accelerator,
             ),
+            prompt_style=prompt_style
         )
         val_metrics["split"] = "validation"
 
@@ -113,6 +120,7 @@ def evaluate_dataset(
                 pin_memory=True,
                 accelerator=accelerator,
             ),
+            prompt_style=prompt_style
         )
         test_metrics["split"] = "test"
 
