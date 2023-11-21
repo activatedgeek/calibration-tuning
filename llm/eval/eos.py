@@ -114,6 +114,8 @@ def evaluate_via_eos(
         "qa_unc_ece": qa_unc_ece,
     }
 
+
+@torch.inference_mode()
 def evaluate_contextual_calibration_via_eos(
     accelerator,
     model,

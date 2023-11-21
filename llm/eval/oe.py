@@ -4,14 +4,16 @@ from peft import PeftModel
 
 from ..datasets.llm_utils import (
     DataCollatorForSupervisedDataset,
-    prepare_batch,
+    extract_qa_exact,
+    prepare_batch
 )
 from ..datasets.llm_utils_oe import (
     extract_qa_oe,
     extract_oe_inputs,
-    prepare_oe_calibration_query,
+    prepare_oe_calibration_query
 )
 from .third_party.calibration import calibration
+
 
 @torch.inference_mode()
 def evaluate_oe(
@@ -147,5 +149,3 @@ def evaluate_oe_via_fuzzy_gpt4(
         query_format=query_format,
     )
 
-
-@torch.inference_mode()

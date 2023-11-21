@@ -2,8 +2,10 @@ from openai import ChatCompletion
 from openai.error import RateLimitError, APIError, Timeout, ServiceUnavailableError
 import torch
 
-from llm_utils import (
+from .llm_utils import (
     get_token_vec,
+    IGNORE_LABEL,
+    tokenize_for_causal_lm
 )
 
 
