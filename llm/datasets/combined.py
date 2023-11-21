@@ -4,19 +4,44 @@ from datasets import concatenate_datasets
 from .registry import get_dataset, list_datasets, register_dataset, get_dataset_attrs
 
 
-def get_all_train_datasets():
-    return sorted(
-        list(
-            filter(
-                lambda x: ("all" not in x) and ("mmlu" not in x) and ("bbh" not in x),
-                list_datasets(),
+def get_all_datasets_list(dataset_str):
+    dataset, sub_dataset = dataset_str.split(":")
+
+    assert dataset in [
+        "all",
+        "eval",
+    ], f"Format strings as <all|eval>:<split>, found {dataset_str}"
+
+    all_datasets_list = []
+
+    if dataset == "all":
+        if sub_dataset == "train":
+            all_datasets_list += sorted(
+                list(
+                    filter(
+                        lambda x: not any(
+                            s in x for s in ["all", "sub", "mmlu", "bbmc"]
+                        ),
+                        list_datasets(),
+                    )
+                )
             )
-        )
-    )
+        else:
+            raise NotImplementedError
+    elif dataset == "eval":
+        mmlu_tasks = [f"mmlu:{task}" for task in get_dataset_attrs("mmlu").get("tasks")]
+        bbmc_tasks = [f"bbmc:{task}" for task in get_dataset_attrs("bbmc").get("tasks")]
 
+        if sub_dataset == "all":
+            all_datasets_list += mmlu_tasks + bbmc_tasks
+        elif sub_dataset == "mmlu":
+            all_datasets_list += mmlu_tasks
+        elif sub_dataset == "bbmc":
+            all_datasets_list += bbmc_tasks
+        else:
+            raise NotImplementedError
 
-def get_all_eval_datasets():
-    return [f"mmlu:{task}" for task in get_dataset_attrs("mmlu").get("tasks")]
+    return all_datasets_list
 
 
 def get_combined_train_dataset(
@@ -74,7 +99,7 @@ def get_combined_train_dataset(
 @register_dataset
 def all_200k(*args, **kwargs):
     return get_combined_train_dataset(
-        all_dataset_names=get_all_train_datasets(),
+        all_dataset_names=get_all_datasets_list("all:train"),
         *args,
         **kwargs,
         max_n=200_000,
@@ -85,7 +110,7 @@ def all_200k(*args, **kwargs):
 @register_dataset
 def all_200k_c(*args, **kwargs):
     return get_combined_train_dataset(
-        all_dataset_names=get_all_train_datasets(),
+        all_dataset_names=get_all_datasets_list("all:train"),
         *args,
         **kwargs,
         max_n=200_000,
@@ -94,8 +119,8 @@ def all_200k_c(*args, **kwargs):
 
 
 @register_dataset
-def sub_all_200k(*args, **kwargs):
-    all_dataset_names = get_all_train_datasets()
+def sub_200k(*args, **kwargs):
+    all_dataset_names = get_all_datasets_list("all:train")
     all_dataset_names = all_dataset_names[: len(all_dataset_names) // 2]
     return get_combined_train_dataset(
         all_dataset_names=all_dataset_names,
@@ -106,8 +131,8 @@ def sub_all_200k(*args, **kwargs):
 
 
 @register_dataset
-def sub_all_200k_c(*args, **kwargs):
-    all_dataset_names = get_all_train_datasets()
+def sub_200k_c(*args, **kwargs):
+    all_dataset_names = get_all_datasets_list("all:train")
     all_dataset_names = all_dataset_names[len(all_dataset_names) // 2 :]
     return get_combined_train_dataset(
         all_dataset_names=all_dataset_names,

@@ -1,22 +1,14 @@
-import torch
-from tqdm import tqdm
-
-import logging
 import wandb
-import pandas as pd
 from accelerate import PartialState as AcceleratorState
-from peft import PeftModel
 
 from llm.logging import entrypoint
-from llm.models import get_model, get_special_tokens
+from llm.models import get_model, load_peft_model_from_pretrained
 from llm.datasets.llm_utils import tokenize_datasets
-from llm.utils.trainer import get_last_checkpoint_path
-from llm.datasets import get_dataset, get_loader
+from llm.datasets import get_dataset
 from llm.utils.trainer import (
     TrainingArguments,
     ClassificationTrainer,
     WandbConfigUpdateCallback,
-    get_last_checkpoint_path,
 )
 
 def prepare_model(
@@ -24,12 +16,15 @@ def prepare_model(
     accelerator,
     model_name,
     tokenizer,
-    special_token_count,
     model_dir,
     peft_dir,
     fp8,
     base_model=None,
 ):
+    ## FIXME: hack to avoid batching errors.
+    if base_model is not None:
+        base_model.config.pad_token_id = tokenizer.pad_token_id
+
     model = get_model(
         model_name,
         device_map={"": accelerator.local_process_index},
@@ -40,12 +35,7 @@ def prepare_model(
         base_model=base_model,
     )
 
-    if peft_dir is not None:
-        peft_dir = get_last_checkpoint_path(peft_dir)
-
-        model = PeftModel.from_pretrained(model, peft_dir)
-
-        logging.info(f"Loaded PEFT checkpoint from '{peft_dir}'")
+    model = load_peft_model_from_pretrained(model, peft_dir=peft_dir)
 
     return model
 
@@ -111,14 +101,12 @@ def main(
         f"{model_name}_tokenizer",
         model_dir=model_dir,
     )
-    special_token_count = tokenizer.add_special_tokens(get_special_tokens(tokenizer))
 
     base_model = prepare_model(
         causal_lm=True,
         accelerator=accelerator,
         model_name=model_name,
         tokenizer=tokenizer,
-        special_token_count=special_token_count,
         model_dir=model_dir,
         peft_dir=peft_dir,
         fp8=fp8,
@@ -132,7 +120,6 @@ def main(
         accelerator=accelerator,
         model_name=model_name,
         tokenizer=tokenizer,
-        special_token_count=special_token_count,
         model_dir=model_dir,
         peft_dir=None,
         fp8=fp8,

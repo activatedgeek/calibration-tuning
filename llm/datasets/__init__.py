@@ -1,6 +1,6 @@
 from .registry import register_dataset, get_dataset, get_dataset_attrs, list_datasets
 from .utils import IndexedDataset, LabelNoiseDataset, get_loader, get_num_workers
-from .combined import get_all_train_datasets, get_all_eval_datasets
+from .combined import get_all_datasets_list
 
 
 __all__ = [
@@ -12,8 +12,7 @@ __all__ = [
     "LabelNoiseDataset",
     "get_loader",
     "get_num_workers",
-    "get_all_train_datasets",
-    "get_all_eval_datasets",
+    "get_all_datasets_list",
 ]
 
 
@@ -22,6 +21,7 @@ def __setup():
 
     for n in [
         "arc",
+        "bb",
         "boolq",
         "combined",
         "commonsense_qa",

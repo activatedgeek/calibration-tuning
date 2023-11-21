@@ -6,7 +6,7 @@ import torch
 from accelerate import Accelerator
 
 from llm.logging import entrypoint, Timer
-from llm.datasets import get_all_train_datasets, get_all_eval_datasets
+from llm.datasets import get_all_datasets_list
 from llm.models import get_model, load_peft_model_from_pretrained
 from llm.models.peft import get_temperature_scaled_model
 from llm.eval import evaluate_dataset
@@ -65,10 +65,8 @@ def main(
         model, checkpoint_dir=query_peft_dir or peft_dir
     )
 
-    if dataset == "all":
-        all_datasets = get_all_train_datasets() + get_all_eval_datasets()
-    elif dataset == "eval":
-        all_datasets = get_all_eval_datasets()
+    if dataset.startswith("eval"):
+        all_datasets = get_all_datasets_list(dataset)
     else:
         assert dataset is not None, "Missing dataset."
         all_datasets = [dataset]
