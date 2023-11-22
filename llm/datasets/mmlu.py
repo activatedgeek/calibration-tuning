@@ -1,8 +1,6 @@
 import os
 import string
-from tqdm.auto import tqdm
 import torch
-from datasets import concatenate_datasets
 
 from .registry import register_dataset
 from .llm_utils import LMText
@@ -121,7 +119,8 @@ def __generate_fewshot_prompts(
                     str(__format_sample(prompt_dataset[idx], tokenizer, prompt_style))
                     + "\n"
                     for idx in torch.randperm(
-                        len(prompt_dataset), generator=torch.Generator().manual_seed(seed)
+                        len(prompt_dataset),
+                        generator=torch.Generator().manual_seed(seed),
                     )[:kshot].tolist()
                 ],
             ]
@@ -134,13 +133,14 @@ def __generate_fewshot_prompts(
                     str(__format_sample(prompt_dataset[idx], tokenizer, prompt_style))
                     + "\n"
                     for idx in torch.randperm(
-                        len(prompt_dataset), generator=torch.Generator().manual_seed(seed)
+                        len(prompt_dataset),
+                        generator=torch.Generator().manual_seed(seed),
                     )[:kshot].tolist()
                 ],
             ]
-        )  
+        )
     else:
-        raise ValueError(f'Invalid prompt style: {prompt_style}')
+        raise ValueError(f"Invalid prompt style: {prompt_style}")
     fewshot_prompt = fewshot_prompt + "\nNow, answer the next question."
 
     return fewshot_prompt
@@ -219,18 +219,3 @@ def mmlu(*args, dataset_str=None, prompt_style="choice", **kwargs):
         instance=instance,
         prompt_style=prompt_style,
     )
-
-
-@register_dataset
-def mmlu_calibration(*args, prompt_style="choice", **kwargs):
-    all_data = [
-        get_mmlu(*args, **kwargs, instance=instance, prompt_style=prompt_style)
-        for instance in tqdm(__TASKS, leave=False)
-    ]
-    _, all_val_data, all_test_data = list(zip(*all_data))
-
-    ## Use validation data as training data for calibration.
-    all_val_data = concatenate_datasets(all_val_data)
-    all_test_data = concatenate_datasets(all_test_data)
-
-    return all_val_data, all_test_data, None

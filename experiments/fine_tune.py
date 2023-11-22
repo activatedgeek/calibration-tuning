@@ -7,7 +7,7 @@ from llm.models import get_model
 from llm.models.peft import get_lora_model, prepare_model_for_temperature_scaling
 from llm.logging import entrypoint
 from llm.utils.trainer import WandbConfigUpdateCallback
-from llm.utils.uncertainty_tuner import UncertaintyTuner
+from llm.utils.fine_tuner import FineTuner
 
 
 def main(
@@ -25,9 +25,7 @@ def main(
     lora_alpha=32,
     lora_dropout=0.1,
     lr=1e-4,
-    ls=0.0,
     weight_decay=0.0,
-    kl_decay=1.0,
     scale_temp=False,
     warmup_steps=0,
     max_steps=1,
@@ -52,6 +50,7 @@ def main(
         use_cache=False,
         tokenizer=tokenizer,
         load_in_8bit=True,
+        temp_scaling=scale_temp,
     )
 
     model = get_lora_model(
@@ -66,16 +65,6 @@ def main(
 
     if scale_temp:
         prepare_model_for_temperature_scaling(model)
-    else:
-        model = get_lora_model(
-            model,
-            peft_dir=peft_dir,
-            is_trainable=False,
-            adapter_name="_ref",
-        )
-
-    ## NOTE: second adapter loads to CPU.
-    model.to(accelerator.local_process_index)
 
     with accelerator.main_process_first():
         train_data, val_data, test_data = get_dataset(
@@ -87,9 +76,9 @@ def main(
             use_cache=use_dataset_cache,
         )
 
-    trainer = UncertaintyTuner(
+    trainer = FineTuner(
         model=model,
-        args=UncertaintyTuner.Args(
+        args=FineTuner.Args(
             seed=seed,
             fsdp=False,
             fp16=False,
@@ -109,8 +98,6 @@ def main(
             lr_scheduler_type="cosine",
             warmup_steps=warmup_steps,
             weight_decay=weight_decay,
-            kl_decay=kl_decay,
-            unc_label_smoothing=ls,
             gradient_accumulation_steps=grad_acc,
             output_dir=log_dir,
             report_to="wandb",

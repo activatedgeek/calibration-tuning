@@ -61,7 +61,9 @@ def get_dataset(dataset, root=None, seed=42, train_subset=1, label_noise=0, **kw
     root = get_data_dir(data_dir=root)
 
     train_data, val_data, test_data = dataset_fn(
-        root=root, seed=seed, dataset_str=dataset, **kwargs
+        root=root,
+        seed=seed,
+        **{**kwargs, "dataset_str": dataset},
     )
 
     if label_noise > 0:

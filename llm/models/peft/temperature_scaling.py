@@ -9,20 +9,25 @@ WEIGHTS_NAME = "temperature_adapter.bin"
 
 
 class TemperatureScaledLlamaForCausalLM(LlamaForCausalLM):
-    PARAMETER_NAME = "temperature"
+    PARAMETER_NAME = "log_temperature"
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args, temp_scaling=False, **kwargs):
         super().__init__(*args, **kwargs)
 
+        self.temp_scaling = temp_scaling
+
         self.register_parameter(
-            self.PARAMETER_NAME, nn.Parameter(torch.zeros(1), requires_grad=False)
+            self.PARAMETER_NAME,
+            nn.Parameter(torch.zeros(1), requires_grad=False),
         )
 
-    def forward(self, *args, scale_temp=False, **kwargs):
+    def forward(self, *args, scale_temp=None, **kwargs):
         outputs = super().forward(*args, **kwargs)
 
-        if scale_temp:
-            T = F.softplus(getattr(self, self.PARAMETER_NAME))
+        should_scale = scale_temp if scale_temp is not None else self.temp_scaling
+
+        if should_scale:
+            T = getattr(self, self.PARAMETER_NAME).exp()
             outputs.logits = outputs.logits / T
 
         return outputs
@@ -53,3 +58,5 @@ def save_temperature_scaled_model(model, output_dir):
 
     with open(f"{output_dir}/{WEIGHTS_NAME}", "wb") as f:
         torch.save(state_dict, f)
+
+    logging.debug(state_dict)

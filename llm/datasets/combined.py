@@ -58,29 +58,19 @@ def _concat_datasets(datasets, max_n, complement=False):
     )
 
 
-def get_combined_train_dataset(
+def get_combined_dataset(
     all_dataset_names,
     max_n=100,
-    root=None,
-    tokenizer=None,
     seed=None,
-    num_workers=8,
-    use_dataset_cache=True,
-    prompt_style="choice",
     complement=False,
-    **_,
+    **kwargs,
 ):
     all_train_data, all_val_data, all_test_data = [], [], []
     for dataset in all_dataset_names:
         train_data, val_data, test_data = get_dataset(
             dataset,
-            root=root,
-            tokenizer=tokenizer,
             seed=seed,
-            num_workers=num_workers,
-            use_cache=use_dataset_cache,
-            prompt_style=prompt_style,
-            eval_kshot=1,  ## if val/test set is used for temp scaling.
+            **kwargs,
         )
 
         if train_data is not None:
@@ -104,7 +94,7 @@ def get_combined_train_dataset(
 
 @register_dataset
 def all_200k(*args, **kwargs):
-    tr, _, _ = get_combined_train_dataset(
+    tr, _, _ = get_combined_dataset(
         all_dataset_names=get_all_datasets_list("all:train"),
         *args,
         **kwargs,
@@ -116,7 +106,7 @@ def all_200k(*args, **kwargs):
 
 @register_dataset
 def all_200k_c(*args, **kwargs):
-    tr, _, _ = get_combined_train_dataset(
+    tr, _, _ = get_combined_dataset(
         all_dataset_names=get_all_datasets_list("all:train"),
         *args,
         **kwargs,
@@ -128,11 +118,12 @@ def all_200k_c(*args, **kwargs):
 
 @register_dataset
 def cal_all_200k_c(*args, **kwargs):
-    _, vl, _ = get_combined_train_dataset(
+    _, vl, _ = get_combined_dataset(
         all_dataset_names=get_all_datasets_list("all:train"),
         *args,
         **kwargs,
-        max_n=200_000,
+        eval_kshot=0,
+        max_n=950_000,  ## to get ~50k samples.
         complement=True,
     )
     return vl, None, None
@@ -142,7 +133,7 @@ def cal_all_200k_c(*args, **kwargs):
 def sub_200k(*args, **kwargs):
     all_dataset_names = get_all_datasets_list("all:train")
     all_dataset_names = all_dataset_names[: len(all_dataset_names) // 2]
-    tr, _, _ = get_combined_train_dataset(
+    tr, _, _ = get_combined_dataset(
         all_dataset_names=all_dataset_names,
         *args,
         **kwargs,
@@ -156,7 +147,7 @@ def sub_200k(*args, **kwargs):
 def sub_200k_c(*args, **kwargs):
     all_dataset_names = get_all_datasets_list("all:train")
     all_dataset_names = all_dataset_names[len(all_dataset_names) // 2 :]
-    tr, _, _ = get_combined_train_dataset(
+    tr, _, _ = get_combined_dataset(
         all_dataset_names=all_dataset_names,
         *args,
         **kwargs,
@@ -169,10 +160,25 @@ def sub_200k_c(*args, **kwargs):
 def cal_sub_200k_c(*args, **kwargs):
     all_dataset_names = get_all_datasets_list("all:train")
     all_dataset_names = all_dataset_names[len(all_dataset_names) // 2 :]
-    _, vl, _ = get_combined_train_dataset(
+    _, vl, _ = get_combined_dataset(
         all_dataset_names=all_dataset_names,
         *args,
         **kwargs,
-        max_n=800_000,
+        eval_kshot=0,
+        max_n=50_000,
     )
     return vl, None, None
+
+
+@register_dataset
+def cal_mmlu(*args, seed=None, **kwargs):
+    mmlu_datasets = [f"mmlu:{task}" for task in get_dataset_attrs("mmlu").get("tasks")]
+
+    tr, _, _ = get_combined_dataset(
+        all_dataset_names=mmlu_datasets,
+        *args,
+        **kwargs,
+        seed=seed,
+        max_n=50_000,
+    )
+    return tr, None, None
