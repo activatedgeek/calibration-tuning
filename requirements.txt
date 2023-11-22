@@ -1,14 +1,6 @@
-jupyterlab
-ipywidgets
 tqdm
 fire
-seaborn
-palettable
 wandb
-numpy
-scipy
-pandas
-scikit-learn
 torch>=2.0
 torchvision
 transformers
