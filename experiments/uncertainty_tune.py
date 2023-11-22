@@ -4,7 +4,7 @@ from accelerate import PartialState as AcceleratorState
 from llm.datasets import get_dataset
 from llm.datasets.llm_utils import tokenize_datasets
 from llm.models import get_model
-from llm.models.peft import get_lora_model
+from llm.models.peft import get_lora_model, prepare_model_for_temperature_scaling
 from llm.logging import entrypoint
 from llm.utils.trainer import WandbConfigUpdateCallback
 from llm.utils.uncertainty_tuner import UncertaintyTuner
@@ -21,7 +21,6 @@ def main(
     model_name=None,
     model_dir=None,
     peft_dir=None,
-    fp8=True,
     lora_rank=8,
     lora_alpha=32,
     lora_dropout=0.1,
@@ -29,6 +28,7 @@ def main(
     ls=0.0,
     weight_decay=0.0,
     kl_decay=1.0,
+    scale_temp=False,
     warmup_steps=0,
     max_steps=1,
     log_steps=100,
@@ -51,7 +51,7 @@ def main(
         model_dir=model_dir,
         use_cache=False,
         tokenizer=tokenizer,
-        load_in_8bit=fp8,
+        load_in_8bit=True,
     )
 
     model = get_lora_model(
@@ -64,12 +64,16 @@ def main(
         adapter_name="default",
     )
 
-    model = get_lora_model(
-        model,
-        peft_dir=peft_dir,
-        is_trainable=False,
-        adapter_name="_ref",
-    )
+    if not scale_temp:
+        model = get_lora_model(
+            model,
+            peft_dir=peft_dir,
+            is_trainable=False,
+            adapter_name="_ref",
+        )
+
+    if scale_temp:
+        prepare_model_for_temperature_scaling(model)
 
     ## NOTE: second adapter loads to CPU.
     model.to(accelerator.local_process_index)
@@ -89,7 +93,7 @@ def main(
         args=UncertaintyTuner.Args(
             seed=seed,
             fsdp=False,
-            fp16=not fp8,
+            fp16=False,
             bf16=False,
             gradient_checkpointing=False,
             ddp_find_unused_parameters=False,
@@ -112,6 +116,7 @@ def main(
             output_dir=log_dir,
             report_to="wandb",
             dataloader_num_workers=4,
+            scale_temp=scale_temp,
         ),
         train_dataset=tokenize_datasets(tokenizer, train_data)[0],
         val_data=val_data,
@@ -124,7 +129,6 @@ def main(
                 model_name=model_name,
                 model_dir=model_dir,
                 peft_dir=peft_dir,
-                fp8=fp8,
                 lora_rank=lora_rank,
                 lora_alpha=lora_alpha,
                 lora_dropout=lora_dropout,

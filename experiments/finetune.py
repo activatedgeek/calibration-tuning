@@ -5,10 +5,6 @@ from llm.datasets import get_dataset
 from llm.datasets.llm_utils import tokenize_datasets
 from llm.models import get_model
 from llm.models.peft import get_lora_model
-from llm.models.peft.temperature_scaling import (
-    get_temperature_scaled_model,
-    TemperatureSaveCallback,
-)
 from llm.logging import entrypoint
 from llm.utils.trainer import (
     TrainingArguments,
@@ -73,9 +69,7 @@ def main(
         lora_dropout=lora_dropout,
     )
 
-    model = get_temperature_scaled_model(
-        model, checkpoint_dir=peft_dir, is_trainable=scale_temp
-    )
+    ## TODO: add temperature scaling for finetuning.
 
     with accelerator.main_process_first():
         train_data, val_data, test_data = get_dataset(
@@ -134,7 +128,6 @@ def main(
                 lora_alpha=lora_alpha,
                 lora_dropout=lora_dropout,
             ),
-            TemperatureSaveCallback(),
         ],
     )
     trainer.train(resume_from_checkpoint=resume_dir)

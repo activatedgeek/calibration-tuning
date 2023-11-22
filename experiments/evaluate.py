@@ -8,7 +8,6 @@ from accelerate import Accelerator
 from llm.logging import entrypoint, Timer
 from llm.datasets import get_all_datasets_list
 from llm.models import get_model, load_peft_model_from_pretrained
-from llm.models.peft import get_temperature_scaled_model
 from llm.eval import evaluate_dataset
 
 
@@ -61,9 +60,7 @@ def main(
         model, peft_dir=peft_dir, query_peft_dir=query_peft_dir
     )
 
-    model = get_temperature_scaled_model(
-        model, checkpoint_dir=query_peft_dir or peft_dir
-    )
+    ## TODO: add temperature scaling for loading.
 
     if dataset.startswith("eval"):
         all_datasets = get_all_datasets_list(dataset)

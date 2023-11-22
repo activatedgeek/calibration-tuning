@@ -1,10 +1,11 @@
+import os
 from dataclasses import dataclass, field
 import torch
 import torch.nn.functional as F
 from torch.distributions import Categorical, kl_divergence
 from transformers import Trainer
+from transformers.trainer import logger, TRAINING_ARGS_NAME
 from transformers.training_args import TrainingArguments
-from peft import PeftModel
 
 from ..datasets.llm_utils import (
     DataCollatorForSupervisedDataset,
@@ -13,14 +14,16 @@ from ..datasets.llm_utils import (
     IGNORE_LABEL,
 )
 from ..eval import evaluate_dataset
+from ..models.peft import save_temperature_scaled_model
 
 
 class UncertaintyTuner(Trainer):
     @dataclass
     class Args(TrainingArguments):
         query_format: str = field(default="roman_choice")
-        unc_normalize: bool = field(default=True)
         unc_label_smoothing: float = field(default=0.0)
+        kl_decay: float = field(default=1.0)
+        scale_temp: bool = field(default=False)
         ref_adapter_name: str = field(default="_ref")
         kl_decay: float = field(default=1.0)
 
@@ -32,11 +35,6 @@ class UncertaintyTuner(Trainer):
             data_collator=DataCollatorForSupervisedDataset(tokenizer),
         )
 
-        assert isinstance(self.model, PeftModel), f"Model should be a PeftModel"
-        assert set(self.model.peft_config.keys()) == set(
-            ["default", self.args.ref_adapter_name]
-        ), f"PeftModel should have 'default' and '{self.args.ref_adapter_name}' adapters"
-
         self.val_data = val_data
         self.test_data = test_data
 
@@ -46,26 +44,21 @@ class UncertaintyTuner(Trainer):
         )
         query_inputs = self.data_collator(query_inputs)
 
-        if self.args.unc_normalize:
-            query_outputs = model(**query_inputs)
+        query_outputs = model(**query_inputs, scale_temp=self.args.scale_temp)
 
-            _, unc_y, unc_logits = extract_qa_exact(
-                self.tokenizer, query_inputs, outputs=query_outputs
-            )
-            unc_y, unc_logits = (
-                (unc_y.unsqueeze(-1) == query_token_vec).long().argmax(dim=-1),
-                unc_logits[:, query_token_vec],
-            )
+        _, unc_y, unc_logits = extract_qa_exact(
+            self.tokenizer, query_inputs, outputs=query_outputs
+        )
+        unc_y, unc_logits = (
+            (unc_y.unsqueeze(-1) == query_token_vec).long().argmax(dim=-1),
+            unc_logits[:, query_token_vec],
+        )
 
-            unc_loss = F.cross_entropy(
-                unc_logits,
-                unc_y.to(unc_logits.device),
-                label_smoothing=self.args.unc_label_smoothing,
-            )
-
-            return unc_loss
-
-        unc_loss = super().compute_loss(model, query_inputs)
+        unc_loss = F.cross_entropy(
+            unc_logits,
+            unc_y.to(unc_logits.device),
+            label_smoothing=self.args.unc_label_smoothing,
+        )
 
         return unc_loss
 
@@ -86,10 +79,10 @@ class UncertaintyTuner(Trainer):
         # p_mix = Categorical(probs=mix_probs)
         # raw_loss = (kl_divergence(p, p_mix) + kl_divergence(p_ref, p_mix)) / 2
 
-        raw_loss = kl_divergence(p, p_ref)
+        forward_kl = kl_divergence(p, p_ref)
 
         loss_mask = labels != IGNORE_LABEL
-        loss = (raw_loss * loss_mask).sum(dim=-1).mean(dim=0)
+        loss = (forward_kl * loss_mask).sum(dim=-1).mean(dim=0)
 
         return loss
 
@@ -97,7 +90,10 @@ class UncertaintyTuner(Trainer):
         loss, outputs = super().compute_loss(model, inputs, return_outputs=True)
 
         unc_loss = self.compute_unc_loss(model, inputs, outputs)
-        kl_loss = self.compute_kl_loss(model, inputs, outputs)
+        if self.args.scale_temp:
+            kl_loss = torch.tensor(0.0)
+        else:
+            kl_loss = self.compute_kl_loss(model, inputs, outputs)
 
         total_loss = unc_loss + self.args.kl_decay * kl_loss
 
@@ -140,3 +136,23 @@ class UncertaintyTuner(Trainer):
             metrics.update(test_metrics)
 
         return metrics
+
+    def _save(self, output_dir=None, state_dict=None):
+        output_dir = output_dir if output_dir is not None else self.args.output_dir
+        os.makedirs(output_dir, exist_ok=True)
+        logger.info(f"Saving model checkpoint to {output_dir}")
+
+        self.model.save_pretrained(
+            output_dir,
+            state_dict=state_dict,
+            safe_serialization=self.args.save_safetensors,
+            selected_adapters=["default"],
+        )
+
+        if self.args.scale_temp:
+            save_temperature_scaled_model(self.model, output_dir)
+
+        if self.tokenizer is not None:
+            self.tokenizer.save_pretrained(output_dir)
+
+        torch.save(self.args, os.path.join(output_dir, TRAINING_ARGS_NAME))
