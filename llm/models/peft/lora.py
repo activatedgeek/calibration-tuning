@@ -1,6 +1,4 @@
-import logging
-from tempfile import TemporaryDirectory
-from peft import TaskType, LoraConfig, PeftModel, get_peft_model
+from peft import TaskType, LoraConfig, get_peft_model
 
 from .utils import get_peft_model_from_checkpoint
 
@@ -48,22 +46,3 @@ def get_lora_model(
     model = get_peft_model(model, peft_config, adapter_name=adapter_name)
 
     return model
-
-
-def freezecopy_base_lora_model(model, adapter_name="_ref"):
-    assert isinstance(model, PeftModel), f"Unsupported model {type(model)}"
-
-    with TemporaryDirectory() as tdir:
-        model.save_pretrained(tdir)
-        logging.debug(f"Checkpoint saved at '{tdir}'.")
-
-        model.load_adapter(tdir, adapter_name=adapter_name)
-
-        for n, p in model.named_parameters():
-            if f".{adapter_name}." in n:
-                p.requires_grad_(False)
-                ## B matrix is already initialized to zero if freezing a fresh LoRA model.
-                # if set_zeros:
-                #     p.data.fill_(0.0)
-
-    logging.info(f"Frozen copy adapter '{adapter_name}' created.")

@@ -11,7 +11,7 @@ pandas
 scikit-learn
 torch>=2.0
 torchvision
-transformers<4.33
+transformers
 sentencepiece
 datasets
 accelerate

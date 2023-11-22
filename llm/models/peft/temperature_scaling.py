@@ -3,7 +3,7 @@ import os
 import torch
 import torch.nn as nn
 from accelerate import PartialState as AcceleratorState
-from transformers.integrations import TrainerCallback
+from transformers import TrainerCallback
 
 from .utils import get_last_checkpoint_path
 from ..utils import setchainattr, getchainattr

@@ -4,7 +4,7 @@ from accelerate import PartialState as AcceleratorState
 from llm.datasets import get_dataset
 from llm.datasets.llm_utils import tokenize_datasets
 from llm.models import get_model
-from llm.models.peft import get_lora_model, freezecopy_base_lora_model
+from llm.models.peft import get_lora_model
 from llm.logging import entrypoint
 from llm.utils.trainer import WandbConfigUpdateCallback
 from llm.utils.uncertainty_tuner import UncertaintyTuner
@@ -44,7 +44,7 @@ def main(
         model_dir=model_dir,
     )
 
-    base_model = get_model(
+    model = get_model(
         model_name,
         device_map={"": accelerator.local_process_index},
         torch_dtype=torch.float16,
@@ -55,7 +55,7 @@ def main(
     )
 
     model = get_lora_model(
-        base_model,
+        model,
         peft_dir=peft_dir,
         lora_rank=lora_rank,
         lora_alpha=lora_alpha,
@@ -63,7 +63,16 @@ def main(
         is_trainable=True,
         adapter_name="default",
     )
-    freezecopy_base_lora_model(model, adapter_name="_ref")
+
+    model = get_lora_model(
+        model,
+        peft_dir=peft_dir,
+        is_trainable=False,
+        adapter_name="_ref",
+    )
+
+    ## NOTE: second adapter loads to CPU.
+    model.to(accelerator.local_process_index)
 
     with accelerator.main_process_first():
         train_data, val_data, test_data = get_dataset(

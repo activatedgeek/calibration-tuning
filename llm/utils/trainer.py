@@ -2,8 +2,7 @@ import tqdm
 from dataclasses import dataclass, field
 import torch
 import torch.nn.functional as F
-from transformers import Trainer, TrainingArguments
-from transformers.integrations import TrainerCallback
+from transformers import Trainer, TrainingArguments, TrainerCallback
 from transformers.training_args import TrainingArguments
 from transformers.trainer_utils import PREFIX_CHECKPOINT_DIR, get_last_checkpoint
 

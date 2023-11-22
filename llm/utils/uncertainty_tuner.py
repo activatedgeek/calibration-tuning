@@ -4,6 +4,7 @@ import torch.nn.functional as F
 from torch.distributions import Categorical, kl_divergence
 from transformers import Trainer
 from transformers.training_args import TrainingArguments
+from peft import PeftModel
 
 from ..datasets.llm_utils import (
     DataCollatorForSupervisedDataset,
@@ -30,6 +31,11 @@ class UncertaintyTuner(Trainer):
             tokenizer=tokenizer,
             data_collator=DataCollatorForSupervisedDataset(tokenizer),
         )
+
+        assert isinstance(self.model, PeftModel), f"Model should be a PeftModel"
+        assert set(self.model.peft_config.keys()) == set(
+            ["default", self.args.ref_adapter_name]
+        ), f"PeftModel should have 'default' and '{self.args.ref_adapter_name}' adapters"
 
         self.val_data = val_data
         self.test_data = test_data
