@@ -87,7 +87,7 @@ class UncertaintyTuner(Trainer):
         return loss
 
     def compute_loss(self, model, inputs, return_outputs=False):
-        loss, outputs = super().compute_loss(model, inputs, return_outputs=True)
+        _, outputs = super().compute_loss(model, inputs, return_outputs=True)
 
         unc_loss = self.compute_unc_loss(model, inputs, outputs)
         if self.args.scale_temp:
@@ -98,7 +98,6 @@ class UncertaintyTuner(Trainer):
         total_loss = unc_loss + self.args.kl_decay * kl_loss
 
         loss_metrics = {
-            "lm_loss": loss.detach().item(),
             "unc_loss": unc_loss.detach().item(),
             "kl_loss": kl_loss.detach().item(),
         }
