@@ -86,8 +86,8 @@ def get_combined_dataset(
             all_test_data.append(test_data)
 
     all_train_data = _concat_datasets(all_train_data, max_n, complement=complement)
-    all_val_data = _concat_datasets(all_val_data, max_n, complement=complement)
-    all_test_data = _concat_datasets(all_test_data, max_n, complement=complement)
+    all_val_data = _concat_datasets(all_val_data, max_n)
+    all_test_data = _concat_datasets(all_test_data, max_n)
 
     return all_train_data, all_val_data, all_test_data
 
@@ -105,6 +105,19 @@ def all_200k(*args, **kwargs):
 
 
 @register_dataset
+def cal_all_50k(*args, **kwargs):
+    _, vl, _ = get_combined_dataset(
+        all_dataset_names=get_all_datasets_list("all:train"),
+        *args,
+        **kwargs,
+        eval_kshot=0,
+        max_n=50_000,
+        complement=False,
+    )
+    return vl, None, None
+
+
+@register_dataset
 def all_200k_c(*args, **kwargs):
     tr, _, _ = get_combined_dataset(
         all_dataset_names=get_all_datasets_list("all:train"),
@@ -114,19 +127,6 @@ def all_200k_c(*args, **kwargs):
         complement=True,
     )
     return tr, None, None
-
-
-@register_dataset
-def cal_all_200k_c(*args, **kwargs):
-    _, vl, _ = get_combined_dataset(
-        all_dataset_names=get_all_datasets_list("all:train"),
-        *args,
-        **kwargs,
-        eval_kshot=0,
-        max_n=950_000,  ## to get ~50k samples.
-        complement=True,
-    )
-    return vl, None, None
 
 
 @register_dataset
@@ -157,28 +157,13 @@ def sub_200k_c(*args, **kwargs):
 
 
 @register_dataset
-def cal_sub_200k_c(*args, **kwargs):
-    all_dataset_names = get_all_datasets_list("all:train")
-    all_dataset_names = all_dataset_names[len(all_dataset_names) // 2 :]
-    _, vl, _ = get_combined_dataset(
-        all_dataset_names=all_dataset_names,
-        *args,
-        **kwargs,
-        eval_kshot=0,
-        max_n=50_000,
-    )
-    return vl, None, None
-
-
-@register_dataset
-def cal_mmlu(*args, seed=None, **kwargs):
+def cal_mmlu(*args, **kwargs):
     mmlu_datasets = [f"mmlu:{task}" for task in get_dataset_attrs("mmlu").get("tasks")]
 
     tr, _, _ = get_combined_dataset(
         all_dataset_names=mmlu_datasets,
         *args,
         **kwargs,
-        seed=seed,
         max_n=50_000,
     )
     return tr, None, None
