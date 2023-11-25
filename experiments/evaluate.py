@@ -111,6 +111,8 @@ def main(
             extra=dict(metrics=True),
         )
 
+        accelerator.free_memory()
+
 
 if __name__ == "__main__":
     import fire
