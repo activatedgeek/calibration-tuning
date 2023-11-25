@@ -21,11 +21,10 @@ class UncertaintyTuner(Trainer):
     @dataclass
     class Args(TrainingArguments):
         query_format: str = field(default="roman_choice")
-        unc_label_smoothing: float = field(default=0.0)
-        kl_decay: float = field(default=1.0)
-        scale_temp: bool = field(default=False)
         ref_adapter_name: str = field(default="_ref")
-        kl_decay: float = field(default=1.0)
+        unc_label_smoothing: float = field(default=0.0)
+        kl_decay: float = field(default=0.0)
+        scale_temp: bool = field(default=False)
 
     def __init__(self, *args, tokenizer=None, val_data=None, test_data=None, **kwargs):
         super().__init__(

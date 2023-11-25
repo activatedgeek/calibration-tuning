@@ -27,7 +27,7 @@ def main(
     lr=1e-4,
     ls=0.0,
     weight_decay=0.0,
-    kl_decay=1.0,
+    kl_decay=0.0,
     scale_temp=False,
     warmup_steps=0,
     max_steps=1,
