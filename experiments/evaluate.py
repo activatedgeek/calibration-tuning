@@ -7,7 +7,8 @@ from accelerate import Accelerator
 
 from llm.logging import entrypoint, Timer
 from llm.datasets import get_all_datasets_list
-from llm.models import get_model, load_peft_model_from_pretrained
+from llm.models import get_model
+from llm.models.peft import get_lora_model
 from llm.eval import evaluate_dataset
 
 
@@ -23,7 +24,6 @@ def main(
     peft_dir=None,
     query_peft_dir=None,
     use_dataset_cache=True,
-    use_auto_device=False,
     prompt_style="choice",
     mode=None,
 ):
@@ -49,18 +49,31 @@ def main(
 
     model = get_model(
         model_name,
-        device_map="auto" if use_auto_device else {"": accelerator.local_process_index},
+        device_map={"": accelerator.local_process_index},
         torch_dtype=torch.float16,
         model_dir=model_dir,
         use_cache=False,
         tokenizer=tokenizer,
+        # load_in_8bit=True,
+        ## TODO: add temperature scaling for loading.
+        # temp_scaling=scale_temp,
     )
 
-    model = load_peft_model_from_pretrained(
-        model, peft_dir=peft_dir, query_peft_dir=query_peft_dir
+    model = get_lora_model(
+        model,
+        peft_dir=peft_dir,
+        is_trainable=False,
+        adapter_name="default",
     )
 
-    ## TODO: add temperature scaling for loading.
+    model = get_lora_model(
+        model,
+        peft_dir=query_peft_dir or peft_dir,
+        is_trainable=False,
+        adapter_name="query",
+    ).to(accelerator.local_process_index)
+
+    model.eval()
 
     if dataset.startswith("eval"):
         all_datasets = get_all_datasets_list(dataset)

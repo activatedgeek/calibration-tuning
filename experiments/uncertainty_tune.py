@@ -72,10 +72,7 @@ def main(
             peft_dir=peft_dir,
             is_trainable=False,
             adapter_name="_ref",
-        )
-
-    ## NOTE: second adapter loads to CPU.
-    model.to(accelerator.local_process_index)
+        ).to(accelerator.local_process_index)
 
     with accelerator.main_process_first():
         train_data, val_data, test_data = get_dataset(
