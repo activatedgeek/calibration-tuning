@@ -132,37 +132,6 @@ def extract_qa_exact(tokenizer, inputs, outputs=None):
     return eos_idx, y
 
 
-def extract_oe_inputs(tokenizer, inputs):
-    target_start_idx = (
-        inputs.get("labels")
-        .eq(-100)
-        .nonzero()[
-            inputs.get("labels").eq(IGNORE_LABEL).sum(dim=-1).cumsum(dim=-1) - 1
-        ][:, -1]
-        + 1
-    )
-
-    oe_inputs = [
-        tokenizer(
-            tokenizer.decode(inp[1:t].tolist()),
-            padding="longest",
-            truncation=True,
-            max_length=tokenizer.model_max_length,
-        )
-        for inp, t in zip(inputs.get("input_ids"), target_start_idx)
-    ]
-
-    oe_targets = torch.cat(
-        [
-            inp[t:].unsqueeze(0)
-            for inp, t in zip(inputs.get("input_ids"), target_start_idx)
-        ],
-        dim=0,
-    )
-
-    return target_start_idx, oe_inputs, oe_targets
-
-
 def get_token_vec(tokenizer, format="roman_choice"):
     vocab = tokenizer.get_vocab()
 

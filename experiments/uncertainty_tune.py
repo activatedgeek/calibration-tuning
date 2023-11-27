@@ -4,13 +4,10 @@ from accelerate import PartialState as AcceleratorState
 from llm.datasets import get_dataset
 from llm.datasets.llm_utils import tokenize_datasets
 from llm.models import get_model
-from llm.models.peft import get_lora_model
+from llm.models.peft import get_lora_model, prepare_model_for_temperature_scaling
 from llm.logging import entrypoint
-from llm.utils.trainer import (
-    TrainingArguments,
-    UncertaintyTrainer,
-    WandbConfigUpdateCallback,
-)
+from llm.utils.trainer import WandbConfigUpdateCallback
+from llm.utils.uncertainty_tuner import UncertaintyTuner
 
 
 def main(
@@ -24,15 +21,13 @@ def main(
     model_name=None,
     model_dir=None,
     peft_dir=None,
-    fp8=True,
     lora_rank=8,
     lora_alpha=32,
     lora_dropout=0.1,
     lr=1e-4,
-    unc_decay=0.0,
-    label_smoothing=0.0,
+    ls=0.0,
     weight_decay=0.0,
-    loss_mode="reg",
+    kl_decay=0.0,
     scale_temp=False,
     warmup_steps=0,
     max_steps=1,
@@ -56,20 +51,28 @@ def main(
         model_dir=model_dir,
         use_cache=False,
         tokenizer=tokenizer,
-        load_in_8bit=fp8,
+        load_in_8bit=True,
     )
 
-    ## If resuming, resume_dir takes priority. Otherwise, to avoid clashes with saved state.
-    peft_dir = resume_dir or peft_dir
     model = get_lora_model(
         model,
         peft_dir=peft_dir,
         lora_rank=lora_rank,
         lora_alpha=lora_alpha,
         lora_dropout=lora_dropout,
+        is_trainable=True,
+        adapter_name="default",
     )
 
-    ## TODO: add temperature scaling for finetuning.
+    if scale_temp:
+        prepare_model_for_temperature_scaling(model)
+    else:
+        model = get_lora_model(
+            model,
+            peft_dir=peft_dir,
+            is_trainable=False,
+            adapter_name="_ref",
+        ).to(accelerator.local_process_index)
 
     with accelerator.main_process_first():
         train_data, val_data, test_data = get_dataset(
@@ -81,12 +84,12 @@ def main(
             use_cache=use_dataset_cache,
         )
 
-    trainer = UncertaintyTrainer(
+    trainer = UncertaintyTuner(
         model=model,
-        args=TrainingArguments(
+        args=UncertaintyTuner.Args(
             seed=seed,
             fsdp=False,
-            fp16=not fp8,
+            fp16=False,
             bf16=False,
             gradient_checkpointing=False,
             ddp_find_unused_parameters=False,
@@ -98,18 +101,18 @@ def main(
             evaluation_strategy="steps",
             per_device_train_batch_size=batch_size,
             per_device_eval_batch_size=batch_size,
-            loss_mode=loss_mode,
             optim="adamw_torch",
             learning_rate=lr,
             lr_scheduler_type="cosine",
             warmup_steps=warmup_steps,
             weight_decay=weight_decay,
-            unc_decay=unc_decay,
+            kl_decay=kl_decay,
+            unc_label_smoothing=ls,
             gradient_accumulation_steps=grad_acc,
             output_dir=log_dir,
             report_to="wandb",
             dataloader_num_workers=4,
-            label_smoothing=label_smoothing,
+            scale_temp=scale_temp,
         ),
         train_dataset=tokenize_datasets(tokenizer, train_data)[0],
         val_data=val_data,
@@ -122,8 +125,6 @@ def main(
                 model_name=model_name,
                 model_dir=model_dir,
                 peft_dir=peft_dir,
-                resume_dir=resume_dir,
-                fp8=fp8,
                 lora_rank=lora_rank,
                 lora_alpha=lora_alpha,
                 lora_dropout=lora_dropout,
