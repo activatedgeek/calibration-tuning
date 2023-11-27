@@ -20,7 +20,7 @@ from llm.datasets.llm_utils import (
 # from llm.utils.evaluation import (
 #     extract_eos_pos, evaluate_via_eos
 # )
-from llm.utils.third_party.calibration import calibration
+from llm.eval.third_party.calibration import calibration
 
 def prepare_model(
     causal_lm,

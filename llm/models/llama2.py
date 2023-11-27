@@ -179,6 +179,7 @@ def create_tokenizer(size=None, model_dir=None, cache_dir=None, **_):
     )
 
     tokenizer.add_special_tokens(get_special_tokens(tokenizer))
+    tokenizer.pad_token = tokenizer.eos_token
 
     return tokenizer
 
