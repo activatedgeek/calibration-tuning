@@ -1,4 +1,5 @@
 import logging
+import os
 
 from ..datasets import get_dataset, get_loader
 from .eos import (
@@ -43,6 +44,9 @@ def evaluate_dataset(
     ## FIXME: See https://github.com/huggingface/transformers/issues/25790#issuecomment-1695846805.
     assert batch_size == 1, "Only support batch_size 1. See code comments."
 
+    if output_row_path is not None:
+        os.makedirs(os.path.join(output_row_path, dataset), exist_ok=True)
+
     if dataset is not None:
         with accelerator.main_process_first():
             _extra_args = dict()
@@ -71,6 +75,7 @@ def evaluate_dataset(
         evaluate_fn = EVALUATE_MODE_FN_MAP[evaluate_fn]
 
     train_metrics = None
+
     if train_data:
         train_metrics = evaluate_fn(
             accelerator,
@@ -83,7 +88,7 @@ def evaluate_dataset(
                 accelerator=accelerator,
             ),
             prompt_style=prompt_style,
-            output_row_path=output_row_path
+            output_row_path=os.path.join(output_row_path, dataset, 'train.csv') if output_row_path is not None else None
         )
         train_metrics["split"] = "train"
 
@@ -104,7 +109,7 @@ def evaluate_dataset(
                 accelerator=accelerator,
             ),
             prompt_style=prompt_style,
-            output_row_path=output_row_path
+            output_row_path=os.path.join(output_row_path, dataset, 'val.csv') if output_row_path is not None else None
         )
         val_metrics["split"] = "validation"
 
@@ -125,7 +130,7 @@ def evaluate_dataset(
                 accelerator=accelerator,
             ),
             prompt_style=prompt_style,
-            output_row_path=output_row_path
+            output_row_path=os.path.join(output_row_path, dataset, 'test.csv') if output_row_path is not None else None
         )
         test_metrics["split"] = "test"
 
