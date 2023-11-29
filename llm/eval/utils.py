@@ -6,10 +6,15 @@ from .eos import (
     evaluate_candidate_via_eos,
     evaluate_via_eos,
 )
-from .oe import evaluate_oe_via_substring, evaluate_oe_via_fuzzy_gpt4
+from .oe import (
+    evaluate_oe,
+    evaluate_oe_via_substring, 
+    evaluate_oe_via_fuzzy_gpt4,
+)
 
 EVALUATE_MODE_FN_MAP = {
     "eos": evaluate_via_eos,
+    "oe": evaluate_oe,
     "oe_substring": evaluate_oe_via_substring,
     "oe_fuzzy_gpt4": evaluate_oe_via_fuzzy_gpt4,
     "cc_eos": evaluate_contextual_calibration_via_eos,
@@ -32,6 +37,7 @@ def evaluate_dataset(
     eval_kshot=None,
     use_cache=True,
     prompt_style="choice",
+    output_row_path=None,
     evaluate_fn="eos",
 ):
     ## FIXME: See https://github.com/huggingface/transformers/issues/25790#issuecomment-1695846805.
@@ -77,6 +83,7 @@ def evaluate_dataset(
                 accelerator=accelerator,
             ),
             prompt_style=prompt_style,
+            output_row_path=output_row_path
         )
         train_metrics["split"] = "train"
 
@@ -97,6 +104,7 @@ def evaluate_dataset(
                 accelerator=accelerator,
             ),
             prompt_style=prompt_style,
+            output_row_path=output_row_path
         )
         val_metrics["split"] = "validation"
 
@@ -117,6 +125,7 @@ def evaluate_dataset(
                 accelerator=accelerator,
             ),
             prompt_style=prompt_style,
+            output_row_path=output_row_path
         )
         test_metrics["split"] = "test"
 

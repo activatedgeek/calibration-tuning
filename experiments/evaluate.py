@@ -25,6 +25,7 @@ def main(
     query_peft_dir=None,
     use_dataset_cache=True,
     prompt_style="choice",
+    output_row_path=None,
     mode=None,
 ):
     accelerator = Accelerator()
@@ -96,6 +97,7 @@ def main(
                 eval_kshot=eval_kshot,
                 use_cache=use_dataset_cache,
                 prompt_style=prompt_style,
+                output_row_path=output_row_path,
                 evaluate_fn=mode,
             )
 

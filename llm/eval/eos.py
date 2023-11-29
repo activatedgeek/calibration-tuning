@@ -20,11 +20,13 @@ def evaluate_via_eos(
     loader,
     prompt_style="choice",
     query_format="roman_choice",
+    output_row_path=None,
 ):
     """
     Assumes all answers are 1 token and end immediately with EOS token.
     """
 
+    assert output_row_path is None # output row currently only available for oe
     assert(prompt_style == "choice")
 
     device = accelerator.device
@@ -121,11 +123,16 @@ def evaluate_contextual_calibration_via_eos(
     model,
     tokenizer,
     loader,
-    prompt_style="choice"
+    prompt_style="choice",
+    output_row_path=None,
 ):
     """
     Assumes all answers are 1 token and end immediately with EOS token.
     """
+
+    assert output_row_path is None # output row currently only available for oe
+    assert(prompt_style == "choice")
+
     device = accelerator.device
     collate_fn = DataCollatorForSupervisedDataset(tokenizer)
 
@@ -212,10 +219,16 @@ def evaluate_candidate_via_eos(
     model,
     tokenizer,
     loader,
+    prompt_style="choice",
+    output_row_path=None,
 ):
     """
     Assumes all answers are 1 token and end immediately with EOS token.
     """
+
+    assert output_row_path is None # output row currently only available for oe
+    assert(prompt_style == "choice")
+
     device = accelerator.device
     collate_fn = DataCollatorForSupervisedDataset(tokenizer)
 
