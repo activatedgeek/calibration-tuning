@@ -64,7 +64,7 @@ def main(
     )
 
     if scale_temp:
-        prepare_model_for_temperature_scaling(model)
+        prepare_model_for_temperature_scaling(model, is_trainable=True)
 
     with accelerator.main_process_first():
         train_data, val_data, test_data = get_dataset(

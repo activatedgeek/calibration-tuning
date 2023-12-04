@@ -66,7 +66,7 @@ def main(
     )
 
     if scale_temp:
-        prepare_model_for_temperature_scaling(model)
+        prepare_model_for_temperature_scaling(model, is_trainable=True)
     else:
         model = get_lora_model(
             model,
