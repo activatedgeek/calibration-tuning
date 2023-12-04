@@ -40,6 +40,8 @@ def evaluate_oe(
     all_oe_target_strings, all_output_strings, all_question_strings = [], [], []
 
     for inputs in tqdm(loader, leave=False):
+        if 'following' in inputs['context']:
+            continue
         inputs = prepare_batch(tokenizer, inputs, prompt_style=prompt_style)
         inputs = collate_fn(inputs)
 
