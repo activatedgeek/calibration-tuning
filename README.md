@@ -63,7 +63,7 @@ To evaluate for open-ended sequences:
 with fuzzy matching (currently on GPT4, so requires setting OPENAI_API_KEY env var):
 
 ```shell
-./autotorchrun experiments/evaluate.py --model_name=llama2_7b --dataset=mmlu:business_ethics --mode=oe_fuzzy_gpt4 --prompt_style=oe
+./autotorchrun experiments/evaluate.py --model_name=llama2_7b --dataset=mmlu:business_ethics --mode=oe_fuzzy_gpt-4-0613 --prompt_style=oe
 ```
 
 ## Details

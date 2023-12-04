@@ -24,12 +24,12 @@ def evaluate_oe(
     loader,
     prompt_style="oe",
     query_format="roman_choice",
-    comparison_strategies=["substring", "fuzzy_gpt4"],
+    comparison_strategies=None,
     max_new_tokens=30,
     output_row_path=None,
 ):
     assert(prompt_style=="oe")
-
+    assert((not comparison_strategies is None) and len(comparison_strategies) > 0)
     device = accelerator.device
     collate_fn = DataCollatorForSupervisedDataset(tokenizer)
 
@@ -37,7 +37,7 @@ def evaluate_oe(
     all_oe_inputs = []
     all_unc_y, all_unc_logits = {c : [] for c in comparison_strategies}, {c : [] for c in comparison_strategies}
     all_acc = {c : [] for c in comparison_strategies}
-    all_oe_target_strings, all_output_strings = [], []
+    all_oe_target_strings, all_output_strings, all_question_strings = [], [], []
 
     for inputs in tqdm(loader, leave=False):
         inputs = prepare_batch(tokenizer, inputs, prompt_style=prompt_style)
@@ -61,11 +61,13 @@ def evaluate_oe(
         # convert those new tokens to the generated strings 
         output_strings = tokenizer.batch_decode(outputs[...,target_start_idx:], skip_special_tokens=True, clean_up_tokenization_spaces=False)
 
+        question_strings = tokenizer.batch_decode(oe_inputs, skip_special_tokens=True, clean_up_tokenization_spaces=False)
+
         # prepare the calibration query with open ended text
         # the calculation of the accuracy is done within this function
         for c in comparison_strategies:
             query_inputs, query_token_vec, acc = prepare_oe_calibration_query(
-                tokenizer, oe_target_strings, output_strings, format=query_format, comparison_strategy=c
+                tokenizer, oe_target_strings, output_strings, question_strings, format=query_format, comparison_strategy=c
             )
 
             acc = acc.to(device)
@@ -92,8 +94,8 @@ def evaluate_oe(
         [
             l.append(v)
             for l, v in zip(
-                (all_oe_target_strings, all_output_strings),
-                accelerator.gather_for_metrics((oe_target_strings, output_strings)),
+                (all_oe_target_strings, all_output_strings, all_question_strings),
+                accelerator.gather_for_metrics((oe_target_strings, output_strings, question_strings)),
             )
         ]          
 
@@ -101,10 +103,11 @@ def evaluate_oe(
         "N": len(all_oe_target_strings),
     }
 
-    all_oe_target_strings, all_output_strings = sum(all_oe_target_strings, []), sum(all_output_strings, [])
+    all_oe_target_strings, all_output_strings, all_question_strings = sum(all_oe_target_strings, []), sum(all_output_strings, []), sum(all_question_strings, [])
     dump = {
         "oe_target_strings": all_oe_target_strings, 
         "output_strings": all_output_strings,
+        "question_strings": all_question_strings,
     }
 
     for c in comparison_strategies:
@@ -147,48 +150,3 @@ def evaluate_oe(
 
 
     return return_dict
-
-
-@torch.inference_mode()
-def evaluate_oe_via_substring(
-    accelerator,
-    model,
-    tokenizer,
-    loader,
-    prompt_style="oe",
-    query_format="roman_choice",
-    output_row_path=None,
-):
-    return evaluate_oe(
-        accelerator,
-        model,
-        tokenizer,
-        loader,
-        prompt_style=prompt_style,
-        comparison_strategies=["substring"],
-        query_format=query_format,
-        output_row_path=output_row_path,
-    )
-
-
-@torch.inference_mode()
-def evaluate_oe_via_fuzzy_gpt4(
-    accelerator,
-    model,
-    tokenizer,
-    loader,
-    prompt_style="oe",
-    query_format="roman_choice",
-    output_row_path=None,
-):
-    return evaluate_oe(
-        accelerator,
-        model,
-        tokenizer,
-        loader,
-        prompt_style=prompt_style,
-        comparison_strategies=["fuzzy_gpt4"],
-        query_format=query_format,
-        output_row_path=output_row_path,
-    )
-
