@@ -39,6 +39,7 @@ def main(
         "eval_kshot": eval_kshot,
         "prompt_style": prompt_style,
         "mode": mode,
+        "output_row_path": output_row_path
     }
     if accelerator.is_main_process:
         wandb.config.update(config)

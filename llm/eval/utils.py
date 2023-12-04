@@ -9,15 +9,11 @@ from .eos import (
 )
 from .oe import (
     evaluate_oe,
-    evaluate_oe_via_substring, 
-    evaluate_oe_via_fuzzy_gpt4,
 )
 
 EVALUATE_MODE_FN_MAP = {
     "eos": evaluate_via_eos,
     "oe": evaluate_oe,
-    "oe_substring": evaluate_oe_via_substring,
-    "oe_fuzzy_gpt4": evaluate_oe_via_fuzzy_gpt4,
     "cc_eos": evaluate_contextual_calibration_via_eos,
     "cand_eos": evaluate_candidate_via_eos,
 }
@@ -69,10 +65,19 @@ def evaluate_dataset(
             logging.warning(f"Missing val_data or test_data.")
 
     if isinstance(evaluate_fn, str):
-        assert (
-            evaluate_fn in EVALUATE_MODE_FN_MAP.keys()
-        ), f"Unsupported mode '{evaluate_fn}'."
-        evaluate_fn = EVALUATE_MODE_FN_MAP[evaluate_fn]
+        if "oe_" in evaluate_fn:
+            assert(evaluate_fn[:3] == "oe_")
+            comparison_strategies = [evaluate_fn[3:]] # clip oe_
+            evaluate_fn = EVALUATE_MODE_FN_MAP['oe']
+        elif "oe" == evaluate_fn:
+            comparison_strategies = ["substring", "fuzzy_gpt-4-0613", "fuzzy_gpt-3.5-turbo-1106"]
+            evaluate_fn = EVALUATE_MODE_FN_MAP['oe']
+        else:
+            assert (
+                evaluate_fn in EVALUATE_MODE_FN_MAP.keys()
+            ), f"Unsupported mode '{evaluate_fn}'."
+            evaluate_fn = EVALUATE_MODE_FN_MAP[evaluate_fn]
+            comparison_strategies = None
 
     train_metrics = None
 
@@ -88,6 +93,8 @@ def evaluate_dataset(
                 accelerator=accelerator,
             ),
             prompt_style=prompt_style,
+
+            comparison_strategies=comparison_strategies,
             output_row_path=os.path.join(output_row_path, dataset, 'train.csv') if output_row_path is not None else None
         )
         train_metrics["split"] = "train"
@@ -109,6 +116,8 @@ def evaluate_dataset(
                 accelerator=accelerator,
             ),
             prompt_style=prompt_style,
+
+            comparison_strategies=comparison_strategies,
             output_row_path=os.path.join(output_row_path, dataset, 'val.csv') if output_row_path is not None else None
         )
         val_metrics["split"] = "validation"
@@ -130,6 +139,8 @@ def evaluate_dataset(
                 accelerator=accelerator,
             ),
             prompt_style=prompt_style,
+
+            comparison_strategies=comparison_strategies,
             output_row_path=os.path.join(output_row_path, dataset, 'test.csv') if output_row_path is not None else None
         )
         test_metrics["split"] = "test"

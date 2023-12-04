@@ -28,16 +28,15 @@ def openai_query(system_prompt, prompt, openai_model_name='gpt-4-0314'):
 
 
 SYSTEM_PROMPT_ORACLE_EQUIVALENCY    = "You are an automated grading assistant helping a teacher grade student answers."
-PROMPT_ORACLE_EQUIVALENCY           = "The correct answer for this problem is: <ground-truth>\n. " + \
-        "A student submitted the answer: <prediction>\n. " + \
+PROMPT_ORACLE_EQUIVALENCY           = "The problem is: <question>\n\n The correct answer for this problem is: <ground-truth>\n " + \
+        "A student submitted the answer: <prediction>\n " + \
         "The student's answer must be correct and specific but not overcomplete " + \
         "(for example, if they provide two different answers, they did not get the question right). " + \
         "However, small differences in formatting should not be penalized (for example, 'New York City' is equivalent to 'NYC'). " + \
         "Did the student provide an equivalent answer to the ground truth? Please answer yes or no without any explanation: "
 
-
-def evaluate_equivalency_with_oracle(ground_truth, prediction, oracle_fn, oracle_kwargs):
-    prompt = PROMPT_ORACLE_EQUIVALENCY.replace('<ground-truth>', ground_truth).replace('<prediction>', prediction)
+def evaluate_equivalency_with_oracle(ground_truth, prediction, question, oracle_fn, oracle_kwargs):
+    prompt = PROMPT_ORACLE_EQUIVALENCY.replace('<ground-truth>', ground_truth).replace('<prediction>', prediction).replace('<question>', question)
     sampled_response = oracle_fn(
         system_prompt=SYSTEM_PROMPT_ORACLE_EQUIVALENCY,
         prompt=prompt,
@@ -100,21 +99,22 @@ def extract_oe_inputs(tokenizer, inputs):
     return target_start_idx, oe_inputs, oe_targets
 
 
-def prepare_oe_calibration_query(tokenizer, true, pred, format="roman_choice", comparison_strategy='substring'):
+def prepare_oe_calibration_query(tokenizer, true, pred, questions, format="roman_choice", comparison_strategy='substring'):
 
     # calculate accuracy
     if comparison_strategy == 'substring':
-        comparison_fn = lambda t,p: t in p
-    elif comparison_strategy == 'fuzzy_gpt4':
+        comparison_fn = lambda t,p,q: t in p
+    elif 'fuzzy' in comparison_strategy:
         comparison_fn = lambda t,p: evaluate_equivalency_with_oracle(
             t,
             p,
+            q,
             oracle_fn=openai_query,
-            oracle_kwargs={'openai_model_name': 'gpt-4-0314'}
+            oracle_kwargs={'openai_model_name': comparison_strategy.split('_')[1]}
         )
     else:
         raise ValueError(f'Invalid comparison strategy {comparison_strategy}') 
-    acc = [comparison_fn(t,p) for t, p in zip(true, pred)]
+    acc = [comparison_fn(t,p,q) for t, p, q in zip(true, pred, questions)]
 
     if format == "bool":
         ## NOTE: Probably don't use, often seems to be biased towards a yes.
