@@ -35,9 +35,19 @@ def evaluate_oe(
     all_unc_y, all_unc_logits = [], []
     all_acc = []
 
+    # i = 0
+
     for inputs in tqdm(loader, leave=False):
+        # i += 1
+
+        # if i < 5 or i > 10:
+        #     continue
+
+
         inputs = prepare_batch(tokenizer, inputs, prompt_style=prompt_style)
         inputs = collate_fn(inputs)
+
+        # print(tokenizer.batch_decode(inputs["input_ids"], skip_special_tokens=False, clean_up_tokenization_spaces=False)[0])
 
         # get the target separation between prompt and answer
         target_start_idx, oe_inputs, oe_targets = extract_oe_inputs(tokenizer, inputs)
@@ -52,10 +62,24 @@ def evaluate_oe(
             model.set_adapter("default")
 
         # generate 30 more tokens
-        outputs = model.generate(**oe_inputs, max_new_tokens=30)
+        outputs = model.generate(
+            **oe_inputs, 
+            max_new_tokens=30
+        )
 
         # convert those new tokens to the generated strings 
         output_strings = tokenizer.batch_decode(outputs[...,target_start_idx:], skip_special_tokens=True, clean_up_tokenization_spaces=False)
+
+        print("".join(30 * ["-"]))
+
+        print(output_strings)
+
+        output_strings = [s.split("\n")[0].split(".")[0] for s in output_strings]
+
+        print(output_strings)
+        print(oe_target_strings)
+
+        print("".join(30 * ["-"]))
 
         # prepare the calibration query with open ended text
         # the calculation of the accuracy is done within this function
@@ -68,12 +92,18 @@ def evaluate_oe(
         if isinstance(model, PeftModel) and "query" in model.peft_config:
             model.set_adapter("query")
 
+        print(acc)
+        # print(tokenizer.batch_decode(query_inputs["input_ids"], skip_special_tokens=False, clean_up_tokenization_spaces=False)[0])
+        # print(1/0)
+
         query_inputs = {k: v.to(device) for k, v in query_inputs.items()}
         query_outputs = model(**query_inputs)
 
         _, unc_y, unc_logits = extract_qa_exact(
             tokenizer, query_inputs, outputs=query_outputs
         )
+
+        print(unc_y)
 
         [
             l.append(v)

@@ -9,7 +9,7 @@ from .llm_utils import (
 )
 
 
-def openai_query(system_prompt, prompt, openai_model_name='gpt-4-0314'):
+def openai_query(system_prompt, prompt, openai_model_name='gpt-4-1106-preview'):
     sampled_response = None
     while sampled_response is None:
         try:                
@@ -110,7 +110,10 @@ def prepare_oe_calibration_query(tokenizer, true, pred, format="roman_choice", c
             t,
             p,
             oracle_fn=openai_query,
-            oracle_kwargs={'openai_model_name': 'gpt-4-0314'}
+            oracle_kwargs={
+                'openai_model_name': 'gpt-4-1106-preview'
+                # 'openai_model_name': 'gpt-3.5-turbo'
+            }
         )
     else:
         raise ValueError(f'Invalid comparison strategy {comparison_strategy}') 
