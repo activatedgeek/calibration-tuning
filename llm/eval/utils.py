@@ -35,6 +35,7 @@ def evaluate_dataset(
     use_cache=True,
     prompt_style="choice",
     output_row_path=None,
+    input_generation_path=None,
     evaluate_fn="eos",
 ):
     ## FIXME: See https://github.com/huggingface/transformers/issues/25790#issuecomment-1695846805.
@@ -95,7 +96,8 @@ def evaluate_dataset(
             prompt_style=prompt_style,
 
             comparison_strategies=comparison_strategies,
-            output_row_path=os.path.join(output_row_path, dataset, 'train.csv') if output_row_path is not None else None
+            output_row_path=os.path.join(output_row_path, dataset, 'train.csv') if output_row_path is not None else None,
+            input_generation_path=os.path.join(input_generation_path, dataset, 'train.csv') if input_generation_path is not None else None
         )
         train_metrics["split"] = "train"
 
@@ -118,7 +120,8 @@ def evaluate_dataset(
             prompt_style=prompt_style,
 
             comparison_strategies=comparison_strategies,
-            output_row_path=os.path.join(output_row_path, dataset, 'val.csv') if output_row_path is not None else None
+            output_row_path=os.path.join(output_row_path, dataset, 'val.csv') if output_row_path is not None else None,
+            input_generation_path=os.path.join(input_generation_path, dataset, 'val.csv') if input_generation_path is not None else None        
         )
         val_metrics["split"] = "validation"
 
@@ -141,7 +144,8 @@ def evaluate_dataset(
             prompt_style=prompt_style,
 
             comparison_strategies=comparison_strategies,
-            output_row_path=os.path.join(output_row_path, dataset, 'test.csv') if output_row_path is not None else None
+            output_row_path=os.path.join(output_row_path, dataset, 'test.csv') if output_row_path is not None else None,
+            input_generation_path=os.path.join(input_generation_path, dataset, 'test.csv') if input_generation_path is not None else None
         )
         test_metrics["split"] = "test"
 

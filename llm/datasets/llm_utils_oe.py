@@ -1,6 +1,8 @@
 from openai import ChatCompletion
 from openai.error import RateLimitError, APIError, Timeout, ServiceUnavailableError
 import torch
+import time
+import logging
 
 from .llm_utils import (
     get_token_vec,
@@ -99,22 +101,25 @@ def extract_oe_inputs(tokenizer, inputs):
     return target_start_idx, oe_inputs, oe_targets
 
 
-def prepare_oe_calibration_query(tokenizer, true, pred, questions, format="roman_choice", comparison_strategy='substring'):
+def prepare_oe_calibration_query(tokenizer, true, pred, questions, format="roman_choice", comparison_strategy='substring', prior_comparison_results=None):
 
     # calculate accuracy
-    if comparison_strategy == 'substring':
-        comparison_fn = lambda t,p,q: t in p
-    elif 'fuzzy' in comparison_strategy:
-        comparison_fn = lambda t,p: evaluate_equivalency_with_oracle(
-            t,
-            p,
-            q,
-            oracle_fn=openai_query,
-            oracle_kwargs={'openai_model_name': comparison_strategy.split('_')[1]}
-        )
+    if prior_comparison_results is not None:
+        acc = prior_comparison_results
     else:
-        raise ValueError(f'Invalid comparison strategy {comparison_strategy}') 
-    acc = [comparison_fn(t,p,q) for t, p, q in zip(true, pred, questions)]
+        if comparison_strategy == 'substring':
+            comparison_fn = lambda t,p,q: t in p
+        elif 'fuzzy' in comparison_strategy:
+            comparison_fn = lambda t,p,q: evaluate_equivalency_with_oracle(
+                t,
+                p,
+                q,
+                oracle_fn=openai_query,
+                oracle_kwargs={'openai_model_name': comparison_strategy.split('_')[1]}
+            )
+        else:
+            raise ValueError(f'Invalid comparison strategy {comparison_strategy}') 
+        acc = [comparison_fn(t,p,q) for t, p, q in zip(true, pred, questions)]
 
     if format == "bool":
         ## NOTE: Probably don't use, often seems to be biased towards a yes.

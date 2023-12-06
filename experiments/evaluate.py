@@ -27,6 +27,7 @@ def main(
     use_dataset_cache=True,
     prompt_style="choice",
     output_row_path=None,
+    input_generation_path=None,
     mode=None,
 ):
     accelerator = Accelerator()
@@ -40,7 +41,8 @@ def main(
         "eval_kshot": eval_kshot,
         "prompt_style": prompt_style,
         "mode": mode,
-        "output_row_path": output_row_path
+        "output_row_path": output_row_path,
+        "input_generation_path": input_generation_path,
     }
     if accelerator.is_main_process:
         wandb.config.update(config)
@@ -102,6 +104,7 @@ def main(
                 use_cache=use_dataset_cache,
                 prompt_style=prompt_style,
                 output_row_path=output_row_path,
+                input_generation_path=input_generation_path,
                 evaluate_fn=mode,
             )
 
