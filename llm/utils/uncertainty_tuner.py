@@ -23,7 +23,7 @@ class UncertaintyTuner(Trainer):
         query_format: str = field(default="roman_choice")
         ref_adapter_name: str = field(default="_ref")
         unc_label_smoothing: float = field(default=0.0)
-        kl_type: str = field(default="reverse_kl")
+        kl_type: str = field(default="jsd")
         kl_decay: float = field(default=0.0)
         scale_temp: bool = field(default=False)
 

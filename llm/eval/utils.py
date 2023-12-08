@@ -66,12 +66,16 @@ def evaluate_dataset(
 
     if isinstance(evaluate_fn, str):
         if "oe_" in evaluate_fn:
-            assert(evaluate_fn[:3] == "oe_")
-            comparison_strategies = [evaluate_fn[3:]] # clip oe_
-            evaluate_fn = EVALUATE_MODE_FN_MAP['oe']
+            assert evaluate_fn[:3] == "oe_"
+            comparison_strategies = [evaluate_fn[3:]]  # clip oe_
+            evaluate_fn = EVALUATE_MODE_FN_MAP["oe"]
         elif "oe" == evaluate_fn:
-            comparison_strategies = ["substring", "fuzzy_gpt-4-0613", "fuzzy_gpt-3.5-turbo-1106"]
-            evaluate_fn = EVALUATE_MODE_FN_MAP['oe']
+            comparison_strategies = [
+                "substring",
+                "fuzzy_gpt-4-0613",
+                "fuzzy_gpt-3.5-turbo-1106",
+            ]
+            evaluate_fn = EVALUATE_MODE_FN_MAP["oe"]
         else:
             assert (
                 evaluate_fn in EVALUATE_MODE_FN_MAP.keys()
@@ -93,9 +97,10 @@ def evaluate_dataset(
                 accelerator=accelerator,
             ),
             prompt_style=prompt_style,
-
             comparison_strategies=comparison_strategies,
-            output_row_path=os.path.join(output_row_path, dataset, 'train.csv') if output_row_path is not None else None
+            output_row_path=os.path.join(output_row_path, dataset, "train.csv")
+            if output_row_path is not None
+            else None,
         )
         train_metrics["split"] = "train"
 
@@ -116,9 +121,10 @@ def evaluate_dataset(
                 accelerator=accelerator,
             ),
             prompt_style=prompt_style,
-
             comparison_strategies=comparison_strategies,
-            output_row_path=os.path.join(output_row_path, dataset, 'val.csv') if output_row_path is not None else None
+            output_row_path=os.path.join(output_row_path, dataset, "val.csv")
+            if output_row_path is not None
+            else None,
         )
         val_metrics["split"] = "validation"
 
@@ -139,9 +145,10 @@ def evaluate_dataset(
                 accelerator=accelerator,
             ),
             prompt_style=prompt_style,
-
             comparison_strategies=comparison_strategies,
-            output_row_path=os.path.join(output_row_path, dataset, 'test.csv') if output_row_path is not None else None
+            output_row_path=os.path.join(output_row_path, dataset, "test.csv")
+            if output_row_path is not None
+            else None,
         )
         test_metrics["split"] = "test"
 
