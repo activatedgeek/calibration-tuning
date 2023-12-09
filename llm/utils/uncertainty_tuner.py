@@ -20,6 +20,7 @@ from ..models.peft import save_temperature_scaled_model
 class UncertaintyTuner(Trainer):
     @dataclass
     class Args(TrainingArguments):
+        use_lm_loss: bool = field(default=False)
         query_format: str = field(default="roman_choice")
         ref_adapter_name: str = field(default="_ref")
         unc_label_smoothing: float = field(default=0.0)
@@ -91,7 +92,9 @@ class UncertaintyTuner(Trainer):
         return loss
 
     def compute_loss(self, model, inputs, return_outputs=False):
-        _, outputs = super().compute_loss(model, inputs, return_outputs=True)
+        loss, outputs = super().compute_loss(model, inputs, return_outputs=True)
+        if not self.args.use_lm_loss:
+            loss = torch.tensor(0.0).to(loss.device)
 
         unc_loss = self.compute_unc_loss(model, inputs, outputs)
         if self.args.scale_temp:
@@ -99,9 +102,10 @@ class UncertaintyTuner(Trainer):
         else:
             kl_loss = self.compute_kl_loss(model, inputs, outputs)
 
-        total_loss = unc_loss + self.args.kl_decay * kl_loss
+        total_loss = loss + unc_loss + self.args.kl_decay * kl_loss
 
         loss_metrics = {
+            "lm_loss": loss.detach().item(),
             "unc_loss": unc_loss.detach().item(),
             "kl_loss": kl_loss.detach().item(),
         }
