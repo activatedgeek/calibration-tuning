@@ -8,8 +8,11 @@ import wandb
 from accelerate import PartialState as AcceleratorState
 
 
-WANDB_KWARGS_NAME = "wandb_args.json"
+WANDB_ENTITY_NAME = "WANDB_ENTITY"
+WANDB_PROJECT_NAME = "WANDB_PROJECT"
 WANDB_SWEEP_ID_NAME = "WANDB_SWEEP_ID"
+WANDB_RUN_ID_NAME = "WANDB_RUN_ID"
+WANDB_KWARGS_NAME = "wandb_args.json"
 
 
 class Timer:
@@ -153,12 +156,34 @@ def set_logging(log_dir=None, metrics_extra_key="metrics", generate_log_dir=Fals
 
 
 def maybe_load_wandb_kwargs(path):
+    wandb_kwargs = {}
+
+    ## For resuming runs.
+    if WANDB_RUN_ID_NAME in os.environ:
+        api = wandb.Api()
+        run_path = "/".join(
+            [
+                os.environ.get(WANDB_ENTITY_NAME),
+                os.environ.get(WANDB_PROJECT_NAME),
+                os.environ.get(WANDB_RUN_ID_NAME),
+            ]
+        )
+        run = api.run(run_path)
+        wandb_kwargs = {
+            **wandb_kwargs,
+            **{k: v for k, v in run.config.items() if v is not None},
+        }
+
+    ## For syncing across distributed processes.
     wandb_kwargs_path = f"{path}/{WANDB_KWARGS_NAME}"
     if os.path.isfile(wandb_kwargs_path):
         with open(wandb_kwargs_path) as f:
-            wandb_kwargs = json.load(f)
-        return wandb_kwargs
-    return {}
+            wandb_kwargs = {
+                **wandb_kwargs,
+                **{k: v for k, v in json.load(f).items() if v is not None},
+            }
+
+    return wandb_kwargs
 
 
 def entrypoint(main):
