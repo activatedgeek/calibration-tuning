@@ -153,6 +153,153 @@ def evaluate_oe(
     return return_dict
 
 
+@torch.inference_mode()
+def evaluate_oe_uncertainty_sampling(
+    accelerator,
+    model,
+    tokenizer,
+    loader,
+    prompt_style="oe",
+    query_format="roman_choice",
+    comparison_strategies=None,
+    max_new_tokens=30,
+    output_row_path=None,
+    top_p = 0.95,
+    k = 5
+):
+    assert(prompt_style=="oe")
+    assert((not comparison_strategies is None) and len(comparison_strategies) > 0)
+    device = accelerator.device
+    collate_fn = DataCollatorForSupervisedDataset(tokenizer)
+
+    query_token_vec = None
+    # all_oe_inputs = []
+    all_prob = {c : [] for c in comparison_strategies}
+    all_prob_vectors = []
+    all_acc = {c : [] for c in comparison_strategies}
+    all_oe_target_strings, all_output_strings, all_question_strings = [], [], []
+
+    for inputs in tqdm(loader, leave=False):
+        inputs = prepare_batch(tokenizer, inputs, prompt_style=prompt_style)
+        inputs = collate_fn(inputs)
+
+        # get the target separation between prompt and answer
+        target_start_idx, oe_inputs, oe_targets = extract_oe_inputs(tokenizer, inputs)
+        oe_inputs = collate_fn(oe_inputs)
+        oe_inputs = {k: v.to(device) for k, v in oe_inputs.items()}
+
+        # these are the ground truth strings for this batch
+        oe_target_strings = tokenizer.batch_decode(oe_targets, skip_special_tokens=True, clean_up_tokenization_spaces=False)
+        
+
+        if isinstance(model, PeftModel):
+            model.set_adapter("default")
+
+        # generate 30 more tokens
+
+        outputs_list = []
+        for i in range(k):
+            
+            outputs = model.generate(
+                **oe_inputs, max_new_tokens=max_new_tokens,
+                top_p = top_p,
+                do_sample = True
+            )
+
+            assert(len(outputs) == 1)
+
+            outputs_list.append(outputs[0,target_start_idx:])
+
+        outputs_list_length_normalized = np.array([
+            np.exp(np.sum(np.log(o.detach().cpu().numpy())) / len(o)) for o in outputs_list
+        ])
+
+        argmax_i = np.argmax(outputs_list_length_normalized)
+
+        prob = outputs_list_length_normalized[argmax_i] / np.sum(outputs_list_length_normalized)
+
+        outputs_argmax = outputs_list[argmax_i].unsqueeze(dim=0)
+
+        # outputs = model.generate(**oe_inputs, max_new_tokens=max_new_tokens)
+
+        # convert those new tokens to the generated strings 
+        output_strings = tokenizer.batch_decode(outputs_argmax, skip_special_tokens=True, clean_up_tokenization_spaces=False)
+
+        question_strings = tokenizer.batch_decode(oe_inputs['input_ids'], skip_special_tokens=True, clean_up_tokenization_spaces=False)
+
+        # prepare the calibration query with open ended text
+        # the calculation of the accuracy is done within this function
+        for c in comparison_strategies:
+            _, _, acc = prepare_oe_calibration_query(
+                tokenizer, oe_target_strings, output_strings, question_strings, format=query_format, comparison_strategy=c
+            )
+
+            acc = acc.to(device)
+
+            [
+                l.append(v)
+                for l, v in zip(
+                    (all_prob[c], all_acc[c]),
+                    accelerator.gather_for_metrics((prob, acc)),
+                )
+            ]          
+
+        [
+            l.append(v)
+            for l, v in zip(
+                (all_oe_target_strings, all_output_strings, all_question_strings, all_prob_vectors),
+                accelerator.gather_for_metrics((oe_target_strings, output_strings, question_strings, outputs_list_length_normalized)),
+            )
+        ]          
+
+    return_dict = {
+        "N": len(all_oe_target_strings),
+    }
+
+    all_oe_target_strings, all_output_strings, all_question_strings = sum(all_oe_target_strings, []), sum(all_output_strings, []), sum(all_question_strings, [])
+    dump = {
+        "oe_target_strings": all_oe_target_strings, 
+        "output_strings": all_output_strings,
+        "question_strings": all_question_strings,
+        "all_prob_vectors": all_prob_vectors
+    }
+
+    for c in comparison_strategies:
+
+        all_acc_c = np.concatenate([c.cpu() for c in all_acc[c]], axis=0)
+
+        acc = all_acc_c.mean()
+        # import pdb; pdb.set_trace()
+        assert(len(all_prob[c]) == len(all_acc_c))
+        ece, _ = calibration(
+            np.ones_like(all_prob[c]),
+            all_acc_c.astype(dtype=np.dtype('i4')),
+            np.array(all_prob[c]),
+        )
+
+
+        return_dict.update(
+            {
+                f"{c}_acc": acc.item(),
+                f"{c}_ece": ece,
+            }
+        )
+
+        dump.update(
+            {
+                f"{c}_acc": all_acc_c,
+                # f"{c}_all_unc_y": all_unc_y_c.cpu().numpy(),
+                # f"{c}_all_unc_y_hat": all_unc_y_hat.cpu().numpy(),
+            }
+        )
+
+    if output_row_path is not None:
+        pd.DataFrame(dump).to_csv(output_row_path, escapechar='\\')
+
+
+    return return_dict
+
+
 # https://github.com/tonyzhaozh/few-shot-learning/blob/e04d8643be91c2cce63f33e07760ff75d5aa3ad0/run_extraction.py#L144C9-L144C9
 # Using the hack of contextual calibration for generation tasks from the original paper.
 # Calibrate first token of generation against first token of ground truth, then greedily decode the rest of the sequence BASED ON THE CALIBRATED TOKEN.
@@ -337,13 +484,7 @@ def evaluate_contextual_calibration_oe(
 
             acc = acc.to(device)
 
-            [
-                l.append(v)
-                for l, v in zip(
-                    (all_acc[c]),
-                    accelerator.gather_for_metrics((acc)),
-                )
-            ]          
+            all_acc[c].append(accelerator.gather_for_metrics(acc))   
 
         [
             l.append(v)
@@ -354,7 +495,16 @@ def evaluate_contextual_calibration_oe(
         ]          
 
     for c in comparison_strategies:
-        return_dict[f"{c}_acc"] = np.array(all_acc[c]).mean()
+        all_acc_c = np.array([e.cpu().numpy() for e in all_acc[c]]).flatten()
+        return_dict[f"{c}_acc"] = np.sum(all_acc_c)/len(all_acc_c)
+
+        c_ece, _ = calibration(
+            np.ones_like(all_acc_c),
+            all_acc_c,
+            all_cal_p[torch.arange(all_cal_p.size(0)), all_cal_y_hat].cpu().numpy()
+        )
+
+        return_dict[f"{c}_ece"] = c_ece
 
     return return_dict
     

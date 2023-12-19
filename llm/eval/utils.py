@@ -9,12 +9,14 @@ from .eos import (
 )
 from .oe import (
     evaluate_oe,
-    evaluate_contextual_calibration_oe
+    evaluate_contextual_calibration_oe,
+    evaluate_oe_uncertainty_sampling
 )
 
 EVALUATE_MODE_FN_MAP = {
     "eos": evaluate_via_eos,
     "oe": evaluate_oe,
+    "us_oe": evaluate_oe_uncertainty_sampling,
     "cc_oe": evaluate_contextual_calibration_oe,
     "cc_eos": evaluate_contextual_calibration_via_eos,
     "cand_eos": evaluate_candidate_via_eos,
@@ -71,10 +73,21 @@ def evaluate_dataset(
             assert evaluate_fn[:6] == "cc_oe_"
             comparison_strategies = [evaluate_fn[6:]]  # clip cc_oe_
             evaluate_fn = EVALUATE_MODE_FN_MAP["cc_oe"]
+        elif "us_oe_" in evaluate_fn:
+            assert evaluate_fn[:6] == "us_oe_"
+            comparison_strategies = [evaluate_fn[6:]]  # clip us_oe_
+            evaluate_fn = EVALUATE_MODE_FN_MAP["us_oe"]
         elif "oe_" in evaluate_fn:
             assert evaluate_fn[:3] == "oe_"
             comparison_strategies = [evaluate_fn[3:]]  # clip oe_
             evaluate_fn = EVALUATE_MODE_FN_MAP["oe"]
+        elif "us_oe" == evaluate_fn:
+            comparison_strategies = [
+                "substring",
+                # "fuzzy_gpt-4-0613",
+                "fuzzy_gpt-3.5-turbo-1106",
+            ]
+            evaluate_fn = EVALUATE_MODE_FN_MAP["us_oe"]
         elif "cc_oe" == evaluate_fn:
             comparison_strategies = [
                 "substring",

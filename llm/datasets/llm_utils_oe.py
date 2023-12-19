@@ -1,6 +1,8 @@
 from openai import ChatCompletion
 from openai.error import RateLimitError, APIError, Timeout, ServiceUnavailableError
 import torch
+import logging
+import time
 
 from .llm_utils import (
     get_token_vec,
@@ -105,7 +107,7 @@ def prepare_oe_calibration_query(tokenizer, true, pred, questions, format="roman
     if comparison_strategy == 'substring':
         comparison_fn = lambda t,p,q: t in p
     elif 'fuzzy' in comparison_strategy:
-        comparison_fn = lambda t,p: evaluate_equivalency_with_oracle(
+        comparison_fn = lambda t,p,q: evaluate_equivalency_with_oracle(
             t,
             p,
             q,
