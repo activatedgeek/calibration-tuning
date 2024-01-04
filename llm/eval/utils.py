@@ -7,10 +7,7 @@ from .eos import (
     evaluate_candidate_via_eos,
     evaluate_via_eos,
 )
-from .oe import (
-    evaluate_oe,
-    evaluate_contextual_calibration_oe
-)
+from .oe import evaluate_oe, evaluate_contextual_calibration_oe
 
 EVALUATE_MODE_FN_MAP = {
     "eos": evaluate_via_eos,
@@ -36,14 +33,11 @@ def evaluate_dataset(
     eval_kshot=None,
     use_cache=True,
     prompt_style="choice",
-    output_row_path=None,
+    log_dir=None,
     evaluate_fn="eos",
 ):
     ## FIXME: See https://github.com/huggingface/transformers/issues/25790#issuecomment-1695846805.
     assert batch_size == 1, "Only support batch_size 1. See code comments."
-
-    if output_row_path is not None:
-        os.makedirs(os.path.join(output_row_path, dataset), exist_ok=True)
 
     if dataset is not None:
         with accelerator.main_process_first():
@@ -111,8 +105,8 @@ def evaluate_dataset(
             ),
             prompt_style=prompt_style,
             comparison_strategies=comparison_strategies,
-            output_row_path=os.path.join(output_row_path, dataset, "train.csv")
-            if output_row_path is not None
+            output_row_path=os.path.join(log_dir, dataset, "train.csv")
+            if log_dir is not None
             else None,
         )
         train_metrics["split"] = "train"
@@ -135,8 +129,8 @@ def evaluate_dataset(
             ),
             prompt_style=prompt_style,
             comparison_strategies=comparison_strategies,
-            output_row_path=os.path.join(output_row_path, dataset, "val.csv")
-            if output_row_path is not None
+            output_row_path=os.path.join(log_dir, dataset, "val.csv")
+            if log_dir is not None
             else None,
         )
         val_metrics["split"] = "validation"
@@ -159,8 +153,8 @@ def evaluate_dataset(
             ),
             prompt_style=prompt_style,
             comparison_strategies=comparison_strategies,
-            output_row_path=os.path.join(output_row_path, dataset, "test.csv")
-            if output_row_path is not None
+            output_row_path=os.path.join(log_dir, dataset, "test.csv")
+            if log_dir is not None
             else None,
         )
         test_metrics["split"] = "test"
