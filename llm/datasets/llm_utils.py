@@ -39,7 +39,7 @@ class LMText:
     target: str = ""
     target_prompt: str = ""
     prompt: str = ""
-    source_dataset: str = ""
+    source_dataset: str = None
 
     def __str__(self):
         return self.prompt + self.context + self.target_prompt + self.target

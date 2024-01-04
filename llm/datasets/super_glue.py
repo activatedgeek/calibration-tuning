@@ -154,17 +154,18 @@ def get_multirc(
     def __format_sample(sample, tokenizer, style):
         target_prompt = "\nAnswer: "
 
-        if style == "choice":
-            paragraph = sample["paragraph"]
-            question = sample["question"]
-            answer_map = ["No", "Yes"]
+        paragraph = sample["paragraph"]
+        question = sample["question"]
+        answer = sample["answer"]
+        answer_map = ["No", "Yes"]
 
+        if style == "choice":
             context = "\n".join(
                 [
                     "Paragraph:",
                     paragraph,
                     f"\nQ: {question}",
-                    f"\nA: {sample['answer']}" "\n\nChoices:",
+                    f"\nA: {answer}" "\n\nChoices:",
                     *[
                         f"  ({n}): {c}"
                         for n, c in zip(
@@ -175,6 +176,18 @@ def get_multirc(
             )
 
             target = string.ascii_lowercase[sample["label"]] + tokenizer.eos_token
+        elif style == "oe":
+            context = "\n".join(
+                [
+                    "Paragraph:",
+                    paragraph,
+                    f"\nQuestion: {question}",
+                    f"\nAnswer: {answer}",
+                    "Is this answer correct? Respond with a Yes or No only.",
+                ]
+            )
+
+            target = answer_map[sample["label"]] + tokenizer.eos_token
         else:
             raise NotImplementedError
 
