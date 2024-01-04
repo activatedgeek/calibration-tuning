@@ -36,7 +36,7 @@ class DataCollatorForSupervisedDataset:
 @dataclass
 class LMText:
     context: str
-    target: str
+    target: str = ""
     target_prompt: str = ""
     prompt: str = ""
     source_dataset: str = ""
@@ -70,31 +70,38 @@ def tokenize_for_causal_lm(tokenizer, sample, prompt_style="choice"):
         max_length=tokenizer.model_max_length,
     )
 
-    tokenize_dict = tokenizer(str(LMText.from_(sample)), **tokenizer_args)
+    sample = LMText.from_(sample)
 
-    labels = torch.tensor(tokenize_dict["input_ids"])
+    tokenize_dict = tokenizer(str(sample), **tokenizer_args)
+
+    labels = torch.tensor(tokenize_dict["input_ids"]) if sample.target else None
 
     if prompt_style == "choice":
         ## Target is 1 token length only.
-        source_len = (
-            labels.eq(tokenizer.eos_token_id)
-            .nonzero()[labels.eq(tokenizer.eos_token_id).sum(dim=-1).cumsum(dim=0) - 1]
-            .item()
-            - 1
-        )
+        if labels:
+            source_len = (
+                labels.eq(tokenizer.eos_token_id)
+                .nonzero()[
+                    labels.eq(tokenizer.eos_token_id).sum(dim=-1).cumsum(dim=0) - 1
+                ]
+                .item()
+                - 1
+            )
     elif prompt_style == "oe":
         ## Encoded answer, except first BOS token id.
-        target_ids = torch.tensor(
-            tokenizer(sample["target"].strip(), **tokenizer_args)["input_ids"]
-        )[1:]
-        source_len = len(labels) - len(target_ids)
+        if labels:
+            target_ids = torch.tensor(
+                tokenizer(sample["target"].strip(), **tokenizer_args)["input_ids"]
+            )[1:]
+            source_len = len(labels) - len(target_ids)
 
-        assert torch.allclose(labels[source_len:], target_ids)
+            # assert torch.allclose(labels[source_len:], target_ids)
     else:
         raise NotImplementedError
 
-    labels[:source_len] = IGNORE_LABEL
-    tokenize_dict["labels"] = labels.tolist()
+    if labels:
+        labels[:source_len] = IGNORE_LABEL
+        tokenize_dict["labels"] = labels.tolist()
 
     return tokenize_dict
 

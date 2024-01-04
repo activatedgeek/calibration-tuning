@@ -160,17 +160,21 @@ def cal_sub_200k(*args, **kwargs):
     return vl, None, None
 
 
-@register_dataset
-def sub_200k_c(*args, **kwargs):
+## NOTE: see registered version for usage.
+def sub_dataset_c(*args, **kwargs):
     all_dataset_names = get_all_datasets_list("all:train")
     all_dataset_names = all_dataset_names[len(all_dataset_names) // 2 :]
     tr, _, _ = get_combined_dataset(
         all_dataset_names=all_dataset_names,
         *args,
         **kwargs,
-        max_n=800_000,
     )
     return tr, None, None
+
+
+@register_dataset
+def sub_200k_c(*args, max_n=None, **kwargs):
+    return sub_dataset_c(*args, max_n=800_000, **kwargs)
 
 
 @register_dataset
