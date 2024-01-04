@@ -32,13 +32,11 @@ def get_cb(
         dataset.cleanup_cache_files()
 
     def __format_sample(sample, tokenizer, style):
-        target_prompt = "\nAnswer: "
+        premise = sample["premise"]
+        hypothesis = sample["hypothesis"]
+        answer_map = ["Yes", "No", "It's impossible to say"]
 
         if style == "choice":
-            premise = sample["premise"]
-            hypothesis = sample["hypothesis"]
-            answer_map = ["Yes", "No", "It's impossible to say"]
-
             context = "\n".join(
                 [
                     "Premise:",
@@ -55,7 +53,20 @@ def get_cb(
                 ]
             )
 
+            target_prompt = "\nAnswer: "
             target = string.ascii_lowercase[sample["label"]] + tokenizer.eos_token
+        elif style == "oe":
+            context = "\n".join(
+                [
+                    "Premise:",
+                    premise,
+                    "\nHypothesis:",
+                    hypothesis,
+                ]
+            )
+
+            target_prompt = "\nIs the hypothesis correct? "
+            target = answer_map[sample["label"]] + tokenizer.eos_token
         else:
             raise NotImplementedError
 
@@ -287,10 +298,10 @@ def get_copa(
     def __format_sample(sample, tokenizer, style):
         target_prompt = "\nAnswer: "
 
-        if style == "choice":
-            premise = sample["premise"]
-            answer_map = [sample["choice1"], sample["choice2"]]
+        premise = sample["premise"]
+        answer_map = [sample["choice1"], sample["choice2"]]
 
+        if style == "choice":
             context = "\n".join(
                 [
                     "Premise:",
@@ -306,6 +317,15 @@ def get_copa(
             )
 
             target = string.ascii_lowercase[sample["label"]] + tokenizer.eos_token
+        elif style == "oe":
+            context = "\n".join(
+                [
+                    "Premise:",
+                    premise,
+                ]
+            )
+
+            target = answer_map[sample["label"]] + tokenizer.eos_token
         else:
             raise NotImplementedError
 
