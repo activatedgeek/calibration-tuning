@@ -39,6 +39,7 @@ class LMText:
     target: str
     target_prompt: str = ""
     prompt: str = ""
+    source_dataset: str = ""
 
     def __str__(self):
         return self.prompt + self.context + self.target_prompt + self.target
@@ -56,7 +57,7 @@ class LMText:
 
         assert isinstance(
             instance, dict
-        ), "Could not convert instance to dict. Found {type(instance)}"
+        ), f"Could not convert instance to dict. Found {type(instance)}"
 
         return LMText(**instance)
 
