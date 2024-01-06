@@ -77,8 +77,8 @@ def tokenize_for_causal_lm(tokenizer, sample, prompt_style="choice"):
     labels = torch.tensor(tokenize_dict["input_ids"]) if sample.target else None
 
     if prompt_style == "choice":
-        ## Target is 1 token length only.
-        if labels:
+        if labels is not None:
+            ## Target is 1 token length only.
             source_len = (
                 labels.eq(tokenizer.eos_token_id)
                 .nonzero()[
@@ -88,10 +88,10 @@ def tokenize_for_causal_lm(tokenizer, sample, prompt_style="choice"):
                 - 1
             )
     elif prompt_style == "oe":
-        ## Encoded answer, except first BOS token id.
-        if labels:
+        if labels is not None:
+            ## Encoded answer, except first BOS token id.
             target_ids = torch.tensor(
-                tokenizer(sample["target"].strip(), **tokenizer_args)["input_ids"]
+                tokenizer(sample.target.strip(), **tokenizer_args)["input_ids"]
             )[1:]
             source_len = len(labels) - len(target_ids)
 
@@ -99,7 +99,7 @@ def tokenize_for_causal_lm(tokenizer, sample, prompt_style="choice"):
     else:
         raise NotImplementedError
 
-    if labels:
+    if labels is not None:
         labels[:source_len] = IGNORE_LABEL
         tokenize_dict["labels"] = labels.tolist()
 
