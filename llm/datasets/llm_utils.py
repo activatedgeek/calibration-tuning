@@ -67,7 +67,7 @@ def tokenize_for_causal_lm(tokenizer, sample, prompt_style="choice"):
     tokenizer_args = dict(
         padding="longest",
         truncation=True,
-        max_length=tokenizer.model_max_length,
+        # max_length=tokenizer.model_max_length,
     )
 
     sample = LMText.from_(sample)
