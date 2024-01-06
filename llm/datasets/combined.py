@@ -20,7 +20,7 @@ def get_all_datasets_list(dataset_str):
                 list(
                     filter(
                         lambda x: not any(
-                            s in x for s in ["all", "sub", "mmlu", "bbmc"]
+                            s in x for s in ["all", "sub", "mmlu", "bbmc", "offline"]
                         ),
                         list_datasets(),
                     )
