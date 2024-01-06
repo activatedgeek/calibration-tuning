@@ -99,7 +99,9 @@ def get_hellaswag(
     from datasets import load_dataset
 
     dataset = load_dataset(
-        "hellaswag", cache_dir=os.environ.get("HF_DATASETS_CACHE", root)
+        "hellaswag",
+        trust_remote_code=True,
+        cache_dir=os.environ.get("HF_DATASETS_CACHE", root),
     )
     if not use_cache:
         dataset.cleanup_cache_files()
