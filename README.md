@@ -76,7 +76,6 @@ To create a CSV dataset of open-ended generations,
     --model-name=llama2_7b \
     --peft-dir=</optional/path/to/checkpoint/dir> \
     --dataset=sub_100_c \
-    --prompt-style=oe \
     --batch-size=10 \
     --log-dir=</path/to/log_dir>
 ```
