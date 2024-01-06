@@ -189,12 +189,17 @@ def generate_label(accelerator, model, tokenizer, loader):
     if isinstance(model, PeftModel):
         model.set_adapter("default")
 
-    collate_fn = DataCollatorForSupervisedDataset(tokenizer)
-
     for raw_inputs in tqdm(loader):
-        ## TODO: Generate binary labels here.
+        raw_inputs = [
+            dict(zip(raw_inputs.keys(), vals)) for vals in zip(*raw_inputs.values())
+        ]
 
-        yield from []
+        ## TODO: Generate real binary labels here.
+        raw_outputs = [
+            {**item, "label": torch.randint(2, (1,)).item()} for item in raw_inputs
+        ]
+
+        yield from raw_outputs
 
 
 def generate_labels_main(
