@@ -163,7 +163,7 @@ def get_token_vec(tokenizer, format="roman_choice"):
     return _create_vec(raw_strings)
 
 
-def prepare_batch(tokenizer, inputs, prompt_style="choice"):
+def prepare_batch(tokenizer, inputs, **kwargs):
     """
     Assumes dictionary inputs with item values as lists.
     """
@@ -174,7 +174,7 @@ def prepare_batch(tokenizer, inputs, prompt_style="choice"):
         tokenize_for_causal_lm(
             tokenizer,
             dict(zip(inputs.keys(), vals)),
-            prompt_style=prompt_style,
+            **kwargs,
         )
         for vals in zip(*inputs.values())
     ]

@@ -108,6 +108,7 @@ def get_story_cloze(
         "2018",
         data_dir=f"{os.environ.get('HF_DATASETS_CACHE', root)}/story_cloze",
         cache_dir=os.environ.get("HF_DATASETS_CACHE", root),
+        trust_remote_code=True,
     )
     if not use_cache:
         dataset.cleanup_cache_files()

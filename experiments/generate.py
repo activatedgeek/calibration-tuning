@@ -65,36 +65,41 @@ def generate_output(
 
     collate_fn = DataCollatorForSupervisedDataset(tokenizer)
 
-    for raw_inputs in tqdm(loader):
-        ## Skip "target" for generation.
-        model_inputs = {k: v for k, v in raw_inputs.items() if k != "target"}
-        model_inputs = prepare_batch(tokenizer, model_inputs, prompt_style=prompt_style)
+    for inputs in tqdm(loader):
+        generation_inputs = prepare_batch(
+            tokenizer,
+            ## Skip "target" for generation.
+            {k: v for k, v in inputs.items() if k != "target"},
+            prompt_style=prompt_style,
+        )
+        generation_inputs = {
+            k: v.to(accelerator.device)
+            for k, v in collate_fn(generation_inputs).items()
+        }
 
-        model_inputs = collate_fn(model_inputs)
-        model_inputs = {k: v.to(accelerator.device) for k, v in model_inputs.items()}
-
-        model_outputs = model.generate(
-            **model_inputs, generation_config=generation_config
+        generation_outputs = model.generate(
+            **generation_inputs, generation_config=generation_config
+        )
+        generation_outputs = tokenizer.batch_decode(
+            generation_outputs,
+            skip_special_tokens=True,
+            clean_up_tokenization_spaces=False,
         )
 
-        raw_model_outputs = tokenizer.batch_decode(
-            model_outputs, skip_special_tokens=True, clean_up_tokenization_spaces=False
-        )
-
-        raw_model_inputs = [
-            LMText(**{**dict(zip(raw_inputs.keys(), vals)), "target": ""})
-            for vals in zip(*raw_inputs.values())
+        outputs = [
+            LMText(**{**dict(zip(inputs.keys(), vals)), "target": ""})
+            for vals in zip(*inputs.values())
         ]
-        raw_outputs = [
+        outputs = [
             {
                 **s.to_pydict(),
-                "target": raw_inputs["target"][i],
+                "target": inputs["target"][i],
                 "output": t[len(str(s)) :],
             }
-            for i, (s, t) in enumerate(zip(raw_model_inputs, raw_model_outputs))
+            for i, (s, t) in enumerate(zip(outputs, generation_outputs))
         ]
 
-        yield from raw_outputs
+        yield from outputs
 
 
 def generate_outputs_main(
@@ -189,17 +194,13 @@ def generate_label(accelerator, model, tokenizer, loader):
     if isinstance(model, PeftModel):
         model.set_adapter("default")
 
-    for raw_inputs in tqdm(loader):
-        raw_inputs = [
-            dict(zip(raw_inputs.keys(), vals)) for vals in zip(*raw_inputs.values())
-        ]
+    for inputs in tqdm(loader):
+        inputs = [dict(zip(inputs.keys(), vals)) for vals in zip(*inputs.values())]
 
         ## TODO: Generate real binary labels here.
-        raw_outputs = [
-            {**item, "label": torch.randint(2, (1,)).item()} for item in raw_inputs
-        ]
+        outputs = [{**item, "label": torch.randint(2, (1,)).item()} for item in inputs]
 
-        yield from raw_outputs
+        yield from outputs
 
 
 def generate_labels_main(
