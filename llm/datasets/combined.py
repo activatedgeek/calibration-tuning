@@ -132,6 +132,14 @@ def all_200k_c(*args, max_n=200_000, **kwargs):
     return tr, None, None
 
 
+## NOTE: Restricted subset of the full data.
+@register_dataset
+def all_200k_c_offline(*args, max_n=200_000, **kwargs):
+    tr, _, _ = all_200k_c(*args, **kwargs)
+    tr = tr.select(range(max_n))
+    return tr, None, None
+
+
 @register_dataset
 def sub_200k(*args, max_n=200_000, **kwargs):
     all_dataset_names = get_all_datasets_list("all:train")
@@ -173,10 +181,12 @@ def sub_200k_c(*args, max_n=800_000, **kwargs):
     return tr, None, None
 
 
-## NOTE: for debugging.
+## NOTE: Restricted subset of the full data.
 @register_dataset
-def sub_100_c(*args, max_n=100, **kwargs):
-    return sub_200k_c(*args, max_n=max_n, **kwargs)
+def sub_200k_c_offline(*args, max_n=200_000, **kwargs):
+    tr, _, _ = sub_200k_c(*args, **kwargs)
+    tr = tr.select(range(max_n))
+    return tr, None, None
 
 
 @register_dataset
