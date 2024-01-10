@@ -30,6 +30,12 @@ class DataCollatorForSupervisedDataset:
             )
             batch_dict["labels"] = labels
 
+        if "query_label" in instances[0].keys():
+            query_labels = [
+                torch.tensor(instance["query_label"]) for instance in instances
+            ]
+            batch_dict["query_label"] = query_labels
+
         return batch_dict
 
 
@@ -39,7 +45,11 @@ class LMText:
     target: str = ""
     target_prompt: str = ""
     prompt: str = ""
+
+    ## Misc.
     source_dataset: str = None
+    output: str = None
+    query_label: int = None
 
     def __str__(self):
         return self.prompt + self.context + self.target_prompt + self.target
@@ -102,6 +112,9 @@ def tokenize_for_causal_lm(tokenizer, sample, prompt_style="choice"):
     if labels is not None:
         labels[:source_len] = IGNORE_LABEL
         tokenize_dict["labels"] = labels.tolist()
+
+    if sample.query_label is not None:
+        tokenize_dict["query_label"] = sample.query_label
 
     return tokenize_dict
 

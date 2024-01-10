@@ -21,7 +21,7 @@ def get_offline(
         dataset.cleanup_cache_files()
 
     def _replace_none(x):
-        return {k: v or "" for k, v in x.items()}
+        return {k: "" if v is None else v for k, v in x.items()}
 
     train_data = dataset["train"].map(
         _replace_none,

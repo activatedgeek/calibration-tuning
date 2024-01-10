@@ -22,6 +22,7 @@ class UncertaintyTuner(Trainer):
     class Args(TrainingArguments):
         use_lm_loss: bool = field(default=False)
         query_format: str = field(default="roman_choice")
+        query_labels_name: str = field(default="query_label")
         ref_adapter_name: str = field(default="_ref")
         unc_label_smoothing: float = field(default=0.0)
         kl_type: str = field(default="jsd")
@@ -92,10 +93,17 @@ class UncertaintyTuner(Trainer):
         return loss
 
     def compute_loss(self, model, inputs, return_outputs=False):
+        query_labels = (
+            inputs.pop(self.args.query_labels_name)
+            if self.args.query_labels_name in inputs
+            else None
+        )
+
         loss, outputs = super().compute_loss(model, inputs, return_outputs=True)
         if not self.args.use_lm_loss:
             loss = torch.tensor(0.0).to(loss.device)
 
+        ## TODO: use query_labels when available.
         unc_loss = self.compute_unc_loss(model, inputs, outputs)
         if self.args.scale_temp:
             kl_loss = torch.tensor(0.0)
