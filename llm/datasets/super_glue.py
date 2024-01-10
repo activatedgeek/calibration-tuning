@@ -26,7 +26,10 @@ def get_cb(
     from datasets import load_dataset
 
     dataset = load_dataset(
-        "super_glue", "cb", cache_dir=os.environ.get("HF_DATASETS_CACHE", root)
+        "super_glue",
+        "cb",
+        cache_dir=os.environ.get("HF_DATASETS_CACHE", root),
+        trust_remote_code=True,
     )
     if not use_cache:
         dataset.cleanup_cache_files()
@@ -157,7 +160,10 @@ def get_multirc(
     from datasets import load_dataset
 
     dataset = load_dataset(
-        "super_glue", "multirc", cache_dir=os.environ.get("HF_DATASETS_CACHE", root)
+        "super_glue",
+        "multirc",
+        cache_dir=os.environ.get("HF_DATASETS_CACHE", root),
+        trust_remote_code=True,
     )
     if not use_cache:
         dataset.cleanup_cache_files()
@@ -290,7 +296,10 @@ def get_copa(
     from datasets import load_dataset
 
     dataset = load_dataset(
-        "super_glue", "copa", cache_dir=os.environ.get("HF_DATASETS_CACHE", root)
+        "super_glue",
+        "copa",
+        cache_dir=os.environ.get("HF_DATASETS_CACHE", root),
+        trust_remote_code=True,
     )
     if not use_cache:
         dataset.cleanup_cache_files()
