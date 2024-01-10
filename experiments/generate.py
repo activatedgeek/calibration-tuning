@@ -190,7 +190,7 @@ def generate_outputs_main(
         )
 
 
-def generate_label(accelerator, model, tokenizer, loader):
+def generate_query_label(accelerator, model, tokenizer, loader):
     if isinstance(model, PeftModel):
         model.set_adapter("default")
 
@@ -198,7 +198,9 @@ def generate_label(accelerator, model, tokenizer, loader):
         inputs = [dict(zip(inputs.keys(), vals)) for vals in zip(*inputs.values())]
 
         ## TODO: Generate real binary labels here.
-        outputs = [{**item, "label": torch.randint(2, (1,)).item()} for item in inputs]
+        outputs = [
+            {**item, "query_label": torch.randint(2, (1,)).item()} for item in inputs
+        ]
 
         yield from outputs
 
@@ -260,7 +262,7 @@ def generate_labels_main(
             accelerator=accelerator,
         )
 
-        label_generator = generate_label(
+        label_generator = generate_query_label(
             accelerator,
             model,
             tokenizer,
