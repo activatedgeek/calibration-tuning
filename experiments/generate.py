@@ -17,6 +17,7 @@ from llm.models import get_model
 from llm.models.peft import get_lora_model
 from llm.logging import entrypoint
 
+from llm.datasets.llm_utils_oe import prepare_oe_calibration_query
 
 def prepare_model(
     accelerator,
@@ -190,16 +191,45 @@ def generate_outputs_main(
         )
 
 
-def generate_query_label(accelerator, model, tokenizer, loader):
+def generate_query_label(accelerator, model, tokenizer, loader, query_format="roman_choice", comparison_strategy='substring'):
     if isinstance(model, PeftModel):
         model.set_adapter("default")
 
     for inputs in tqdm(loader):
-        inputs = [dict(zip(inputs.keys(), vals)) for vals in zip(*inputs.values())]
+        inputs_list = []
+        for i in range(len(inputs[next(iter(inputs))])):
+            new_dict = {key: value[i] for key, value in inputs.items()}
+            inputs_list.append(new_dict)
 
-        ## TODO: Generate real binary labels here.
+        question_strings = []
+        for x in inputs_list:
+            x.pop('target')
+            question_strings.append(str(LMText.from_(x)))
+
+        output_strings = inputs['output']
+        oe_target_strings = inputs['target']
+        # Find the rightmost occurrence of the eos token.
+        for i, x in enumerate(oe_target_strings):
+            index = x.rfind(tokenizer.eos_token)
+            if index != -1:
+                # Everything before the substring + everything after the substring
+                oe_target_strings[i] = x[:index]
+
+        _, _, acc = prepare_oe_calibration_query(
+            tokenizer, oe_target_strings, output_strings, question_strings, format=query_format, comparison_strategy=comparison_strategy
+        )
+
         outputs = [
-            {**item, "query_label": torch.randint(2, (1,)).item()} for item in inputs
+            LMText(**{**dict(zip(inputs.keys(), vals)), "target": ""})
+            for vals in zip(*inputs.values())
+        ]
+        outputs = [
+            {
+                **s.to_pydict(),
+                "target": inputs["target"][i],
+                "label": t.item(),
+            }
+            for i, (s, t) in enumerate(zip(outputs, acc))
         ]
 
         yield from outputs
