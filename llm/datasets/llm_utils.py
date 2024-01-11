@@ -232,9 +232,28 @@ def prepare_query(
         responses = tokenizer.batch_decode(response_ids)
         query_labels = y == y_hat
     else:
-        ## TODO: extract unlabeled input, and attach offline output for query construction.
+        labels = inputs.get("labels")
+
+        ctx_lengths = labels.eq(IGNORE_LABEL).nonzero()[
+            labels.eq(IGNORE_LABEL).sum(dim=-1).cumsum(dim=0) - 1
+        ][:, -1]
+
+        responses = [
+            tokenizer.decode(
+                inp[: ctx_len + 1],
+                skip_special_tokens=True,
+                clean_up_tokenization_spaces=False,
+            )
+            + tokenizer.decode(
+                out,
+                skip_special_tokens=True,
+                clean_up_tokenization_spaces=False,
+            )
+            for inp, out, ctx_len in zip(
+                inputs.get("input_ids"), offline_outputs, ctx_lengths
+            )
+        ]
         query_labels = offline_query_labels
-        raise NotImplementedError
 
     if format == "bool":
         ## NOTE: Probably don't use, often seems to be biased towards a yes.
