@@ -31,10 +31,19 @@ class DataCollatorForSupervisedDataset:
             batch_dict["labels"] = labels
 
         if "query_label" in instances[0].keys():
-            query_labels = [
-                torch.tensor(instance["query_label"]) for instance in instances
-            ]
+            query_labels = torch.tensor(
+                [instance["query_label"] for instance in instances]
+            )
             batch_dict["query_label"] = query_labels
+
+            output_ids = [
+                torch.tensor(instance["output_ids"]) for instance in instances
+            ]
+            output_ids = torch.nn.utils.rnn.pad_sequence(
+                output_ids, batch_first=True, padding_value=self.tokenizer.pad_token_id
+            )
+
+            batch_dict["output_ids"] = output_ids
 
         return batch_dict
 
@@ -42,9 +51,9 @@ class DataCollatorForSupervisedDataset:
 @dataclass
 class LMText:
     context: str
-    target: str = ""
-    target_prompt: str = ""
     prompt: str = ""
+    target_prompt: str = ""
+    target: str = ""
 
     ## Misc.
     source_dataset: str = None
@@ -116,6 +125,10 @@ def tokenize_for_causal_lm(tokenizer, sample, prompt_style="choice"):
     if sample.query_label is not None:
         tokenize_dict["query_label"] = sample.query_label
 
+        ## NOTE: Skip BOS token at start during tokenization of outputs.
+        output_tokenize_dict = tokenizer(sample.output, **tokenizer_args)
+        tokenize_dict["output_ids"] = output_tokenize_dict["input_ids"][1:]
+
     return tokenize_dict
 
 
@@ -124,7 +137,7 @@ def tokenize_datasets(tokenizer, *datasets, num_workers=8, **kwargs):
         data.map(
             lambda x: tokenize_for_causal_lm(tokenizer, x, **kwargs),
             num_proc=num_workers,
-            remove_columns=list(LMText.__annotations__.keys()),
+            # remove_columns=list(LMText.__annotations__.keys()),
         )
         if data is not None
         else None
@@ -193,20 +206,35 @@ def prepare_batch(tokenizer, inputs, **kwargs):
     ]
 
 
-def prepare_query(tokenizer, inputs, outputs, format="roman_choice"):
-    eos_idx, y, logits = extract_qa_exact(tokenizer, inputs, outputs=outputs)
-    y_hat = logits.argmax(dim=-1)
+def prepare_query(
+    tokenizer,
+    inputs,
+    outputs,
+    offline_outputs=None,
+    offline_query_labels=None,
+    format="roman_choice",
+):
+    if offline_query_labels is None:
+        eos_idx, y, logits = extract_qa_exact(tokenizer, inputs, outputs=outputs)
+        y_hat = logits.argmax(dim=-1)
 
-    response_ids = inputs.get("input_ids").clone()
-    response_ids[torch.arange(response_ids.size(0)), eos_idx] = y_hat
+        response_ids = inputs.get("input_ids").clone()
+        response_ids[torch.arange(response_ids.size(0)), eos_idx] = y_hat
 
-    ## Remove the initial BOS token to conflict with BOS added during tokenization.
-    assert (response_ids[:, 0] == tokenizer.bos_token_id).sum() == response_ids.size(
-        0
-    ), "Not all sequences start with BOS token. This should not happen."
-    response_ids = response_ids[:, 1:]
+        ## Remove the initial BOS token to conflict with BOS added during tokenization.
+        assert (
+            response_ids[:, 0] == tokenizer.bos_token_id
+        ).sum() == response_ids.size(
+            0
+        ), "Not all sequences start with BOS token. This should not happen."
+        response_ids = response_ids[:, 1:]
 
-    responses = tokenizer.batch_decode(response_ids)
+        responses = tokenizer.batch_decode(response_ids)
+        query_labels = y == y_hat
+    else:
+        ## TODO: extract unlabeled input, and attach offline output for query construction.
+        query_labels = offline_query_labels
+        raise NotImplementedError
 
     if format == "bool":
         ## NOTE: Probably don't use, often seems to be biased towards a yes.
@@ -219,7 +247,7 @@ def prepare_query(tokenizer, inputs, outputs, format="roman_choice"):
                 },
                 prompt_style="choice",
             )
-            for r, a in zip(responses, y == y_hat)
+            for r, a in zip(responses, query_labels)
         ]
     elif format == "alpha_choice":
         query_inputs = [
@@ -232,7 +260,7 @@ def prepare_query(tokenizer, inputs, outputs, format="roman_choice"):
                 },
                 prompt_style="choice",
             )
-            for r, a in zip(responses, y == y_hat)
+            for r, a in zip(responses, query_labels)
         ]
     elif format == "roman_choice":
         query_inputs = [
@@ -245,7 +273,7 @@ def prepare_query(tokenizer, inputs, outputs, format="roman_choice"):
                 },
                 prompt_style="choice",
             )
-            for r, a in zip(responses, y == y_hat)
+            for r, a in zip(responses, query_labels)
         ]
     else:
         raise NotImplementedError

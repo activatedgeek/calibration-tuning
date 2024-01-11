@@ -119,9 +119,7 @@ def main(
             report_to="wandb",
             dataloader_num_workers=4,
             scale_temp=scale_temp,
-            label_names=[UncertaintyTuner.Args.query_labels_name]
-            if UncertaintyTuner.Args.query_labels_name in train_data[0].keys()
-            else None,
+            label_names=["output_ids", "query_label"],
         ),
         train_dataset=tokenize_datasets(
             tokenizer, train_data, prompt_style=prompt_style
