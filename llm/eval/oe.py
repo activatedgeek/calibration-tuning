@@ -1,6 +1,7 @@
 from tqdm.auto import tqdm
 import torch
 from peft import PeftModel
+import pandas as pd
 
 from ..datasets.llm_utils import (
     DataCollatorForSupervisedDataset,
@@ -22,32 +23,28 @@ def evaluate_oe(
     tokenizer,
     loader,
     prompt_style="oe",
-    comparison_strategy="substring",
     query_format="roman_choice",
+    comparison_strategies=None,
+    max_new_tokens=30,
+    output_row_path=None,
 ):
     assert(prompt_style=="oe")
-
+    assert((not comparison_strategies is None) and len(comparison_strategies) > 0)
     device = accelerator.device
     collate_fn = DataCollatorForSupervisedDataset(tokenizer)
 
     query_token_vec = None
     all_oe_inputs = []
-    all_unc_y, all_unc_logits = [], []
-    all_acc = []
+    all_unc_y, all_unc_logits = {c : [] for c in comparison_strategies}, {c : [] for c in comparison_strategies}
+    all_acc = {c : [] for c in comparison_strategies}
+    all_oe_target_strings, all_output_strings, all_question_strings = [], [], []
 
-    # i = 0
+    # print(len(loader))
+    # print(1/0)
 
     for inputs in tqdm(loader, leave=False):
-        # i += 1
-
-        # if i < 5 or i > 10:
-        #     continue
-
-
         inputs = prepare_batch(tokenizer, inputs, prompt_style=prompt_style)
         inputs = collate_fn(inputs)
-
-        # print(tokenizer.batch_decode(inputs["input_ids"], skip_special_tokens=False, clean_up_tokenization_spaces=False)[0])
 
         # get the target separation between prompt and answer
         target_start_idx, oe_inputs, oe_targets = extract_oe_inputs(tokenizer, inputs)
@@ -62,120 +59,102 @@ def evaluate_oe(
             model.set_adapter("default")
 
         # generate 30 more tokens
-        outputs = model.generate(
-            **oe_inputs, 
-            max_new_tokens=30
-        )
+        outputs = model.generate(**oe_inputs, max_new_tokens=max_new_tokens)
 
         # convert those new tokens to the generated strings 
         output_strings = tokenizer.batch_decode(outputs[...,target_start_idx:], skip_special_tokens=True, clean_up_tokenization_spaces=False)
 
-        print("".join(30 * ["-"]))
-
-        print(output_strings)
-
         output_strings = [s.split("\n")[0].split(".")[0] for s in output_strings]
 
-        print(output_strings)
-        print(oe_target_strings)
-
-        print("".join(30 * ["-"]))
+        question_strings = tokenizer.batch_decode(oe_inputs['input_ids'], skip_special_tokens=True, clean_up_tokenization_spaces=False)
 
         # prepare the calibration query with open ended text
         # the calculation of the accuracy is done within this function
-        query_inputs, query_token_vec, acc = prepare_oe_calibration_query(
-            tokenizer, oe_target_strings, output_strings, format=query_format, comparison_strategy=comparison_strategy
-        )
-        acc = acc.to(device)
-        query_inputs = collate_fn(query_inputs)
+        for c in comparison_strategies:
+            query_inputs, query_token_vec, acc = prepare_oe_calibration_query(
+                tokenizer, oe_target_strings, output_strings, question_strings, format=query_format, comparison_strategy=c
+            )
 
-        if isinstance(model, PeftModel) and "query" in model.peft_config:
-            model.set_adapter("query")
+            acc = acc.to(device)
+            query_inputs = collate_fn(query_inputs)
 
-        print(acc)
-        # print(tokenizer.batch_decode(query_inputs["input_ids"], skip_special_tokens=False, clean_up_tokenization_spaces=False)[0])
-        # print(1/0)
+            if isinstance(model, PeftModel) and "query" in model.peft_config:
+                model.set_adapter("query")
 
-        query_inputs = {k: v.to(device) for k, v in query_inputs.items()}
-        query_outputs = model(**query_inputs)
+            query_inputs = {k: v.to(device) for k, v in query_inputs.items()}
+            query_outputs = model(**query_inputs)
 
-        _, unc_y, unc_logits = extract_qa_exact(
-            tokenizer, query_inputs, outputs=query_outputs
-        )
+            _, unc_y, unc_logits = extract_qa_exact(
+                tokenizer, query_inputs, outputs=query_outputs
+            )
 
-        print(unc_y)
+            [
+                l.append(v)
+                for l, v in zip(
+                    (all_unc_y[c], all_unc_logits[c], all_acc[c]),
+                    accelerator.gather_for_metrics((unc_y, unc_logits, acc)),
+                )
+            ]          
 
         [
             l.append(v)
             for l, v in zip(
-                (all_unc_y, all_unc_logits, all_acc),
-                accelerator.gather_for_metrics((unc_y, unc_logits, acc)),
+                (all_oe_target_strings, all_output_strings, all_question_strings),
+                accelerator.gather_for_metrics((oe_target_strings, output_strings, question_strings)),
             )
-        ]
+        ]          
 
-    query_token_vec = query_token_vec.to(device)
-    all_unc_y, all_unc_logits, all_acc = [torch.cat(l, dim=0) for l in (all_unc_y, all_unc_logits, all_acc)]
-
-    acc = all_acc.float().mean()
-
-    all_unc_y, all_unc_p = (
-        (all_unc_y.unsqueeze(-1) == query_token_vec).long().argmax(dim=-1),
-        all_unc_logits[:, query_token_vec].softmax(dim=-1),
-    )
-    all_unc_y_hat = all_unc_p.argmax(dim=-1)
-    unc_acc = (all_unc_y == all_unc_y_hat).float().mean()
-    unc_ece, _ = calibration(
-        all_unc_y,
-        all_unc_y_hat,
-        all_unc_p[torch.arange(all_unc_p.size(0)), all_unc_y_hat],
-    )
-
-    return {
-        "N": len(all_unc_y),
-        "acc": acc.item(),
-        # "ece": ece,
-        "unc_acc": unc_acc.item(),
-        "unc_ece": unc_ece,
-        # "qa_unc_ece": qa_unc_ece,
+    return_dict = {
+        "N": len(all_oe_target_strings),
     }
 
+    all_oe_target_strings, all_output_strings, all_question_strings = sum(all_oe_target_strings, []), sum(all_output_strings, []), sum(all_question_strings, [])
+    dump = {
+        "oe_target_strings": all_oe_target_strings, 
+        "output_strings": all_output_strings,
+        "question_strings": all_question_strings,
+    }
 
-@torch.inference_mode()
-def evaluate_oe_via_substring(
-    accelerator,
-    model,
-    tokenizer,
-    loader,
-    prompt_style="oe",
-    query_format="roman_choice",
-):
-    return evaluate_oe(
-        accelerator,
-        model,
-        tokenizer,
-        loader,
-        prompt_style=prompt_style,
-        comparison_strategy="substring",
-        query_format=query_format,
-    )
+    for c in comparison_strategies:
 
+        query_token_vec = query_token_vec.to(device)
+        all_unc_y_c, all_unc_logits_c, all_acc_c = [torch.cat(l, dim=0) for l in (all_unc_y[c], all_unc_logits[c], all_acc[c])]
 
-@torch.inference_mode()
-def evaluate_oe_via_fuzzy_gpt4(
-    accelerator,
-    model,
-    tokenizer,
-    loader,
-    prompt_style="oe",
-    query_format="roman_choice",
-):
-    return evaluate_oe(
-        accelerator,
-        model,
-        tokenizer,
-        loader,
-        prompt_style=prompt_style,
-        comparison_strategy="fuzzy_gpt4",
-        query_format=query_format,
-    )
+        acc = all_acc_c.float().mean()
 
+        all_unc_y_c, all_unc_p = (
+            (all_unc_y_c.unsqueeze(-1) == query_token_vec).long().argmax(dim=-1),
+            all_unc_logits_c[:, query_token_vec].softmax(dim=-1),
+        )
+        all_unc_y_hat = all_unc_p.argmax(dim=-1)
+        unc_acc = (all_unc_y_c == all_unc_y_hat).float().mean()
+        unc_ece, _ = calibration(
+            all_unc_y_c,
+            all_unc_y_hat,
+            all_unc_p[torch.arange(all_unc_p.size(0)), all_unc_y_hat],
+        )
+
+        return_dict.update(
+            {
+                f"{c}_acc": acc.item(),
+                f"{c}_unc_acc": unc_acc.item(),
+                f"{c}_unc_ece": unc_ece,
+            }
+        )
+
+        dump.update(
+            {
+                f"{c}_acc": all_acc_c.cpu().numpy(),
+                f"{c}_all_unc_y": all_unc_y_c.cpu().numpy(),
+                f"{c}_all_unc_y_hat": all_unc_y_hat.cpu().numpy(),
+                f"{c}_unc_acc": unc_acc.item(),
+                f"{c}_unc_ece": unc_ece,
+            }
+        )
+
+    if output_row_path is not None:
+        pd.DataFrame(dump).to_csv(output_row_path, escapechar='\\')
+
+    print(pd.DataFrame(dump))
+
+    return return_dict

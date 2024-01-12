@@ -1,4 +1,5 @@
 import logging
+import os
 
 from ..datasets import get_dataset, get_loader
 from .eos import (
@@ -6,12 +7,13 @@ from .eos import (
     evaluate_candidate_via_eos,
     evaluate_via_eos,
 )
-from .oe import evaluate_oe_via_substring, evaluate_oe_via_fuzzy_gpt4
+from .oe import (
+    evaluate_oe,
+)
 
 EVALUATE_MODE_FN_MAP = {
     "eos": evaluate_via_eos,
-    "oe_substring": evaluate_oe_via_substring,
-    "oe_fuzzy_gpt4": evaluate_oe_via_fuzzy_gpt4,
+    "oe": evaluate_oe,
     "cc_eos": evaluate_contextual_calibration_via_eos,
     "cand_eos": evaluate_candidate_via_eos,
 }
@@ -32,10 +34,14 @@ def evaluate_dataset(
     eval_kshot=None,
     use_cache=True,
     prompt_style="choice",
+    output_row_path=None,
     evaluate_fn="eos",
 ):
     ## FIXME: See https://github.com/huggingface/transformers/issues/25790#issuecomment-1695846805.
     assert batch_size == 1, "Only support batch_size 1. See code comments."
+
+    if output_row_path is not None:
+        os.makedirs(os.path.join(output_row_path, dataset), exist_ok=True)
 
     if dataset is not None:
         with accelerator.main_process_first():
@@ -59,12 +65,22 @@ def evaluate_dataset(
             logging.warning(f"Missing val_data or test_data.")
 
     if isinstance(evaluate_fn, str):
-        assert (
-            evaluate_fn in EVALUATE_MODE_FN_MAP.keys()
-        ), f"Unsupported mode '{evaluate_fn}'."
-        evaluate_fn = EVALUATE_MODE_FN_MAP[evaluate_fn]
+        if "oe_" in evaluate_fn:
+            assert(evaluate_fn[:3] == "oe_")
+            comparison_strategies = [evaluate_fn[3:]] # clip oe_
+            evaluate_fn = EVALUATE_MODE_FN_MAP['oe']
+        elif "oe" == evaluate_fn:
+            comparison_strategies = ["substring", "fuzzy_gpt-4-0613", "fuzzy_gpt-3.5-turbo-1106"]
+            evaluate_fn = EVALUATE_MODE_FN_MAP['oe']
+        else:
+            assert (
+                evaluate_fn in EVALUATE_MODE_FN_MAP.keys()
+            ), f"Unsupported mode '{evaluate_fn}'."
+            evaluate_fn = EVALUATE_MODE_FN_MAP[evaluate_fn]
+            comparison_strategies = None
 
     train_metrics = None
+
     if train_data:
         train_metrics = evaluate_fn(
             accelerator,
@@ -77,6 +93,9 @@ def evaluate_dataset(
                 accelerator=accelerator,
             ),
             prompt_style=prompt_style,
+
+            comparison_strategies=comparison_strategies,
+            output_row_path=os.path.join(output_row_path, dataset, 'train.csv') if output_row_path is not None else None
         )
         train_metrics["split"] = "train"
 
@@ -97,6 +116,9 @@ def evaluate_dataset(
                 accelerator=accelerator,
             ),
             prompt_style=prompt_style,
+
+            comparison_strategies=comparison_strategies,
+            output_row_path=os.path.join(output_row_path, dataset, 'val.csv') if output_row_path is not None else None
         )
         val_metrics["split"] = "validation"
 
@@ -117,6 +139,9 @@ def evaluate_dataset(
                 accelerator=accelerator,
             ),
             prompt_style=prompt_style,
+
+            comparison_strategies=comparison_strategies,
+            output_row_path=os.path.join(output_row_path, dataset, 'test.csv') if output_row_path is not None else None
         )
         test_metrics["split"] = "test"
 

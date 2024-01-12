@@ -8,7 +8,7 @@ from accelerate import Accelerator
 from llm.logging import entrypoint, Timer
 from llm.datasets import get_all_datasets_list
 from llm.models import get_model
-from llm.models.peft import get_lora_model
+from llm.models.peft import get_lora_model, prepare_model_for_temperature_scaling
 from llm.eval import evaluate_dataset
 
 
@@ -23,8 +23,10 @@ def main(
     model_dir=None,
     peft_dir=None,
     query_peft_dir=None,
+    scale_temp=False,
     use_dataset_cache=True,
     prompt_style="choice",
+    output_row_path=None,
     mode=None,
 ):
     accelerator = Accelerator()
@@ -38,6 +40,7 @@ def main(
         "eval_kshot": eval_kshot,
         "prompt_style": prompt_style,
         "mode": mode,
+        "output_row_path": output_row_path
     }
     if accelerator.is_main_process:
         wandb.config.update(config)
@@ -54,9 +57,6 @@ def main(
         model_dir=model_dir,
         use_cache=False,
         tokenizer=tokenizer,
-        # load_in_8bit=True,
-        ## TODO: add temperature scaling for loading.
-        # temp_scaling=scale_temp,
     )
 
     model = get_lora_model(
@@ -72,6 +72,11 @@ def main(
         is_trainable=False,
         adapter_name="query",
     ).to(accelerator.local_process_index)
+
+    if scale_temp:
+        prepare_model_for_temperature_scaling(
+            model, peft_dir=query_peft_dir or peft_dir
+        )
 
     model.eval()
 
@@ -96,6 +101,7 @@ def main(
                 eval_kshot=eval_kshot,
                 use_cache=use_dataset_cache,
                 prompt_style=prompt_style,
+                output_row_path=output_row_path,
                 evaluate_fn=mode,
             )
 

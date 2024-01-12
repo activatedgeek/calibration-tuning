@@ -20,12 +20,13 @@ def evaluate_via_eos(
     loader,
     prompt_style="choice",
     query_format="roman_choice",
+    **_,
 ):
     """
     Assumes all answers are 1 token and end immediately with EOS token.
     """
 
-    assert(prompt_style == "choice")
+    assert prompt_style == "choice"
 
     device = accelerator.device
     collate_fn = DataCollatorForSupervisedDataset(tokenizer)
@@ -55,7 +56,7 @@ def evaluate_via_eos(
             model.set_adapter("query")
 
         query_inputs = {k: v.to(device) for k, v in query_inputs.items()}
-        query_outputs = model(**query_inputs)
+        query_outputs = model(**query_inputs, scale_temp=True)
 
         _, unc_y, unc_logits = extract_qa_exact(
             tokenizer, query_inputs, outputs=query_outputs
@@ -121,11 +122,15 @@ def evaluate_contextual_calibration_via_eos(
     model,
     tokenizer,
     loader,
-    prompt_style="choice"
+    prompt_style="choice",
+    **_,
 ):
     """
     Assumes all answers are 1 token and end immediately with EOS token.
     """
+
+    assert prompt_style == "choice"
+
     device = accelerator.device
     collate_fn = DataCollatorForSupervisedDataset(tokenizer)
 
@@ -212,10 +217,15 @@ def evaluate_candidate_via_eos(
     model,
     tokenizer,
     loader,
+    prompt_style="choice",
+    **_,
 ):
     """
     Assumes all answers are 1 token and end immediately with EOS token.
     """
+
+    assert prompt_style == "choice"
+
     device = accelerator.device
     collate_fn = DataCollatorForSupervisedDataset(tokenizer)
 

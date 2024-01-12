@@ -23,6 +23,7 @@ class UncertaintyTuner(Trainer):
         query_format: str = field(default="roman_choice")
         ref_adapter_name: str = field(default="_ref")
         unc_label_smoothing: float = field(default=0.0)
+        kl_type: str = field(default="reverse_kl")
         kl_decay: float = field(default=0.0)
         scale_temp: bool = field(default=False)
 
@@ -70,18 +71,22 @@ class UncertaintyTuner(Trainer):
         labels = inputs.get("labels")[..., 1:]
         probs = outputs.logits[..., :-1, :].softmax(dim=-1)
         ref_probs = ref_outputs.logits[..., :-1, :].softmax(dim=-1)
-        # mix_probs = (probs + ref_probs) / 2
 
         p = Categorical(probs=probs)
         p_ref = Categorical(probs=ref_probs)
 
-        # p_mix = Categorical(probs=mix_probs)
-        # raw_loss = (kl_divergence(p, p_mix) + kl_divergence(p_ref, p_mix)) / 2
-
-        forward_kl = kl_divergence(p, p_ref)
+        if self.args.kl_type == "reverse_kl":
+            kl_loss = kl_divergence(p, p_ref)
+        elif self.args.kl_type == "forward_kl":
+            kl_loss = kl_divergence(p_ref, p)
+        elif self.args.kl_type == "jsd":
+            p_mix = Categorical(probs=(probs + ref_probs) / 2)
+            kl_loss = (kl_divergence(p, p_mix) + kl_divergence(p_ref, p_mix)) / 2
+        else:
+            raise NotImplementedError
 
         loss_mask = labels != IGNORE_LABEL
-        loss = (forward_kl * loss_mask).sum(dim=-1).mean(dim=0)
+        loss = (kl_loss * loss_mask).sum(dim=-1).mean(dim=0)
 
         return loss
 

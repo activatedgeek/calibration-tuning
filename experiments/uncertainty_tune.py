@@ -27,6 +27,7 @@ def main(
     lr=1e-4,
     ls=0.0,
     weight_decay=0.0,
+    kl_type="reverse_kl",
     kl_decay=0.0,
     scale_temp=False,
     warmup_steps=0,
@@ -65,7 +66,7 @@ def main(
     )
 
     if scale_temp:
-        prepare_model_for_temperature_scaling(model)
+        prepare_model_for_temperature_scaling(model, is_trainable=True)
     else:
         model = get_lora_model(
             model,
@@ -106,6 +107,7 @@ def main(
             lr_scheduler_type="cosine",
             warmup_steps=warmup_steps,
             weight_decay=weight_decay,
+            kl_type=kl_type,
             kl_decay=kl_decay,
             unc_label_smoothing=ls,
             gradient_accumulation_steps=grad_acc,

@@ -1,9 +1,12 @@
+import os
 import logging
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from transformers import LlamaForCausalLM
 from transformers.modeling_outputs import CausalLMOutputWithPast
+
+from .utils import get_last_checkpoint_path
 
 
 WEIGHTS_NAME = "temperature_adapter.bin"
@@ -113,13 +116,28 @@ class TemperatureScaledLlamaForCausalLM(LlamaForCausalLM):
         )
 
 
-def prepare_model_for_temperature_scaling(model):
+def prepare_model_for_temperature_scaling(model, is_trainable=False, peft_dir=None):
+    if peft_dir is not None:
+        peft_dir = get_last_checkpoint_path(peft_dir)
+
     for n, p in model.named_parameters():
         if TemperatureScaledLlamaForCausalLM.PARAMETER_NAME in n:
-            p.requires_grad_(True)
+            p.requires_grad_(is_trainable)
+            p.data = torch.zeros_like(p.data)
+
+            if peft_dir is not None and os.path.isfile(f"{peft_dir}/{WEIGHTS_NAME}"):
+                ckpt_params = torch.load(
+                    f"{peft_dir}/{WEIGHTS_NAME}", map_location=p.data.device
+                )
+                ## Only one value in checkpoint file.
+                p.data = list(ckpt_params.values())[0]
+
+                logging.info(f"Temperature loaded from {peft_dir}.")
         else:
             if p.requires_grad:
                 p.requires_grad_(False)
+
+    logging.info(f"Model prepared for temperature scaling.")
 
 
 def save_temperature_scaled_model(model, output_dir):
