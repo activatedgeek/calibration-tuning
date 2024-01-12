@@ -19,6 +19,7 @@ from llm.logging import entrypoint
 
 from llm.datasets.llm_utils_oe import prepare_oe_calibration_query
 
+
 def prepare_model(
     accelerator,
     model_name=None,
@@ -191,7 +192,14 @@ def generate_outputs_main(
         )
 
 
-def generate_query_label(accelerator, model, tokenizer, loader, query_format="roman_choice", comparison_strategy='substring'):
+def generate_query_label(
+    accelerator,
+    model,
+    tokenizer,
+    loader,
+    query_format="roman_choice",
+    comparison_strategy="substring",
+):
     if isinstance(model, PeftModel):
         model.set_adapter("default")
 
@@ -203,11 +211,11 @@ def generate_query_label(accelerator, model, tokenizer, loader, query_format="ro
 
         question_strings = []
         for x in inputs_list:
-            x.pop('target')
+            x.pop("target")
             question_strings.append(str(LMText.from_(x)))
 
-        output_strings = inputs['output']
-        oe_target_strings = inputs['target']
+        output_strings = inputs["output"]
+        oe_target_strings = inputs["target"]
         # Find the rightmost occurrence of the eos token.
         for i, x in enumerate(oe_target_strings):
             index = x.rfind(tokenizer.eos_token)
@@ -216,7 +224,12 @@ def generate_query_label(accelerator, model, tokenizer, loader, query_format="ro
                 oe_target_strings[i] = x[:index]
 
         _, _, acc = prepare_oe_calibration_query(
-            tokenizer, oe_target_strings, output_strings, question_strings, format=query_format, comparison_strategy=comparison_strategy
+            tokenizer,
+            oe_target_strings,
+            output_strings,
+            question_strings,
+            format=query_format,
+            comparison_strategy=comparison_strategy,
         )
 
         outputs = [

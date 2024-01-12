@@ -232,15 +232,14 @@ def prepare_query(
         responses = tokenizer.batch_decode(response_ids)
         query_labels = y == y_hat
     else:
-        labels = inputs.get("labels")
-
-        ctx_lengths = labels.eq(IGNORE_LABEL).nonzero()[
-            labels.eq(IGNORE_LABEL).sum(dim=-1).cumsum(dim=0) - 1
-        ][:, -1]
+        ## argmax gets first mismatch, i.e. where labels start.
+        ctx_lengths = (
+            (inputs.get("input_ids") == inputs.get("labels")).long().argmax(dim=-1)
+        )
 
         responses = [
             tokenizer.decode(
-                inp[: ctx_len + 1],
+                inp[:ctx_len],
                 skip_special_tokens=True,
                 clean_up_tokenization_spaces=False,
             )
