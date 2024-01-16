@@ -64,7 +64,7 @@ class LMText:
         return self.prompt + self.context + self.target_prompt + self.target
 
     def to_pydict(self):
-        return dataclassasdict(self)
+        return {k: v for k, v in dataclassasdict(self).items() if v is not None}
 
     @staticmethod
     def from_(instance):
