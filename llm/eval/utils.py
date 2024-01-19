@@ -47,6 +47,8 @@ def evaluate_dataset(
     if output_row_path is not None:
         os.makedirs(os.path.join(output_row_path, dataset), exist_ok=True)
 
+    # import pdb; pdb.set_trace()
+
     if dataset is not None:
         with accelerator.main_process_first():
             _extra_args = dict()
