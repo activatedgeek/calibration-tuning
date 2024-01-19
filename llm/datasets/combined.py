@@ -75,7 +75,9 @@ def get_combined_dataset(
 
         if train_data is not None:
             train_data = train_data.shuffle(seed=seed)
-            train_data = train_data.remove_columns(["source_dataset"]).add_column(
+            if "source_dataset" in train_data.column_names:
+                train_data = train_data.remove_columns(["source_dataset"])
+            train_data = train_data.add_column(
                 "source_dataset", [dataset] * len(train_data)
             )
             all_train_data.append(train_data)
