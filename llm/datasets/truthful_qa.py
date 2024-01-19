@@ -15,10 +15,10 @@ __all__ = [
 def __format_sample(sample, tokenizer, style):
     target_prompt = "\nAnswer: "
 
-    if style == "choice":
-        question = sample["question"]
-        answer_map = sample["mc1_targets"]["choices"]
+    question = sample["question"]
+    answer_map = sample["mc1_targets"]["choices"]
 
+    if style == "choice":
         context = "\n".join(
             [
                 "Question:",
@@ -35,6 +35,18 @@ def __format_sample(sample, tokenizer, style):
 
         target = (
             string.ascii_lowercase[np.array(sample["mc1_targets"]["labels"]).argmax()]
+            + tokenizer.eos_token
+        )
+    elif style == "oe":
+        context = "\n".join(
+            [
+                "Question:",
+                question,
+            ]
+        )
+
+        target = (
+            answer_map[np.array(sample["mc1_targets"]["labels"]).argmax()]
             + tokenizer.eos_token
         )
     else:

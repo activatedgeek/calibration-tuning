@@ -12,13 +12,11 @@ __all__ = [
 
 
 def __format_sample(sample, tokenizer, style):
-    target_prompt = "\nAnswer: "
+    passage = sample["passage"]
+    question = sample["question"]
+    answer_map = ["False", "True"]
 
     if style == "choice":
-        passage = sample["passage"]
-        question = sample["question"]
-        answer_map = ["False", "True"]
-
         context = "\n".join(
             [
                 "Passage:",
@@ -35,9 +33,22 @@ def __format_sample(sample, tokenizer, style):
             ]
         )
 
+        target_prompt = "\nAnswer: "
         target = (
             string.ascii_lowercase[int(bool(sample["answer"]))] + tokenizer.eos_token
         )
+    elif style == "oe":
+        context = "\n".join(
+            [
+                "Passage:",
+                passage,
+                "\nQuestion:",
+                question,
+            ]
+        )
+
+        target_prompt = "\n\nAnswer with True or False only: "
+        target = str(sample["answer"]) + tokenizer.eos_token
     else:
         raise NotImplementedError
 

@@ -68,6 +68,33 @@ with fuzzy matching (currently on GPT4, so requires setting OPENAI_API_KEY env v
 
 ## Details
 
+### Offline Dataset Generation
+
+To create a CSV dataset of open-ended generations,
+```shell
+./autotorchrun experiments/generate.py outputs \
+    --model-name=llama2_7b \
+    --peft-dir=</optional/path/to/checkpoint/dir> \
+    --dataset=sub_100_c \
+    --batch-size=10 \
+    --log-dir=</path/to/log_dir>
+```
+
+This will generate CSV files under `<log-dir>/outputs`.
+
+Use this path to further generate a CSV dataset of uncertainty labels on top of the open-ended generations, 
+```shell
+./autotorchrun experiments/generate.py outputs \
+    --model-name=llama2_7b \
+    --peft-dir=</optional/path/to/checkpoint/dir> \
+    --dataset=offline \
+    --data-dir=<log-dir>/outputs \
+    --batch-size=10 \
+    --log-dir=</path/to/log_dir>
+```
+
+This will generate CSV files under `<log-dir>/labels`. Note the `--dataset` and `--data-dir` arguments.
+
 ### Cache
 
 Send `--use_dataset_cache=False` to rebuild [HuggingFace dataset cache](https://huggingface.co/docs/datasets/v2.14.4/en/cache#cache-files).

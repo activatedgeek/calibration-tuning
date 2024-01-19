@@ -14,11 +14,11 @@ __all__ = [
 def __format_sample(sample, tokenizer, style):
     target_prompt = "\nAnswer: "
 
-    if style == "choice":
-        context = sample["context"]
-        question = sample["question"]
-        answer_map = [sample[f"answer{i}"] for i in range(4)]
+    context = sample["context"]
+    question = sample["question"]
+    answer_map = [sample[f"answer{i}"] for i in range(4)]
 
+    if style == "choice":
         context = "\n".join(
             [
                 "Context:",
@@ -36,6 +36,17 @@ def __format_sample(sample, tokenizer, style):
         )
 
         target = string.ascii_lowercase[int(sample["label"])] + tokenizer.eos_token
+    elif style == "oe":
+        context = "\n".join(
+            [
+                "Context:",
+                context,
+                "\nQuestion:",
+                question,
+            ]
+        )
+
+        target = answer_map[int(sample["label"])] + tokenizer.eos_token
     else:
         raise NotImplementedError
 

@@ -87,7 +87,7 @@ def evaluate_via_eos(
     all_p = all_logits.softmax(dim=-1)
     all_y_hat = all_p.argmax(dim=-1)
     acc = (all_y == all_y_hat).float().mean()
-    ece, _ = calibration(
+    logits_ece, _ = calibration(
         all_y, all_y_hat, all_p[torch.arange(all_p.size(0)), all_y_hat]
     )
 
@@ -104,15 +104,15 @@ def evaluate_via_eos(
     )
 
     ## Using confidence scores from "yes" (idx 1) always.
-    qa_unc_ece, _ = calibration(all_y, all_y_hat, all_unc_p[:, 1])
+    ece, _ = calibration(all_y, all_y_hat, all_unc_p[:, 1])
 
     return {
         "N": all_y.size(0),
         "acc": acc.item(),
-        "ece": ece,
+        "logits_ece": logits_ece,
         "unc_acc": unc_acc.item(),
         "unc_ece": unc_ece,
-        "qa_unc_ece": qa_unc_ece,
+        "ece": ece,
     }
 
 
@@ -190,7 +190,7 @@ def evaluate_contextual_calibration_via_eos(
     all_p = all_logits.softmax(dim=-1)
     all_y_hat = all_p.argmax(dim=-1)
     acc = (all_y == all_y_hat).float().mean()
-    ece, _ = calibration(
+    logits_ece, _ = calibration(
         all_y, all_y_hat, all_p[torch.arange(all_p.size(0)), all_y_hat]
     )
 
@@ -205,7 +205,7 @@ def evaluate_contextual_calibration_via_eos(
     return {
         "N": all_y.size(0),
         "acc": acc.item(),
-        "ece": ece,
+        "logits_ece": logits_ece,
         "cal_acc": cal_acc.item(),
         "cal_ece": cal_ece,
     }
@@ -262,12 +262,12 @@ def evaluate_candidate_via_eos(
     all_p = all_logits.softmax(dim=-1)
     all_y_hat = all_p.argmax(dim=-1)
     acc = (all_y == all_y_hat).float().mean()
-    ece, _ = calibration(
+    logits_ece, _ = calibration(
         all_y, all_y_hat, all_p[torch.arange(all_p.size(0)), all_y_hat]
     )
 
     return {
         "N": all_y.size(0),
         "acc": acc.item(),
-        "ece": ece,
+        "logits_ece": logits_ece,
     }

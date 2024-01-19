@@ -15,6 +15,7 @@ def main(
     log_dir=None,
     dataset=None,
     data_dir=None,
+    prompt_style="choice",
     num_workers=8,
     batch_size=1,
     grad_acc=1,
@@ -74,6 +75,7 @@ def main(
             seed=seed,
             num_workers=num_workers,
             use_cache=use_dataset_cache,
+            prompt_style=prompt_style,
         )
 
     trainer = FineTuner(
@@ -104,7 +106,9 @@ def main(
             dataloader_num_workers=4,
             scale_temp=scale_temp,
         ),
-        train_dataset=tokenize_datasets(tokenizer, train_data)[0],
+        train_dataset=tokenize_datasets(
+            tokenizer, train_data, prompt_style=prompt_style
+        )[0],
         val_data=val_data,
         test_data=test_data,
         tokenizer=tokenizer,
@@ -118,6 +122,7 @@ def main(
                 lora_rank=lora_rank,
                 lora_alpha=lora_alpha,
                 lora_dropout=lora_dropout,
+                prompt_style=prompt_style,
             ),
         ],
     )

@@ -15,6 +15,7 @@ def main(
     log_dir=None,
     dataset=None,
     data_dir=None,
+    prompt_style="choice",
     num_workers=8,
     batch_size=1,
     grad_acc=1,
@@ -27,8 +28,9 @@ def main(
     lr=1e-4,
     ls=0.0,
     weight_decay=0.0,
-    kl_type="reverse_kl",
+    kl_type="jsd",
     kl_decay=0.0,
+    use_lm_loss=False,
     scale_temp=False,
     warmup_steps=0,
     max_steps=1,
@@ -83,6 +85,7 @@ def main(
             seed=seed,
             num_workers=num_workers,
             use_cache=use_dataset_cache,
+            prompt_style=prompt_style,
         )
 
     trainer = UncertaintyTuner(
@@ -109,14 +112,18 @@ def main(
             weight_decay=weight_decay,
             kl_type=kl_type,
             kl_decay=kl_decay,
+            use_lm_loss=use_lm_loss,
             unc_label_smoothing=ls,
             gradient_accumulation_steps=grad_acc,
             output_dir=log_dir,
             report_to="wandb",
             dataloader_num_workers=4,
             scale_temp=scale_temp,
+            label_names=["output_ids", "query_label"],
         ),
-        train_dataset=tokenize_datasets(tokenizer, train_data)[0],
+        train_dataset=tokenize_datasets(
+            tokenizer, train_data, prompt_style=prompt_style
+        )[0],
         val_data=val_data,
         test_data=test_data,
         tokenizer=tokenizer,
@@ -130,6 +137,7 @@ def main(
                 lora_rank=lora_rank,
                 lora_alpha=lora_alpha,
                 lora_dropout=lora_dropout,
+                prompt_style=prompt_style,
             ),
         ],
     )

@@ -16,13 +16,11 @@ __ATTRS = dict(task_tags=["entailment"])
 
 
 def __format_sample(sample, tokenizer, style):
-    target_prompt = "\nAnswer: "
+    premise = sample["premise"]
+    hypothesis = sample["hypothesis"]
+    answer_map = ["Yes", "It's impossible to say", "No"]
 
     if style == "choice":
-        premise = sample["premise"]
-        hypothesis = sample["hypothesis"]
-        answer_map = ["Yes", "It's impossible to say", "No"]
-
         context = "\n".join(
             [
                 "Premise:",
@@ -39,7 +37,20 @@ def __format_sample(sample, tokenizer, style):
             ]
         )
 
+        target_prompt = "\nAnswer: "
         target = string.ascii_lowercase[sample["label"]] + tokenizer.eos_token
+    elif style == "oe":
+        context = "\n".join(
+            [
+                "Premise:",
+                premise,
+                "\nHypothesis:",
+                hypothesis,
+            ]
+        )
+
+        target_prompt = "\nIs the hypothesis correct? "
+        target = answer_map[sample["label"]] + tokenizer.eos_token
     else:
         raise NotImplementedError
 

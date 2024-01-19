@@ -20,10 +20,11 @@ from ..models.peft import save_temperature_scaled_model
 class UncertaintyTuner(Trainer):
     @dataclass
     class Args(TrainingArguments):
+        use_lm_loss: bool = field(default=False)
         query_format: str = field(default="roman_choice")
         ref_adapter_name: str = field(default="_ref")
         unc_label_smoothing: float = field(default=0.0)
-        kl_type: str = field(default="reverse_kl")
+        kl_type: str = field(default="jsd")
         kl_decay: float = field(default=0.0)
         scale_temp: bool = field(default=False)
 
@@ -38,9 +39,21 @@ class UncertaintyTuner(Trainer):
         self.val_data = val_data
         self.test_data = test_data
 
-    def compute_unc_loss(self, model, inputs, outputs):
+    def compute_unc_loss(
+        self,
+        model,
+        inputs,
+        outputs,
+        offline_outputs=None,
+        offline_query_labels=None,
+    ):
         query_inputs, query_token_vec = prepare_query(
-            self.tokenizer, inputs, outputs, format=self.args.query_format
+            self.tokenizer,
+            inputs,
+            outputs,
+            offline_outputs=offline_outputs,
+            offline_query_labels=offline_query_labels,
+            format=self.args.query_format,
         )
         query_inputs = self.data_collator(query_inputs)
 
@@ -91,17 +104,32 @@ class UncertaintyTuner(Trainer):
         return loss
 
     def compute_loss(self, model, inputs, return_outputs=False):
-        _, outputs = super().compute_loss(model, inputs, return_outputs=True)
+        offline_outputs, offline_query_labels = [
+            inputs.pop(k, None) for k in ["output_ids", "query_label"]
+        ]
 
-        unc_loss = self.compute_unc_loss(model, inputs, outputs)
-        if self.args.scale_temp:
-            kl_loss = torch.tensor(0.0)
-        else:
-            kl_loss = self.compute_kl_loss(model, inputs, outputs)
+        loss, outputs = super().compute_loss(model, inputs, return_outputs=True)
+        if not self.args.use_lm_loss:
+            loss = torch.tensor(0.0).to(loss.device)
 
-        total_loss = unc_loss + self.args.kl_decay * kl_loss
+        unc_loss = self.compute_unc_loss(
+            model,
+            inputs,
+            outputs,
+            offline_outputs=offline_outputs,
+            offline_query_labels=offline_query_labels,
+        )
+
+        kl_loss = (
+            torch.tensor(0.0)
+            if self.args.scale_temp
+            else self.compute_kl_loss(model, inputs, outputs)
+        )
+
+        total_loss = loss + unc_loss + self.args.kl_decay * kl_loss
 
         loss_metrics = {
+            "lm_loss": loss.detach().item(),
             "unc_loss": unc_loss.detach().item(),
             "kl_loss": kl_loss.detach().item(),
         }

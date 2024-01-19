@@ -20,7 +20,7 @@ def get_all_datasets_list(dataset_str):
                 list(
                     filter(
                         lambda x: not any(
-                            s in x for s in ["all", "sub", "mmlu", "bbmc"]
+                            s in x for s in ["all", "sub", "mmlu", "bbmc", "offline"]
                         ),
                         list_datasets(),
                     )
@@ -75,6 +75,9 @@ def get_combined_dataset(
 
         if train_data is not None:
             train_data = train_data.shuffle(seed=seed)
+            train_data = train_data.remove_columns(["source_dataset"]).add_column(
+                "source_dataset", [dataset] * len(train_data)
+            )
             all_train_data.append(train_data)
 
         if val_data is not None:
@@ -93,104 +96,125 @@ def get_combined_dataset(
 
 
 @register_dataset
-def all_200k(*args, **kwargs):
+def all_200k(*args, max_n=200_000, **kwargs):
     tr, _, _ = get_combined_dataset(
         all_dataset_names=get_all_datasets_list("all:train"),
         *args,
         **kwargs,
-        max_n=200_000,
+        max_n=max_n,
         complement=False,
     )
     return tr, None, None
 
 
 @register_dataset
-def cal_all_50k(*args, **kwargs):
+def cal_all_50k(*args, max_n=50_000, **kwargs):
     _, vl, _ = get_combined_dataset(
         all_dataset_names=get_all_datasets_list("all:train"),
         *args,
         **kwargs,
         eval_kshot=0,
-        max_n=50_000,
+        max_n=max_n,
         complement=False,
     )
     return vl, None, None
 
 
 @register_dataset
-def all_200k_c(*args, **kwargs):
+def all_200k_c(*args, max_n=200_000, **kwargs):
     tr, _, _ = get_combined_dataset(
         all_dataset_names=get_all_datasets_list("all:train"),
         *args,
         **kwargs,
-        max_n=200_000,
+        max_n=max_n,
         complement=True,
     )
     return tr, None, None
 
 
+## NOTE: Restricted subset of the full data.
 @register_dataset
-def sub_200k(*args, **kwargs):
+def all_200k_c_offline(*args, max_n=200_000, **kwargs):
+    tr, _, _ = all_200k_c(*args, **kwargs)
+    tr = tr.select(range(max_n))
+    return tr, None, None
+
+
+@register_dataset
+def sub_200k(*args, max_n=200_000, **kwargs):
     all_dataset_names = get_all_datasets_list("all:train")
     all_dataset_names = all_dataset_names[: len(all_dataset_names) // 2]
     tr, _, _ = get_combined_dataset(
         all_dataset_names=all_dataset_names,
         *args,
         **kwargs,
-        max_n=200_000,
+        max_n=max_n,
         complement=False,
     )
     return tr, None, None
 
 
 @register_dataset
-def cal_sub_200k(*args, **kwargs):
+def cal_sub_200k(*args, max_n=200_000, **kwargs):
     all_dataset_names = get_all_datasets_list("all:train")
     all_dataset_names = all_dataset_names[: len(all_dataset_names) // 2]
     _, vl, _ = get_combined_dataset(
         all_dataset_names=all_dataset_names,
         *args,
         **kwargs,
-        max_n=200_000,
+        max_n=max_n,
         complement=False,
     )
     return vl, None, None
 
 
 @register_dataset
-def sub_200k_c(*args, **kwargs):
+def sub_200k_c(*args, max_n=800_000, **kwargs):
     all_dataset_names = get_all_datasets_list("all:train")
     all_dataset_names = all_dataset_names[len(all_dataset_names) // 2 :]
+    
+    # all_dataset_names = all_dataset_names[3:]
+    # print(all_dataset_names)
+    # print(1/0)
+
     tr, _, _ = get_combined_dataset(
         all_dataset_names=all_dataset_names,
         *args,
         **kwargs,
-        max_n=800_000,
+        max_n=max_n,
     )
     return tr, None, None
 
 
+## NOTE: Restricted subset of the full data.
 @register_dataset
-def cal_sub_200k_c(*args, **kwargs):
+def sub_200k_c_offline(*args, max_n=200_000, **kwargs):
+    tr, _, _ = sub_200k_c(*args, **kwargs)
+    tr = tr.select(range(max_n))
+    return tr, None, None
+
+
+@register_dataset
+def cal_sub_200k_c(*args, max_n=800_000, **kwargs):
     all_dataset_names = get_all_datasets_list("all:train")
     all_dataset_names = all_dataset_names[len(all_dataset_names) // 2 :]
     _, vl, _ = get_combined_dataset(
         all_dataset_names=all_dataset_names,
         *args,
         **kwargs,
-        max_n=800_000,
+        max_n=max_n,
     )
     return vl, None, None
 
 
 @register_dataset
-def cal_mmlu(*args, **kwargs):
+def cal_mmlu(*args, max_n=50_000, **kwargs):
     mmlu_datasets = [f"mmlu:{task}" for task in get_dataset_attrs("mmlu").get("tasks")]
 
     tr, _, _ = get_combined_dataset(
         all_dataset_names=mmlu_datasets,
         *args,
         **kwargs,
-        max_n=50_000,
+        max_n=max_n,
     )
     return tr, None, None

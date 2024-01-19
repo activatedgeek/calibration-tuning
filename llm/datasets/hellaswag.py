@@ -12,12 +12,10 @@ __all__ = [
 
 
 def __format_sample(sample, tokenizer, style):
-    target_prompt = "\nAnswer: "
+    context = " ".join([sample["ctx"], sample["ctx_a"], sample["ctx_b"]])
+    answer_map = sample["endings"]
 
     if style == "choice":
-        context = " ".join([sample["ctx"], sample["ctx_a"], sample["ctx_b"]])
-        answer_map = sample["endings"]
-
         context = "\n".join(
             [
                 "Context:",
@@ -32,7 +30,18 @@ def __format_sample(sample, tokenizer, style):
             ]
         )
 
+        target_prompt = "\nAnswer: "
         target = string.ascii_lowercase[int(sample["label"])] + tokenizer.eos_token
+    elif style == "oe":
+        context = "\n".join(
+            [
+                "Context:",
+                context,
+            ]
+        )
+
+        target_prompt = "\nEnding: "
+        target = answer_map[int(sample["label"])] + tokenizer.eos_token
     else:
         raise NotImplementedError
 
@@ -90,7 +99,9 @@ def get_hellaswag(
     from datasets import load_dataset
 
     dataset = load_dataset(
-        "hellaswag", cache_dir=os.environ.get("HF_DATASETS_CACHE", root)
+        "hellaswag",
+        trust_remote_code=True,
+        cache_dir=os.environ.get("HF_DATASETS_CACHE", root),
     )
     if not use_cache:
         dataset.cleanup_cache_files()

@@ -12,7 +12,6 @@ def delchainattr(obj, attr):
     try:
         delattr(obj, attributes[-1])
     except AttributeError:
-        print(obj)
         raise
 
 
