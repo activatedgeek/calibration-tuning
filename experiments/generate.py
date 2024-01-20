@@ -82,23 +82,37 @@ def generate_output(
         generation_outputs = model.generate(
             **generation_inputs, generation_config=generation_config
         )
-        generation_outputs = tokenizer.batch_decode(
-            generation_outputs,
-            skip_special_tokens=True,
-            clean_up_tokenization_spaces=False,
-        )
 
-        outputs = [
-            LMText(**{**dict(zip(inputs.keys(), vals)), "target": ""})
-            for vals in zip(*inputs.values())
-        ]
+        ## NOTE: Verify output extraction pre-condition.
+        assert (
+            generation_inputs.get("input_ids")
+            == generation_outputs[:, : generation_inputs.get("input_ids").size(-1)]
+        ).all()
+
+        outputs = [dict(zip(inputs.keys(), vals)) for vals in zip(*inputs.values())]
         outputs = [
             {
-                **s.to_pydict(),
-                "target": inputs["target"][i],
-                "output": t[len(str(s)) :],
+                **o,
+                "output": tokenizer.decode(
+                    t[inp.size(0) :],
+                    skip_special_tokens=True,
+                    clean_up_tokenization_spaces=False,
+                ),
+                # "raw_input": tokenizer.decode(
+                #     inp,
+                #     skip_special_tokens=True,
+                #     clean_up_tokenization_spaces=False,
+                # ),
+                # "target": o["target"],
+                # "raw_output": tokenizer.decode(
+                #     t,
+                #     skip_special_tokens=True,
+                #     clean_up_tokenization_spaces=False,
+                # ),
             }
-            for i, (s, t) in enumerate(zip(outputs, generation_outputs))
+            for o, inp, t in zip(
+                outputs, generation_inputs.get("input_ids"), generation_outputs
+            )
         ]
 
         yield from outputs
