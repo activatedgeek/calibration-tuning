@@ -40,8 +40,7 @@ def __format_sample(sample, tokenizer, style):
     elif style == "oe":
         context = "\n".join(
             [
-                "Question:",
-                question,
+                f"Question: {question}",
             ]
         )
 

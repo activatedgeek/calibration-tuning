@@ -15,7 +15,6 @@ def __format_sample(sample, tokenizer, style):
     target_prompt = "\nAnswer: "
 
     sentence = sample["sentence"]
-    answer_map = [sample["option1"], sample["option2"]]
 
     if style == "choice":
         context = "\n".join(
@@ -32,12 +31,26 @@ def __format_sample(sample, tokenizer, style):
             ]
         )
 
+        answer_map = [sample["option1"], sample["option2"]]
+
         target = string.ascii_lowercase[int(sample["answer"]) - 1] + tokenizer.eos_token
     elif style == "oe":
+        blank_idx = sentence.index("_")
+        answer_map = [
+            "".join(
+                [sentence[:blank_idx], sample["option1"], sentence[blank_idx + 1 :]]
+            ),
+            "".join(
+                [sentence[:blank_idx], sample["option2"], sentence[blank_idx + 1 :]]
+            ),
+        ]
+
         context = "\n".join(
             [
-                "Sentence:",
+                "Fill in the blank (_) in the following sentence from the following choices.",
                 sentence,
+                f"Choice 1: {answer_map[0]}",
+                f"Choice 2: {answer_map[1]}",
             ]
         )
 

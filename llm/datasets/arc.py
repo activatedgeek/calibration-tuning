@@ -39,8 +39,7 @@ def __format_sample(sample, tokenizer, style):
 
         context = "\n".join(
             [
-                "Question:",
-                question,
+                f"Question: {question}",
             ]
         )
 

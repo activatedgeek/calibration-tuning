@@ -39,10 +39,9 @@ def __format_sample(sample, tokenizer, style):
     elif style == "oe":
         context = "\n".join(
             [
-                "Context:",
+                "Read the following paragraph and answer the question.",
                 context,
-                "\nQuestion:",
-                question,
+                f"Question: {question}",
             ]
         )
 
