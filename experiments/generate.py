@@ -147,6 +147,7 @@ def generate_outputs_main(
         "lora_dropout": lora_dropout,
         "prompt_style": prompt_style,
         "max_new_tokens": max_new_tokens,
+        "log_dir": log_dir,
     }
     if accelerator.is_main_process:
         wandb.config.update(config)
@@ -287,6 +288,7 @@ def generate_labels_main(
         "lora_rank": lora_rank,
         "lora_alpha": lora_alpha,
         "lora_dropout": lora_dropout,
+        "log_dir": log_dir,
     }
     if accelerator.is_main_process:
         wandb.config.update(config)
