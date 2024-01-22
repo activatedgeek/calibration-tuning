@@ -7,14 +7,19 @@ from .eos import (
     evaluate_candidate_via_eos,
     evaluate_via_eos,
 )
-from .oe import evaluate_oe, evaluate_contextual_calibration_oe
+from .oe import (
+    evaluate_oe, 
+    evaluate_contextual_calibration_oe,
+    evaluate_verbal_elicitation_oe,
+)
 
 EVALUATE_MODE_FN_MAP = {
     "eos": evaluate_via_eos,
-    "oe": evaluate_oe,
-    "cc_oe": evaluate_contextual_calibration_oe,
     "cc_eos": evaluate_contextual_calibration_via_eos,
     "cand_eos": evaluate_candidate_via_eos,
+    "oe": evaluate_oe,
+    "cc_oe": evaluate_contextual_calibration_oe,
+    "ve_oe": evaluate_verbal_elicitation_oe,
 }
 
 
@@ -69,6 +74,13 @@ def evaluate_dataset(
             assert evaluate_fn[:3] == "oe_"
             comparison_strategies = [evaluate_fn[3:]]  # clip oe_
             evaluate_fn = EVALUATE_MODE_FN_MAP["oe"]
+        elif "ve_oe" == evaluate_fn:
+            comparison_strategies = [
+                "substring",
+                # "fuzzy_gpt-4-0613",
+                # "fuzzy_gpt-3.5-turbo-1106",
+            ]
+            evaluate_fn = EVALUATE_MODE_FN_MAP["ve_oe"] 
         elif "cc_oe" == evaluate_fn:
             comparison_strategies = [
                 "substring",
@@ -102,6 +114,8 @@ def evaluate_dataset(
                 batch_size=batch_size,
                 pin_memory=True,
                 accelerator=accelerator,
+                # turn list of dicts into dict of lists
+                collate_fn=lambda x: {k: [d[k] for d in x] for k in x[0].keys()},
             ),
             prompt_style=prompt_style,
             comparison_strategies=comparison_strategies,
@@ -126,6 +140,7 @@ def evaluate_dataset(
                 batch_size=batch_size,
                 pin_memory=True,
                 accelerator=accelerator,
+                collate_fn=lambda x: {k: [d[k] for d in x] for k in x[0].keys()},
             ),
             prompt_style=prompt_style,
             comparison_strategies=comparison_strategies,
@@ -150,6 +165,7 @@ def evaluate_dataset(
                 batch_size=batch_size,
                 pin_memory=True,
                 accelerator=accelerator,
+                collate_fn=lambda x: {k: [d[k] for d in x] for k in x[0].keys()},
             ),
             prompt_style=prompt_style,
             comparison_strategies=comparison_strategies,
