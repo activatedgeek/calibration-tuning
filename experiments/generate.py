@@ -28,7 +28,7 @@ def prepare_model(
     lora_rank=None,
     lora_alpha=None,
     lora_dropout=None,
-    bfloat=False,
+    bfloat=True,
 ):
     tokenizer = get_model(
         f"{model_name}_tokenizer",
@@ -42,7 +42,7 @@ def prepare_model(
         model_dir=model_dir,
         use_cache=False,
         tokenizer=tokenizer,
-        load_in_8bit=True,
+        load_in_8bit=not bfloat,
     )
 
     model = get_lora_model(
@@ -135,7 +135,7 @@ def generate_outputs_main(
     use_dataset_cache=True,
     prompt_style="oe",
     max_new_tokens=30,
-    bfloat=False,
+    bfloat=True,
 ):
     accelerator = Accelerator()
 
@@ -281,7 +281,7 @@ def generate_labels_main(
     lora_alpha=32,
     lora_dropout=0.1,
     use_dataset_cache=True,
-    bfloat=False,
+    bfloat=True,
 ):
     accelerator = Accelerator()
 
