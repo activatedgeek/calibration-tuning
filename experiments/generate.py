@@ -28,7 +28,7 @@ def prepare_model(
     lora_rank=None,
     lora_alpha=None,
     lora_dropout=None,
-    bfloat=False,
+    bfloat=True,
 ):
     tokenizer = get_model(
         f"{model_name}_tokenizer",
@@ -38,11 +38,11 @@ def prepare_model(
     model = get_model(
         model_name,
         device_map={"": accelerator.local_process_index},
-        torch_dtype=torch.bfloat16,# if bfloat else torch.float16,
+        torch_dtype=torch.bfloat16 if bfloat else torch.float16,
         model_dir=model_dir,
         use_cache=False,
         tokenizer=tokenizer,
-        load_in_8bit=False,#True,
+        load_in_8bit=not bfloat,
     )
 
     if peft_dir is not None:
@@ -117,13 +117,13 @@ def generate_output(
             )
         ]
 
-        for k in outputs:
-            print(k["context"])
-            print(k["target_prompt"])
-            print("\n##################\n##### OUTPUT #####\n##################\n")
-            print(k["output"])
-            print("\n*****************************************************************\n*****************************************************************\n")
-        print(1/0)
+        # for k in outputs:
+        #     print(k["context"])
+        #     print(k["target_prompt"])
+        #     print("\n##################\n##### OUTPUT #####\n##################\n")
+        #     print(k["output"])
+        #     print("\n*****************************************************************\n*****************************************************************\n")
+        # print(1/0)
 
         yield from outputs
 
@@ -144,7 +144,7 @@ def generate_outputs_main(
     use_dataset_cache=True,
     prompt_style="oe",
     max_new_tokens=30,
-    bfloat=False,
+    bfloat=True,
 ):
     accelerator = Accelerator()
 
@@ -294,7 +294,7 @@ def generate_labels_main(
     lora_alpha=32,
     lora_dropout=0.1,
     use_dataset_cache=True,
-    bfloat=False,
+    bfloat=True,
 ):
     accelerator = Accelerator()
 
