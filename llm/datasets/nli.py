@@ -16,7 +16,7 @@ __ATTRS = dict(task_tags=["entailment"])
 
 
 def __format_sample(sample, tokenizer, style):
-    target_prompt = "\nAnswer: "
+    target_prompt = "\nAnswer:"
 
     premise = sample["premise"]
     hypothesis = sample["hypothesis"]
@@ -45,7 +45,7 @@ def __format_sample(sample, tokenizer, style):
             [
                 "Read the following premise and answer if the hypothesis is true.",
                 premise,
-                f"Hypothesis: {hypothesis} Yes, No, or It's impossible to say?",
+                f'Hypothesis: {hypothesis}. Is the answer "Yes", "No", or "It\'s impossible to say"? Respond with only the answer and no additional text.',
             ]
         )
 

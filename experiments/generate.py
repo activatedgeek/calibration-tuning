@@ -38,22 +38,23 @@ def prepare_model(
     model = get_model(
         model_name,
         device_map={"": accelerator.local_process_index},
-        torch_dtype=torch.bfloat16 if bfloat else torch.float16,
+        torch_dtype=torch.bfloat16,# if bfloat else torch.float16,
         model_dir=model_dir,
         use_cache=False,
         tokenizer=tokenizer,
-        load_in_8bit=True,
+        load_in_8bit=False,#True,
     )
 
-    model = get_lora_model(
-        model,
-        peft_dir=peft_dir,
-        lora_rank=lora_rank,
-        lora_alpha=lora_alpha,
-        lora_dropout=lora_dropout,
-        is_trainable=False,
-        adapter_name="default",
-    )
+    if peft_dir is not None:
+        model = get_lora_model(
+            model,
+            peft_dir=peft_dir,
+            lora_rank=lora_rank,
+            lora_alpha=lora_alpha,
+            lora_dropout=lora_dropout,
+            is_trainable=False,
+            adapter_name="default",
+        )
 
     model.eval()
 
@@ -192,8 +193,8 @@ def generate_outputs_main(
         max_new_tokens=max_new_tokens,
     )
 
-    print(len(train_data))
-    print(1/0)
+    # print(len(train_data))
+    # print(1/0)
 
     for data, split in zip([train_data], ["train"]):
         loader = get_loader(

@@ -12,7 +12,7 @@ __all__ = [
 
 
 def __format_sample(sample, tokenizer, style):
-    target_prompt = "\nAnswer: "
+    target_prompt = "\nAnswer:"
 
     if style == "choice":
         question = sample["question"]
@@ -39,7 +39,10 @@ def __format_sample(sample, tokenizer, style):
 
         context = "\n".join(
             [
-                f"Question: {question}",
+                "Provide your best answer for the following question. Give ONLY the answer, no other words or explanation.\n"
+                "For example:\n",
+                "Answer: <most likely answer, as short as possible; not a complete sentence, just the answer!>.\n",
+                f"The question is: {question}",
             ]
         )
 

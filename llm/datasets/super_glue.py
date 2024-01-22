@@ -64,7 +64,7 @@ def get_cb(
                 [
                     "Read the following premise and answer if the hypothesis is true.",
                     premise,
-                    f"Hypothesis: {hypothesis}. Yes, No, or It's impossible to say?",
+                    f'Hypothesis: {hypothesis}. Is the answer "Yes", "No", or "It\'s impossible to say"? Respond with only the answer and no additional text.',
                 ]
             )
 
