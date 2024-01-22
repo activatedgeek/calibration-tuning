@@ -45,9 +45,10 @@ def __format_sample(sample, tokenizer, style):
         target = string.ascii_lowercase[answer_order.index(3)] + tokenizer.eos_token
     elif style == "oe":
         context = "\n".join(
-            (["Support:", support] if len(support) else [])
+            ["Read the following paragraph and answer the question."]
+            + ([support] if len(support) else [])
             + [
-                f"\nQuestion:\n{question}",
+                f"Question: {question}",
             ]
         )
 

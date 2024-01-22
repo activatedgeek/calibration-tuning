@@ -28,6 +28,7 @@ def prepare_model(
     lora_rank=None,
     lora_alpha=None,
     lora_dropout=None,
+    bfloat=False,
 ):
     tokenizer = get_model(
         f"{model_name}_tokenizer",
@@ -37,7 +38,7 @@ def prepare_model(
     model = get_model(
         model_name,
         device_map={"": accelerator.local_process_index},
-        torch_dtype=torch.float16,
+        torch_dtype=torch.bfloat16 if bfloat else torch.float16,
         model_dir=model_dir,
         use_cache=False,
         tokenizer=tokenizer,
@@ -82,23 +83,37 @@ def generate_output(
         generation_outputs = model.generate(
             **generation_inputs, generation_config=generation_config
         )
-        generation_outputs = tokenizer.batch_decode(
-            generation_outputs,
-            skip_special_tokens=True,
-            clean_up_tokenization_spaces=False,
-        )
 
-        outputs = [
-            LMText(**{**dict(zip(inputs.keys(), vals)), "target": ""})
-            for vals in zip(*inputs.values())
-        ]
+        ## NOTE: Verify output extraction pre-condition.
+        assert (
+            generation_inputs.get("input_ids")
+            == generation_outputs[:, : generation_inputs.get("input_ids").size(-1)]
+        ).all()
+
+        outputs = [dict(zip(inputs.keys(), vals)) for vals in zip(*inputs.values())]
         outputs = [
             {
-                **s.to_pydict(),
-                "target": inputs["target"][i],
-                "output": t[len(str(s)) :],
+                **o,
+                "output": tokenizer.decode(
+                    t[inp.size(0) :],
+                    skip_special_tokens=True,
+                    clean_up_tokenization_spaces=False,
+                ),
+                # "raw_input": tokenizer.decode(
+                #     inp,
+                #     skip_special_tokens=True,
+                #     clean_up_tokenization_spaces=False,
+                # ),
+                # "target": o["target"],
+                # "raw_output": tokenizer.decode(
+                #     t,
+                #     skip_special_tokens=True,
+                #     clean_up_tokenization_spaces=False,
+                # ),
             }
-            for i, (s, t) in enumerate(zip(outputs, generation_outputs))
+            for o, inp, t in zip(
+                outputs, generation_inputs.get("input_ids"), generation_outputs
+            )
         ]
 
         for k in outputs:
@@ -128,6 +143,7 @@ def generate_outputs_main(
     use_dataset_cache=True,
     prompt_style="oe",
     max_new_tokens=30,
+    bfloat=False,
 ):
     accelerator = Accelerator()
 
@@ -141,6 +157,8 @@ def generate_outputs_main(
         "lora_dropout": lora_dropout,
         "prompt_style": prompt_style,
         "max_new_tokens": max_new_tokens,
+        "log_dir": log_dir,
+        "bfloat": bfloat,
     }
     if accelerator.is_main_process:
         wandb.config.update(config)
@@ -153,6 +171,7 @@ def generate_outputs_main(
         lora_rank=lora_rank,
         lora_alpha=lora_alpha,
         lora_dropout=lora_dropout,
+        bfloat=bfloat,
     )
 
     with accelerator.main_process_first():
@@ -274,6 +293,7 @@ def generate_labels_main(
     lora_alpha=32,
     lora_dropout=0.1,
     use_dataset_cache=True,
+    bfloat=False,
 ):
     accelerator = Accelerator()
 
@@ -285,6 +305,8 @@ def generate_labels_main(
         "lora_rank": lora_rank,
         "lora_alpha": lora_alpha,
         "lora_dropout": lora_dropout,
+        "log_dir": log_dir,
+        "bfloat": bfloat,
     }
     if accelerator.is_main_process:
         wandb.config.update(config)
@@ -297,6 +319,7 @@ def generate_labels_main(
         lora_rank=lora_rank,
         lora_alpha=lora_alpha,
         lora_dropout=lora_dropout,
+        bfloat=bfloat,
     )
 
     with accelerator.main_process_first():

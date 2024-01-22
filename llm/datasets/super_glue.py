@@ -35,6 +35,8 @@ def get_cb(
         dataset.cleanup_cache_files()
 
     def __format_sample(sample, tokenizer, style):
+        target_prompt = "\nAnswer: "
+
         premise = sample["premise"]
         hypothesis = sample["hypothesis"]
         answer_map = ["Yes", "No", "It's impossible to say"]
@@ -56,19 +58,16 @@ def get_cb(
                 ]
             )
 
-            target_prompt = "\nAnswer: "
             target = string.ascii_lowercase[sample["label"]] + tokenizer.eos_token
         elif style == "oe":
             context = "\n".join(
                 [
-                    "Premise:",
+                    "Read the following premise and answer if the hypothesis is true.",
                     premise,
-                    "\nHypothesis:",
-                    hypothesis,
+                    f"Hypothesis: {hypothesis}. Yes, No, or It's impossible to say?",
                 ]
             )
 
-            target_prompt = "\nIs the hypothesis correct? "
             target = answer_map[sample["label"]] + tokenizer.eos_token
         else:
             raise NotImplementedError
@@ -196,11 +195,10 @@ def get_multirc(
         elif style == "oe":
             context = "\n".join(
                 [
-                    "Paragraph:",
+                    "Read the next paragraph, and answer the question.",
                     paragraph,
-                    f"\nQuestion: {question}",
-                    f"\nAnswer: {answer}",
-                    "Is this answer correct? Respond with a Yes or No only.",
+                    f"Q: {question} A: {answer}",
+                    "Question: Is the answer above correct? Yes or No.",
                 ]
             )
 
@@ -329,15 +327,16 @@ def get_copa(
         elif style == "oe":
             context = "\n".join(
                 [
-                    "Premise:",
+                    "Read the following premise and pick the correct choice.",
                     premise,
+                    f"Choice 1: {answer_map[0]}",
+                    f"Choice 2: {answer_map[1]}",
                 ]
             )
 
             target = answer_map[sample["label"]] + tokenizer.eos_token
         else:
             raise NotImplementedError
-
         return LMText(context=context, target_prompt=target_prompt, target=target)
 
     def __generate_fewshot_prompts(

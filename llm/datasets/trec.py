@@ -43,9 +43,8 @@ def __format_sample(sample, tokenizer, style):
     elif style == "oe":
         context = "\n".join(
             [
-                "Question:",
-                question,
-                f"\nWhat category is the question in? Pick one from {', '.join(answer_map)}.",
+                f"Question: {question}",
+                f"What category is the question in? Choose one from {', '.join(answer_map)}.",
             ]
         )
 
