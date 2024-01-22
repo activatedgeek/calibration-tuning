@@ -138,9 +138,9 @@ def all_200k_c(*args, max_n=200_000, **kwargs):
 ## NOTE: Restricted subset of the full data.
 @register_dataset
 def all_200k_c_offline(*args, max_n=200_000, seed=None, **kwargs):
-    tr, _, _ = all_200k_c(*args, seed=seed, **kwargs)
-    with FixedSeed(seed):
-        tr = tr.select(np.random.choice(range(len(tr)), max_n))
+    tr, _, _ = all_200k_c(*args, seed=seed, max_n=max_n, **kwargs)
+    # with FixedSeed(seed):
+    #     tr = tr.select(np.random.choice(range(len(tr)), max_n))
     return tr, None, None
 
 
@@ -188,9 +188,9 @@ def sub_200k_c(*args, max_n=800_000, **kwargs):
 ## NOTE: Restricted subset of the full data.
 @register_dataset
 def sub_200k_c_offline(*args, max_n=200_000, seed=None, **kwargs):
-    tr, _, _ = sub_200k_c(*args, seed=seed, **kwargs)
-    with FixedSeed(seed):
-        tr = tr.select(np.random.choice(range(len(tr)), max_n))
+    tr, _, _ = sub_200k_c(*args, seed=seed, max_n=max_n, **kwargs)
+    # with FixedSeed(seed):
+    #     tr = tr.select(np.random.choice(range(len(tr)), max_n))
     return tr, None, None
 
 
