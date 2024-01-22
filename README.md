@@ -75,7 +75,7 @@ To create a CSV dataset of open-ended generations,
 ./autotorchrun experiments/generate.py outputs \
     --model-name=llama2_7b \
     --peft-dir=</optional/path/to/checkpoint/dir> \
-    --dataset=sub_100_c \
+    --dataset=sub_200k_c \
     --batch-size=10 \
     --log-dir=</path/to/log_dir>
 ```
