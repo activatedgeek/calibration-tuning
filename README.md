@@ -80,7 +80,7 @@ To create a CSV dataset of open-ended generations,
     --log-dir=</path/to/log_dir>
 ```
 
-This will generate CSV files under `<log-dir>/outputs`.
+This command will generate CSV files under `<log-dir>/outputs`.
 
 Use this path to further generate a CSV dataset of uncertainty labels on top of the open-ended generations, 
 ```shell
@@ -90,10 +90,13 @@ Use this path to further generate a CSV dataset of uncertainty labels on top of 
     --dataset=offline \
     --data-dir=<log-dir>/outputs \
     --batch-size=10 \
+    --strategy=substring \
     --log-dir=</path/to/log_dir>
 ```
 
-This will generate CSV files under `<log-dir>/labels`. Note the `--dataset` and `--data-dir` arguments.
+Use `--strategy=fuzzy_gpt-3.5-turbo-1106` for generating labels via GPT 3.5 Turbo.
+
+This command will generate CSV files under `<log-dir>/labels`. Note the `--dataset` and `--data-dir` arguments.
 
 ### Cache
 

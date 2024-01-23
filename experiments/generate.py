@@ -115,14 +115,8 @@ def generate_output(
             )
         ]
 
-        # for k in outputs:
-        #     print(k["context"])
-        #     print(k["target_prompt"])
-        #     print("\n##################\n##### OUTPUT #####\n##################\n")
-        #     print(k["output"])
-        #     print("\n*****************************************************************\n*****************************************************************\n")
-
         yield from outputs
+
 
 def generate_outputs_main(
     seed=137,
@@ -143,7 +137,9 @@ def generate_outputs_main(
 ):
     accelerator = Accelerator()
 
-    assert batch_size == 1, "Only use batch size 1 for now to avoid left padding issues."
+    assert (
+        batch_size == 1
+    ), "Only use batch size 1 for now to avoid left padding issues."
 
     config = {
         "seed": seed,
@@ -286,6 +282,7 @@ def generate_labels_main(
     lora_alpha=32,
     lora_dropout=0.1,
     use_dataset_cache=True,
+    strategy="substring",  ## fuzzy_gpt-3.5-turbo-1106
 ):
     accelerator = Accelerator()
 
@@ -298,6 +295,7 @@ def generate_labels_main(
         "lora_alpha": lora_alpha,
         "lora_dropout": lora_dropout,
         "log_dir": log_dir,
+        "strategy": strategy,
     }
     if accelerator.is_main_process:
         wandb.config.update(config)
@@ -336,6 +334,7 @@ def generate_labels_main(
             model,
             tokenizer,
             loader,
+            comparison_strategy=strategy,
         )
 
         csv_path = f"{log_dir}/labels/{split}"
