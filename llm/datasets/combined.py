@@ -53,9 +53,20 @@ def get_all_datasets_list(dataset_str, prompt_style=None):
     return all_datasets_list
 
 
-def _concat_datasets(datasets, max_n, complement=False):
+def _concat_datasets(datasets, max_n, complement=False, uniform=False):
     all_n = [len(ds) for ds in datasets]
     total_n = min(max_n, sum(all_n))
+
+    if uniform:
+        equal_n = max_n // len(all_n)
+        select_n = [min(equal_n, len(ds)) for ds in datasets]
+
+        return concatenate_datasets(
+            [
+                ds.select(range(n, N) if complement else range(n))
+                for ds, N, n in zip(datasets, all_n, select_n)
+            ]
+        )
 
     select_n = ((np.array(all_n) / sum(all_n)) * total_n).astype(int)
 
@@ -72,6 +83,7 @@ def get_combined_dataset(
     max_n=100,
     seed=None,
     complement=False,
+    uniform=False,
     **kwargs,
 ):
     all_train_data, all_val_data, all_test_data = [], [], []
@@ -99,7 +111,9 @@ def get_combined_dataset(
             test_data = test_data.shuffle(seed=seed)
             all_test_data.append(test_data)
 
-    all_train_data = _concat_datasets(all_train_data, max_n, complement=complement)
+    all_train_data = _concat_datasets(
+        all_train_data, max_n, complement=complement, uniform=uniform
+    )
     all_val_data = _concat_datasets(all_val_data, max_n)
     all_test_data = _concat_datasets(all_test_data, max_n)
 
@@ -117,6 +131,16 @@ def all_200k(*args, max_n=200_000, prompt_style="choice", **kwargs):
         complement=False,
     )
     return tr, None, None
+
+
+@register_dataset
+def all_200k_uniform(*args, max_n=200_000, **kwargs):
+    return all_200k(*args, max_n=max_n, uniform=True, **kwargs)
+
+
+@register_dataset
+def all_20k_uniform(*args, max_n=20_000, **kwargs):
+    return all_200k_uniform(*args, max_n=max_n, **kwargs)
 
 
 @register_dataset
@@ -144,18 +168,6 @@ def all_200k_c(*args, max_n=200_000, prompt_style="choice", **kwargs):
         complement=True,
     )
     return tr, None, None
-
-
-## NOTE: Restricted subset of the full data.
-@register_dataset
-def all_200k_c_offline(*args, max_n=200_000, seed=None, **kwargs):
-    tr, _, _ = all_200k_c(*args, seed=seed, max_n=max_n, **kwargs)
-    return tr, None, None
-
-
-@register_dataset
-def all_20k_c_offline(*args, max_n=850_000, **kwargs):
-    return all_200k_c(*args, max_n=max_n, **kwargs)
 
 
 @register_dataset
@@ -205,12 +217,6 @@ def sub_200k_c(*args, max_n=800_000, prompt_style="choice", **kwargs):
         max_n=max_n,
     )
     return tr, None, None
-
-
-## NOTE: Restricted subset of the full data.
-@register_dataset
-def sub_200k_c_offline(*args, max_n=200_000, seed=None, **kwargs):
-    return sub_200k_c(*args, seed=seed, max_n=max_n, **kwargs)
 
 
 @register_dataset
