@@ -145,6 +145,11 @@ def all_200k_c_offline(*args, max_n=200_000, seed=None, **kwargs):
 
 
 @register_dataset
+def all_20k_c_offline(*args, max_n=950_000, **kwargs):
+    return all_200k_c(*args, max_n=max_n, **kwargs)
+
+
+@register_dataset
 def sub_200k(*args, max_n=200_000, **kwargs):
     all_dataset_names = get_all_datasets_list("all:train")
     all_dataset_names = all_dataset_names[: len(all_dataset_names) // 2]
@@ -176,7 +181,7 @@ def cal_sub_200k(*args, max_n=200_000, **kwargs):
 def sub_200k_c(*args, max_n=800_000, **kwargs):
     all_dataset_names = get_all_datasets_list("all:train")
     all_dataset_names = all_dataset_names[len(all_dataset_names) // 2 :]
-    
+
     # all_dataset_names = all_dataset_names[3:]
     # print(all_dataset_names)
     # print(1/0)
