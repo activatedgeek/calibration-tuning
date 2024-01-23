@@ -143,6 +143,8 @@ def generate_outputs_main(
 ):
     accelerator = Accelerator()
 
+    assert batch_size == 1, "Only use batch size 1 for now to avoid left padding issues."
+
     config = {
         "seed": seed,
         "model_name": model_name,
@@ -296,7 +298,6 @@ def generate_labels_main(
         "lora_alpha": lora_alpha,
         "lora_dropout": lora_dropout,
         "log_dir": log_dir,
-        "bfloat": bfloat,
     }
     if accelerator.is_main_process:
         wandb.config.update(config)
