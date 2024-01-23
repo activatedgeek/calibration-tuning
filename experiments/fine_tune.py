@@ -46,7 +46,7 @@ def main(
     model = get_model(
         model_name,
         device_map={"": accelerator.local_process_index},
-        torch_dtype=torch.float16,
+        torch_dtype=torch.bfloat16 if torch.cuda.is_bf16_supported() else torch.float16,
         model_dir=model_dir,
         use_cache=False,
         tokenizer=tokenizer,
