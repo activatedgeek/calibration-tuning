@@ -40,7 +40,7 @@ def __format_sample(sample, tokenizer, style):
             ]
         )
 
-        target_prompt = "\nEnding: "
+        target_prompt = "\nEnding:"
         target = answer_map[int(sample["label"])] + tokenizer.eos_token
     else:
         raise NotImplementedError

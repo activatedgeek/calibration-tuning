@@ -13,7 +13,7 @@ __all__ = [
 
 
 def __format_sample(sample, tokenizer, style):
-    target_prompt = "\nAnswer: "
+    target_prompt = "\nAnswer:"
 
     support = sample["support"]
     question = sample["question"]
@@ -45,9 +45,15 @@ def __format_sample(sample, tokenizer, style):
         target = string.ascii_lowercase[answer_order.index(3)] + tokenizer.eos_token
     elif style == "oe":
         context = "\n".join(
-            ["Read the following paragraph and answer the question."]
+            [
+                "Read the following paragraph and answer the question. Give ONLY the answer, no other words or explanation.\n",
+                "For example:\n",
+                "Answer: <most likely answer, as short as possible>.\n",
+                f"Paragraph: ",
+            ]
             + ([support] if len(support) else [])
             + [
+                "\n",
                 f"Question: {question}",
             ]
         )

@@ -117,15 +117,16 @@ def generate_output(
             )
         ]
 
-        # for k in outputs:
-        #     print(k["context"])
-        #     print(k["target_prompt"])
-        #     print("\n##################\n##### OUTPUT #####\n##################\n")
-        #     print(k["output"])
-        #     print("\n*****************************************************************\n*****************************************************************\n")
-        # print(1/0)
+        for k in outputs:
+            print(k["context"])
+            print(k["target_prompt"])
+            print("\n##################\n##### OUTPUT #####\n##################\n")
+            print(k["output"])
+            print("\n*****************************************************************\n*****************************************************************\n")
 
         yield from outputs
+
+    print(1/0)
 
 
 def generate_outputs_main(

@@ -35,7 +35,7 @@ def get_cb(
         dataset.cleanup_cache_files()
 
     def __format_sample(sample, tokenizer, style):
-        target_prompt = "\nAnswer: "
+        target_prompt = "\nAnswer:"
 
         premise = sample["premise"]
         hypothesis = sample["hypothesis"]
@@ -195,10 +195,11 @@ def get_multirc(
         elif style == "oe":
             context = "\n".join(
                 [
-                    "Read the next paragraph, and answer the question.",
-                    paragraph,
-                    f"Q: {question} A: {answer}",
-                    "Question: Is the answer above correct? Yes or No.",
+                    "Read the following paragraph along with the question and answer. Then, respond with whether the answer is correct.",
+                    f"Passage: {paragraph}\n",
+                    f"Question: {question}\n",
+                    f"Answer: {answer}\n",
+                    'Is the answer correct? Respond with only "Yes" or "No" and no additional text.',
                 ]
             )
 
@@ -303,7 +304,7 @@ def get_copa(
         dataset.cleanup_cache_files()
 
     def __format_sample(sample, tokenizer, style):
-        target_prompt = "\nAnswer: "
+        target_prompt = "\nAnswer:"
 
         premise = sample["premise"]
         answer_map = [sample["choice1"], sample["choice2"]]
@@ -327,10 +328,11 @@ def get_copa(
         elif style == "oe":
             context = "\n".join(
                 [
-                    "Read the following premise and pick the correct choice.",
-                    premise,
+                    "Read the following premise and pick the correct choice. Then, respond with which of the choices is correct.",
+                    f"Premise: {premise}\n",
                     f"Choice 1: {answer_map[0]}",
                     f"Choice 2: {answer_map[1]}",
+                    'Which of the choices is correct? Respond with only "1" or "2" and no additional text.',
                 ]
             )
 

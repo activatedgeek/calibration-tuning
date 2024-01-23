@@ -12,7 +12,7 @@ __all__ = [
 
 
 def __format_sample(sample, tokenizer, style):
-    target_prompt = "\nAnswer: "
+    target_prompt = "\nAnswer:"
 
     question = sample["text"]
     answer_map = [
@@ -43,8 +43,9 @@ def __format_sample(sample, tokenizer, style):
     elif style == "oe":
         context = "\n".join(
             [
+                "Read the following question and then pick a category that describes the question.",
                 f"Question: {question}",
-                f"What category is the question in? Choose one from {', '.join(answer_map)}.",
+                f"What category is the question in? Choose one from {', '.join(answer_map)}. Respond with only the category and no additional text.",
             ]
         )
 

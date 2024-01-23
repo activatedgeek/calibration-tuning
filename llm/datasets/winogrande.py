@@ -48,9 +48,10 @@ def __format_sample(sample, tokenizer, style):
         context = "\n".join(
             [
                 "Fill in the blank (_) in the following sentence from the following choices.",
-                sentence,
+                f"Sentence: {sentence}\n",
                 f"Choice 1: {answer_map[0]}",
                 f"Choice 2: {answer_map[1]}",
+                'Which of the choices is correct? Respond with only "1" or "2" and no additional text.',
             ]
         )
 

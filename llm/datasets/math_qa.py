@@ -12,7 +12,7 @@ __all__ = [
 
 
 def __format_sample(sample, tokenizer, style):
-    target_prompt = "\nAnswer: "
+    target_prompt = "\nAnswer:"
 
     problem = sample["Problem"]
     answer_map = [opt.split(")")[-1].strip() for opt in sample["options"].split(",")]
@@ -36,7 +36,10 @@ def __format_sample(sample, tokenizer, style):
     elif style == "oe":
         context = "\n".join(
             [
-                f"Answer the following math problem: {problem}",
+                "Provide your best answer for the following math problem. Give ONLY the answer, no other words or explanation.\n"
+                "For example:\n",
+                "Answer: <most likely answer, as short as possible; not a complete sentence, just the answer!>.\n",
+                f"The problem is: {problem}",
             ]
         )
 

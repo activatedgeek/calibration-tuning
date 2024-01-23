@@ -12,7 +12,7 @@ __all__ = [
 
 
 def __format_sample(sample, tokenizer, style):
-    target_prompt = "\nAnswer: "
+    target_prompt = "\nAnswer:"
 
     goal = sample["goal"]
     answer_map = [sample["sol1"], sample["sol2"]]
@@ -36,7 +36,10 @@ def __format_sample(sample, tokenizer, style):
     elif style == "oe":
         context = "\n".join(
             [
-                f"Question: {goal}",
+                "Provide advice on how to accomplish the following goal. Give ONLY the advice, no other words or explanation.\n"
+                "For example:\n",
+                "Answer: <advice, as short as possible; a single sentence!>.\n",
+                f"Goal: {goal}",
             ]
         )
 

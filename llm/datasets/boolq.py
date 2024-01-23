@@ -12,7 +12,7 @@ __all__ = [
 
 
 def __format_sample(sample, tokenizer, style):
-    target_prompt = "\nAnswer: "
+    target_prompt = "\nAnswer:"
 
     passage = sample["passage"]
     question = sample["question"]
@@ -41,8 +41,10 @@ def __format_sample(sample, tokenizer, style):
     elif style == "oe":
         context = "\n".join(
             [
-                f"Passage: {passage}",
-                f"Question: {question} True or False?",
+                "Read the following passage and answer if the question is true or false.",
+                f"Passage: {passage}\n",
+                f"Question: {question}?\n",
+                'Is the answer True or False? Respond with only "True" or "False" and no additional text.',
             ]
         )
 
