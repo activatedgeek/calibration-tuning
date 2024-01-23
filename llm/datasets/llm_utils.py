@@ -30,7 +30,9 @@ class DataCollatorForSupervisedDataset:
             )
             batch_dict["labels"] = labels
 
-        if "query_label" in instances[0].keys() and any([len(i["query_label"]) > 0 for i in instances]):
+        if "query_label" in instances[0].keys() and any(
+            [len(i["query_label"]) > 0 for i in instances]
+        ):
             query_labels = torch.tensor(
                 [instance["query_label"] for instance in instances]
             )
@@ -61,7 +63,7 @@ class LMText:
     query_label: int = None
 
     def __str__(self):
-        return self.prompt + self.context + self.target_prompt + self.target
+        return (self.prompt + self.context + self.target_prompt + self.target).strip()
 
     def to_pydict(self):
         return {k: v for k, v in dataclassasdict(self).items() if v is not None}
