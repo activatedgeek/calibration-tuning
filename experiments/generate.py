@@ -117,17 +117,14 @@ def generate_output(
             )
         ]
 
-        for k in outputs:
-            print(k["context"])
-            print(k["target_prompt"])
-            print("\n##################\n##### OUTPUT #####\n##################\n")
-            print(k["output"])
-            print("\n*****************************************************************\n*****************************************************************\n")
+        # for k in outputs:
+        #     print(k["context"])
+        #     print(k["target_prompt"])
+        #     print("\n##################\n##### OUTPUT #####\n##################\n")
+        #     print(k["output"])
+        #     print("\n*****************************************************************\n*****************************************************************\n")
 
         yield from outputs
-
-    print(1/0)
-
 
 def generate_outputs_main(
     seed=137,
@@ -193,9 +190,6 @@ def generate_outputs_main(
         eos_token_id=tokenizer.eos_token_id,
         max_new_tokens=max_new_tokens,
     )
-
-    # print(len(train_data))
-    # print(1/0)
 
     for data, split in zip([train_data], ["train"]):
         loader = get_loader(
