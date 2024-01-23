@@ -1,6 +1,8 @@
 from openai import ChatCompletion
 from openai.error import RateLimitError, APIError, Timeout, ServiceUnavailableError
 import torch
+import logging
+import time
 
 from .llm_utils import (
     get_token_vec,
@@ -26,17 +28,33 @@ def openai_query(system_prompt, prompt, openai_model_name='gpt-4-1106-preview'):
             time.sleep(1)
     return sampled_response
 
-
 SYSTEM_PROMPT_ORACLE_EQUIVALENCY    = "You are an automated grading assistant helping a teacher grade student answers."
-PROMPT_ORACLE_EQUIVALENCY           = "The problem is: <question>\n\n The correct answer for this problem is: <ground-truth>\n " + \
+PROMPT_ANSWER_KEY_EQUIVALENCY           = "The problem is: <question>\n\n The correct answer for this problem is: <ground-truth>\n " + \
         "A student submitted the answer: <prediction>\n " + \
         "The student's answer must be correct and specific but not overcomplete " + \
         "(for example, if they provide two different answers, they did not get the question right). " + \
         "However, small differences in formatting should not be penalized (for example, 'New York City' is equivalent to 'NYC'). " + \
         "Did the student provide an equivalent answer to the ground truth? Please answer yes or no without any explanation: "
 
+PROMPT_TWO_ANSWERS_EQUIVALENCY          = "The problem is: <question>\n\n" + \
+        "Student A submitted the answer: <prediction-a>\n " + \
+        "Student B submitted the answer: <prediction-b>\n" + \
+        "Your task is to evaluate if these two answers are equivalent, so the teacher can group matching answers together. " + \
+        "Small differences in formatting should not be a reason to mark the answers as different. " + \
+        "Did the two students provide equivalent answers? Please answer yes or no without any explanation: "
+
 def evaluate_equivalency_with_oracle(ground_truth, prediction, question, oracle_fn, oracle_kwargs):
-    prompt = PROMPT_ORACLE_EQUIVALENCY.replace('<ground-truth>', ground_truth).replace('<prediction>', prediction).replace('<question>', question)
+    prompt = PROMPT_ANSWER_KEY_EQUIVALENCY.replace('<ground-truth>', ground_truth).replace('<prediction>', prediction).replace('<question>', question)
+    sampled_response = oracle_fn(
+        system_prompt=SYSTEM_PROMPT_ORACLE_EQUIVALENCY,
+        prompt=prompt,
+        **oracle_kwargs
+    )
+    return 'yes' in sampled_response.strip().lower()
+
+
+def clustering_equivalency_with_oracle(a, b, question,oracle_fn, oracle_kwargs):
+    prompt = PROMPT_TWO_ANSWERS_EQUIVALENCY.replace('<prediction-a>', a).replace('<prediction-b>', b).replace('<question>', question)
     sampled_response = oracle_fn(
         system_prompt=SYSTEM_PROMPT_ORACLE_EQUIVALENCY,
         prompt=prompt,
