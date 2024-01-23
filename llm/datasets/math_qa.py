@@ -104,7 +104,9 @@ def get_math_qa(
     from datasets import load_dataset
 
     dataset = load_dataset(
-        "math_qa", cache_dir=os.environ.get("HF_DATASETS_CACHE", root)
+        "math_qa",
+        cache_dir=os.environ.get("HF_DATASETS_CACHE", root),
+        trust_remote_code=True,
     )
     if not use_cache:
         dataset.cleanup_cache_files()

@@ -17,6 +17,8 @@ def __format_sample(sample, tokenizer, style):
     sentence = sample["sentence"]
 
     if style == "choice":
+        answer_map = [sample["option1"], sample["option2"]]
+
         context = "\n".join(
             [
                 "Sentence:",
@@ -30,8 +32,6 @@ def __format_sample(sample, tokenizer, style):
                 ],
             ]
         )
-
-        answer_map = [sample["option1"], sample["option2"]]
 
         target = string.ascii_lowercase[int(sample["answer"]) - 1] + tokenizer.eos_token
     elif style == "oe":
