@@ -11,11 +11,10 @@ from ..datasets.llm_utils import (
     prepare_batch,
 )
 from ..datasets.llm_utils_oe import (
-    extract_qa_oe,
     extract_oe_inputs,
-    prepare_oe_calibration_query,,
+    prepare_oe_calibration_query,
     clustering_equivalency_with_oracle,
-    openai_query
+    openai_query,
 )
 from .third_party.calibration import calibration
 
@@ -196,22 +195,28 @@ def evaluate_oe_uncertainty_sampling(
     comparison_strategies=None,
     max_new_tokens=30,
     output_row_path=None,
-    top_p = 0.95,
-    k = 10
+    top_p=0.95,
+    k=10,
 ):
-    assert(prompt_style=="oe")
-    assert((not comparison_strategies is None) and len(comparison_strategies) > 0)
+    assert prompt_style == "oe"
+    assert (not comparison_strategies is None) and len(comparison_strategies) > 0
     device = accelerator.device
     collate_fn = DataCollatorForSupervisedDataset(tokenizer)
 
     query_token_vec = None
     # all_oe_inputs = []
-    all_prob = {c : [] for c in comparison_strategies}
-    all_likelihood_accumulate = {c : [] for c in comparison_strategies}
-    all_normalized_likelihood_accumulate = {c : [] for c in comparison_strategies}
+    all_prob = {c: [] for c in comparison_strategies}
+    all_likelihood_accumulate = {c: [] for c in comparison_strategies}
+    all_normalized_likelihood_accumulate = {c: [] for c in comparison_strategies}
     all_likelihood_outputs = []
-    all_acc = {c : [] for c in comparison_strategies}
-    all_oe_target_strings, all_output_strings, all_question_strings, all_generations, all_match_scores = [], [], [], [], []
+    all_acc = {c: [] for c in comparison_strategies}
+    (
+        all_oe_target_strings,
+        all_output_strings,
+        all_question_strings,
+        all_generations,
+        all_match_scores,
+    ) = ([], [], [], [], [])
 
     for inputs in tqdm(loader, leave=False):
 
@@ -224,8 +229,9 @@ def evaluate_oe_uncertainty_sampling(
         oe_inputs = {k: v.to(device) for k, v in oe_inputs.items()}
 
         # these are the ground truth strings for this batch
-        oe_target_strings = tokenizer.batch_decode(oe_targets, skip_special_tokens=True, clean_up_tokenization_spaces=False)
-        
+        oe_target_strings = tokenizer.batch_decode(
+            oe_targets, skip_special_tokens=True, clean_up_tokenization_spaces=False
+        )
 
         if isinstance(model, PeftModel):
             model.set_adapter("default")
@@ -233,43 +239,60 @@ def evaluate_oe_uncertainty_sampling(
         # generate 30 more tokens
         outputs = model.generate(**oe_inputs, max_new_tokens=max_new_tokens)
 
-        # convert those new tokens to the generated strings 
-        output_strings = tokenizer.batch_decode(outputs[...,target_start_idx:], skip_special_tokens=True, clean_up_tokenization_spaces=False)
+        # convert those new tokens to the generated strings
+        output_strings = tokenizer.batch_decode(
+            outputs[..., target_start_idx:],
+            skip_special_tokens=True,
+            clean_up_tokenization_spaces=False,
+        )
 
-        question_strings = tokenizer.batch_decode(oe_inputs['input_ids'], skip_special_tokens=True, clean_up_tokenization_spaces=False)
+        question_strings = tokenizer.batch_decode(
+            oe_inputs["input_ids"],
+            skip_special_tokens=True,
+            clean_up_tokenization_spaces=False,
+        )
 
         # generate 30 more tokens k addtl times for the uncertainty estimation
         outputs_list = []
         length_normalized_likelihoods_list = []
         for i in range(k):
-            
+
             outputs_pre_cluster = model.generate(
-                **oe_inputs, max_new_tokens=max_new_tokens,
-                top_p = top_p,
-                do_sample = True
+                **oe_inputs, max_new_tokens=max_new_tokens, top_p=top_p, do_sample=True
             )
 
-            outputs_pre_cluster_strings = tokenizer.batch_decode(outputs_pre_cluster[...,target_start_idx:], skip_special_tokens=True, clean_up_tokenization_spaces=False)
+            outputs_pre_cluster_strings = tokenizer.batch_decode(
+                outputs_pre_cluster[..., target_start_idx:],
+                skip_special_tokens=True,
+                clean_up_tokenization_spaces=False,
+            )
             outputs_list.append(outputs_pre_cluster_strings)
 
-            assert(len(outputs_pre_cluster_strings) == 1)
-    
+            assert len(outputs_pre_cluster_strings) == 1
+
             length_normalized_likelihoods_list.append(
                 [
                     np.exp(
-                        np.sum(np.log(outputs_pre_cluster[...,target_start_idx:].detach().cpu().numpy())) / len(outputs_pre_cluster[...,target_start_idx:][0])
+                        np.sum(
+                            np.log(
+                                outputs_pre_cluster[..., target_start_idx:]
+                                .detach()
+                                .cpu()
+                                .numpy()
+                            )
+                        )
+                        / len(outputs_pre_cluster[..., target_start_idx:][0])
                     )
                 ]
             )
-
 
         # page 15 is original algorithm: https://arxiv.org/pdf/2302.09664.pdf
         # our modification is based on finding the likelihood under the sampling procedure of the greedy decoded answer's equivalence class
         # form a cluster based on the equivalency with the greedy decode (but exclude the greedy decode)
 
         # two strategies to compute likelihood:
-        # 1) find sum of length-normalized likelihoods of all entries in sample -- closest approximation of 
-        # the logsumpexp likelihood-summing done here: 
+        # 1) find sum of length-normalized likelihoods of all entries in sample -- closest approximation of
+        # the logsumpexp likelihood-summing done here:
         # https://github.com/lorenzkuhn/semantic_uncertainty/blob/27adbf0dc1bf056c771c205d89c2a79cbd82dc3a/code/compute_confidence_measure.py#L134
         # NOTE: we do not feel that adding likelihoods of samples produces a convergent estimate of likelihoods
         # 2) compute the size of the cluster associated with the greedy decode to get an estimate of its confidence - this is a convergent monte carlo estimate.
@@ -281,20 +304,24 @@ def evaluate_oe_uncertainty_sampling(
         likelihood_score = []
         normalized_likelihood_score = []
         likelihood_output_list = []
-        for i, question_string, greedy in zip(range(len(question_strings)), question_strings, output_strings):
+        for i, question_string, greedy in zip(
+            range(len(question_strings)), question_strings, output_strings
+        ):
             n_cluster = 0
             likelihood_accumulate = 0
-            
-            for sample, likelihoods in zip(outputs_list, length_normalized_likelihoods_list):
+
+            for sample, likelihoods in zip(
+                outputs_list, length_normalized_likelihoods_list
+            ):
                 likelihood = likelihoods[i]
                 generation = sample[i]
 
                 add_to_cluster = clustering_equivalency_with_oracle(
-                    greedy, 
-                    generation, 
+                    greedy,
+                    generation,
                     question_strings[0],
                     oracle_fn=openai_query,
-                    oracle_kwargs={'openai_model_name': 'gpt-3.5-turbo-1106'}
+                    oracle_kwargs={"openai_model_name": "gpt-3.5-turbo-1106"},
                 )
 
                 if add_to_cluster:
@@ -303,12 +330,15 @@ def evaluate_oe_uncertainty_sampling(
 
                 match_scores.append(add_to_cluster)
             # then prob = (size of the cluster associated with greedy) / k
-            prob.append(
-                n_cluster / k
-            )
+            prob.append(n_cluster / k)
             likelihood_score.append(likelihood_accumulate)
-            normalized_likelihood_score.append(likelihood_accumulate / sum([l[i] for l in length_normalized_likelihoods_list]))
-            likelihood_output_list.append([l[i] for l in length_normalized_likelihoods_list])
+            normalized_likelihood_score.append(
+                likelihood_accumulate
+                / sum([l[i] for l in length_normalized_likelihoods_list])
+            )
+            likelihood_output_list.append(
+                [l[i] for l in length_normalized_likelihoods_list]
+            )
 
         prob = np.array(prob)
         likelihood_score = np.array(likelihood_score)
@@ -322,7 +352,12 @@ def evaluate_oe_uncertainty_sampling(
         # the calculation of the accuracy is done within this function
         for c in comparison_strategies:
             _, _, acc = prepare_oe_calibration_query(
-                tokenizer, oe_target_strings, output_strings, question_strings, format=query_format, comparison_strategy=c
+                tokenizer,
+                oe_target_strings,
+                output_strings,
+                question_strings,
+                format=query_format,
+                comparison_strategy=c,
             )
 
             acc = acc.to(device)
@@ -330,64 +365,91 @@ def evaluate_oe_uncertainty_sampling(
             [
                 l.append(v)
                 for l, v in zip(
-                    (all_prob[c], all_likelihood_accumulate[c], all_normalized_likelihood_accumulate[c], all_acc[c]),
-                    accelerator.gather_for_metrics((prob, likelihood_score, normalized_likelihood_score, acc)),
+                    (
+                        all_prob[c],
+                        all_likelihood_accumulate[c],
+                        all_normalized_likelihood_accumulate[c],
+                        all_acc[c],
+                    ),
+                    accelerator.gather_for_metrics(
+                        (prob, likelihood_score, normalized_likelihood_score, acc)
+                    ),
                 )
-            ]          
+            ]
 
         [
             l.append(v)
             for l, v in zip(
-                (all_oe_target_strings, all_output_strings, all_question_strings, all_generations, all_match_scores, all_likelihood_outputs),
-                accelerator.gather_for_metrics((oe_target_strings, output_strings, question_strings, sum(outputs_list, []), match_scores, likelihood_output_list)),
+                (
+                    all_oe_target_strings,
+                    all_output_strings,
+                    all_question_strings,
+                    all_generations,
+                    all_match_scores,
+                    all_likelihood_outputs,
+                ),
+                accelerator.gather_for_metrics(
+                    (
+                        oe_target_strings,
+                        output_strings,
+                        question_strings,
+                        sum(outputs_list, []),
+                        match_scores,
+                        likelihood_output_list,
+                    )
+                ),
             )
-        ]          
+        ]
 
     return_dict = {
         "N": len(all_oe_target_strings),
     }
 
-    all_oe_target_strings, all_output_strings, all_question_strings = sum(all_oe_target_strings, []), sum(all_output_strings, []), sum(all_question_strings, [])
+    all_oe_target_strings, all_output_strings, all_question_strings = (
+        sum(all_oe_target_strings, []),
+        sum(all_output_strings, []),
+        sum(all_question_strings, []),
+    )
     all_likelihood_outputs = sum(all_likelihood_outputs, [])
     dump = {
-        "oe_target_strings": all_oe_target_strings, 
+        "oe_target_strings": all_oe_target_strings,
         "output_strings": all_output_strings,
         "question_strings": all_question_strings,
-
         "all_generations": all_generations,
         "all_match_scores": all_match_scores,
-
         "all_likelihood_outputs": all_likelihood_outputs,
     }
-
-
 
     for c in comparison_strategies:
 
         all_acc_c = np.concatenate([c.cpu() for c in all_acc[c]], axis=0)
         all_prob_c = np.concatenate([p for p in all_prob[c]], axis=0)
-        all_likelihood_accumulate_c = np.concatenate([l for l in all_likelihood_accumulate[c]], axis=0)
-        all_normalized_likelihood_accumulate_c = np.concatenate([l for l in all_normalized_likelihood_accumulate[c]], axis=0)
+        all_likelihood_accumulate_c = np.concatenate(
+            [l for l in all_likelihood_accumulate[c]], axis=0
+        )
+        all_normalized_likelihood_accumulate_c = np.concatenate(
+            [l for l in all_normalized_likelihood_accumulate[c]], axis=0
+        )
 
         acc = all_acc_c.mean()
         # import pdb; pdb.set_trace()
-        assert(len(all_prob_c) == len(all_acc_c))
-        assert(len(all_likelihood_accumulate_c) == len(all_acc_c))
+        assert len(all_prob_c) == len(all_acc_c)
+        assert len(all_likelihood_accumulate_c) == len(all_acc_c)
         ece, _ = calibration(
             np.ones_like(all_prob_c),
-            all_acc_c.astype(dtype=np.dtype('i4')),
+            all_acc_c.astype(dtype=np.dtype("i4")),
             np.array(all_prob_c),
         )
 
         likelihood_ece, _ = calibration(
             np.ones_like(all_likelihood_accumulate_c),
-            all_acc_c.astype(dtype=np.dtype('i4')),
+            all_acc_c.astype(dtype=np.dtype("i4")),
             np.array(all_likelihood_accumulate_c),
         )
 
         likelihood_normalized, _ = calibration(
             np.ones_like(all_normalized_likelihood_accumulate_c),
-            all_acc_c.astype(dtype=np.dtype('i4')),
+            all_acc_c.astype(dtype=np.dtype("i4")),
             np.array(all_normalized_likelihood_accumulate_c),
         )
 
@@ -396,7 +458,7 @@ def evaluate_oe_uncertainty_sampling(
                 f"{c}_acc": acc.item(),
                 f"{c}_ece_counting": ece,
                 f"{c}_ece_likelihood": likelihood_ece,
-                f"{c}_ece_likelihood_normalized": likelihood_normalized
+                f"{c}_ece_likelihood_normalized": likelihood_normalized,
             }
         )
 
@@ -432,22 +494,28 @@ def evaluate_oe_uncertainty_sampling(
     comparison_strategies=None,
     max_new_tokens=30,
     output_row_path=None,
-    top_p = 0.95,
-    k = 10
+    top_p=0.95,
+    k=10,
 ):
-    assert(prompt_style=="oe")
-    assert((not comparison_strategies is None) and len(comparison_strategies) > 0)
+    assert prompt_style == "oe"
+    assert (not comparison_strategies is None) and len(comparison_strategies) > 0
     device = accelerator.device
     collate_fn = DataCollatorForSupervisedDataset(tokenizer)
 
     query_token_vec = None
     # all_oe_inputs = []
-    all_prob = {c : [] for c in comparison_strategies}
-    all_likelihood_accumulate = {c : [] for c in comparison_strategies}
-    all_normalized_likelihood_accumulate = {c : [] for c in comparison_strategies}
+    all_prob = {c: [] for c in comparison_strategies}
+    all_likelihood_accumulate = {c: [] for c in comparison_strategies}
+    all_normalized_likelihood_accumulate = {c: [] for c in comparison_strategies}
     all_likelihood_outputs = []
-    all_acc = {c : [] for c in comparison_strategies}
-    all_oe_target_strings, all_output_strings, all_question_strings, all_generations, all_match_scores = [], [], [], [], []
+    all_acc = {c: [] for c in comparison_strategies}
+    (
+        all_oe_target_strings,
+        all_output_strings,
+        all_question_strings,
+        all_generations,
+        all_match_scores,
+    ) = ([], [], [], [], [])
 
     for inputs in tqdm(loader, leave=False):
 
@@ -460,8 +528,9 @@ def evaluate_oe_uncertainty_sampling(
         oe_inputs = {k: v.to(device) for k, v in oe_inputs.items()}
 
         # these are the ground truth strings for this batch
-        oe_target_strings = tokenizer.batch_decode(oe_targets, skip_special_tokens=True, clean_up_tokenization_spaces=False)
-        
+        oe_target_strings = tokenizer.batch_decode(
+            oe_targets, skip_special_tokens=True, clean_up_tokenization_spaces=False
+        )
 
         if isinstance(model, PeftModel):
             model.set_adapter("default")
@@ -469,43 +538,60 @@ def evaluate_oe_uncertainty_sampling(
         # generate 30 more tokens
         outputs = model.generate(**oe_inputs, max_new_tokens=max_new_tokens)
 
-        # convert those new tokens to the generated strings 
-        output_strings = tokenizer.batch_decode(outputs[...,target_start_idx:], skip_special_tokens=True, clean_up_tokenization_spaces=False)
+        # convert those new tokens to the generated strings
+        output_strings = tokenizer.batch_decode(
+            outputs[..., target_start_idx:],
+            skip_special_tokens=True,
+            clean_up_tokenization_spaces=False,
+        )
 
-        question_strings = tokenizer.batch_decode(oe_inputs['input_ids'], skip_special_tokens=True, clean_up_tokenization_spaces=False)
+        question_strings = tokenizer.batch_decode(
+            oe_inputs["input_ids"],
+            skip_special_tokens=True,
+            clean_up_tokenization_spaces=False,
+        )
 
         # generate 30 more tokens k addtl times for the uncertainty estimation
         outputs_list = []
         length_normalized_likelihoods_list = []
         for i in range(k):
-            
+
             outputs_pre_cluster = model.generate(
-                **oe_inputs, max_new_tokens=max_new_tokens,
-                top_p = top_p,
-                do_sample = True
+                **oe_inputs, max_new_tokens=max_new_tokens, top_p=top_p, do_sample=True
             )
 
-            outputs_pre_cluster_strings = tokenizer.batch_decode(outputs_pre_cluster[...,target_start_idx:], skip_special_tokens=True, clean_up_tokenization_spaces=False)
+            outputs_pre_cluster_strings = tokenizer.batch_decode(
+                outputs_pre_cluster[..., target_start_idx:],
+                skip_special_tokens=True,
+                clean_up_tokenization_spaces=False,
+            )
             outputs_list.append(outputs_pre_cluster_strings)
 
-            assert(len(outputs_pre_cluster_strings) == 1)
-    
+            assert len(outputs_pre_cluster_strings) == 1
+
             length_normalized_likelihoods_list.append(
                 [
                     np.exp(
-                        np.sum(np.log(outputs_pre_cluster[...,target_start_idx:].detach().cpu().numpy())) / len(outputs_pre_cluster[...,target_start_idx:][0])
+                        np.sum(
+                            np.log(
+                                outputs_pre_cluster[..., target_start_idx:]
+                                .detach()
+                                .cpu()
+                                .numpy()
+                            )
+                        )
+                        / len(outputs_pre_cluster[..., target_start_idx:][0])
                     )
                 ]
             )
-
 
         # page 15 is original algorithm: https://arxiv.org/pdf/2302.09664.pdf
         # our modification is based on finding the likelihood under the sampling procedure of the greedy decoded answer's equivalence class
         # form a cluster based on the equivalency with the greedy decode (but exclude the greedy decode)
 
         # two strategies to compute likelihood:
-        # 1) find sum of length-normalized likelihoods of all entries in sample -- closest approximation of 
-        # the logsumpexp likelihood-summing done here: 
+        # 1) find sum of length-normalized likelihoods of all entries in sample -- closest approximation of
+        # the logsumpexp likelihood-summing done here:
         # https://github.com/lorenzkuhn/semantic_uncertainty/blob/27adbf0dc1bf056c771c205d89c2a79cbd82dc3a/code/compute_confidence_measure.py#L134
         # NOTE: we do not feel that adding likelihoods of samples produces a convergent estimate of likelihoods
         # 2) compute the size of the cluster associated with the greedy decode to get an estimate of its confidence - this is a convergent monte carlo estimate.
@@ -517,20 +603,24 @@ def evaluate_oe_uncertainty_sampling(
         likelihood_score = []
         normalized_likelihood_score = []
         likelihood_output_list = []
-        for i, question_string, greedy in zip(range(len(question_strings)), question_strings, output_strings):
+        for i, question_string, greedy in zip(
+            range(len(question_strings)), question_strings, output_strings
+        ):
             n_cluster = 0
             likelihood_accumulate = 0
-            
-            for sample, likelihoods in zip(outputs_list, length_normalized_likelihoods_list):
+
+            for sample, likelihoods in zip(
+                outputs_list, length_normalized_likelihoods_list
+            ):
                 likelihood = likelihoods[i]
                 generation = sample[i]
 
                 add_to_cluster = clustering_equivalency_with_oracle(
-                    greedy, 
-                    generation, 
+                    greedy,
+                    generation,
                     question_strings[0],
                     oracle_fn=openai_query,
-                    oracle_kwargs={'openai_model_name': 'gpt-3.5-turbo-1106'}
+                    oracle_kwargs={"openai_model_name": "gpt-3.5-turbo-1106"},
                 )
 
                 if add_to_cluster:
@@ -539,12 +629,15 @@ def evaluate_oe_uncertainty_sampling(
 
                 match_scores.append(add_to_cluster)
             # then prob = (size of the cluster associated with greedy) / k
-            prob.append(
-                n_cluster / k
-            )
+            prob.append(n_cluster / k)
             likelihood_score.append(likelihood_accumulate)
-            normalized_likelihood_score.append(likelihood_accumulate / sum([l[i] for l in length_normalized_likelihoods_list]))
-            likelihood_output_list.append([l[i] for l in length_normalized_likelihoods_list])
+            normalized_likelihood_score.append(
+                likelihood_accumulate
+                / sum([l[i] for l in length_normalized_likelihoods_list])
+            )
+            likelihood_output_list.append(
+                [l[i] for l in length_normalized_likelihoods_list]
+            )
 
         prob = np.array(prob)
         likelihood_score = np.array(likelihood_score)
@@ -558,7 +651,12 @@ def evaluate_oe_uncertainty_sampling(
         # the calculation of the accuracy is done within this function
         for c in comparison_strategies:
             _, _, acc = prepare_oe_calibration_query(
-                tokenizer, oe_target_strings, output_strings, question_strings, format=query_format, comparison_strategy=c
+                tokenizer,
+                oe_target_strings,
+                output_strings,
+                question_strings,
+                format=query_format,
+                comparison_strategy=c,
             )
 
             acc = acc.to(device)
@@ -566,64 +664,91 @@ def evaluate_oe_uncertainty_sampling(
             [
                 l.append(v)
                 for l, v in zip(
-                    (all_prob[c], all_likelihood_accumulate[c], all_normalized_likelihood_accumulate[c], all_acc[c]),
-                    accelerator.gather_for_metrics((prob, likelihood_score, normalized_likelihood_score, acc)),
+                    (
+                        all_prob[c],
+                        all_likelihood_accumulate[c],
+                        all_normalized_likelihood_accumulate[c],
+                        all_acc[c],
+                    ),
+                    accelerator.gather_for_metrics(
+                        (prob, likelihood_score, normalized_likelihood_score, acc)
+                    ),
                 )
-            ]          
+            ]
 
         [
             l.append(v)
             for l, v in zip(
-                (all_oe_target_strings, all_output_strings, all_question_strings, all_generations, all_match_scores, all_likelihood_outputs),
-                accelerator.gather_for_metrics((oe_target_strings, output_strings, question_strings, sum(outputs_list, []), match_scores, likelihood_output_list)),
+                (
+                    all_oe_target_strings,
+                    all_output_strings,
+                    all_question_strings,
+                    all_generations,
+                    all_match_scores,
+                    all_likelihood_outputs,
+                ),
+                accelerator.gather_for_metrics(
+                    (
+                        oe_target_strings,
+                        output_strings,
+                        question_strings,
+                        sum(outputs_list, []),
+                        match_scores,
+                        likelihood_output_list,
+                    )
+                ),
             )
-        ]          
+        ]
 
     return_dict = {
         "N": len(all_oe_target_strings),
     }
 
-    all_oe_target_strings, all_output_strings, all_question_strings = sum(all_oe_target_strings, []), sum(all_output_strings, []), sum(all_question_strings, [])
+    all_oe_target_strings, all_output_strings, all_question_strings = (
+        sum(all_oe_target_strings, []),
+        sum(all_output_strings, []),
+        sum(all_question_strings, []),
+    )
     all_likelihood_outputs = sum(all_likelihood_outputs, [])
     dump = {
-        "oe_target_strings": all_oe_target_strings, 
+        "oe_target_strings": all_oe_target_strings,
         "output_strings": all_output_strings,
         "question_strings": all_question_strings,
-
         "all_generations": all_generations,
         "all_match_scores": all_match_scores,
-
         "all_likelihood_outputs": all_likelihood_outputs,
     }
-
-
 
     for c in comparison_strategies:
 
         all_acc_c = np.concatenate([c.cpu() for c in all_acc[c]], axis=0)
         all_prob_c = np.concatenate([p for p in all_prob[c]], axis=0)
-        all_likelihood_accumulate_c = np.concatenate([l for l in all_likelihood_accumulate[c]], axis=0)
-        all_normalized_likelihood_accumulate_c = np.concatenate([l for l in all_normalized_likelihood_accumulate[c]], axis=0)
+        all_likelihood_accumulate_c = np.concatenate(
+            [l for l in all_likelihood_accumulate[c]], axis=0
+        )
+        all_normalized_likelihood_accumulate_c = np.concatenate(
+            [l for l in all_normalized_likelihood_accumulate[c]], axis=0
+        )
 
         acc = all_acc_c.mean()
         # import pdb; pdb.set_trace()
-        assert(len(all_prob_c) == len(all_acc_c))
-        assert(len(all_likelihood_accumulate_c) == len(all_acc_c))
+        assert len(all_prob_c) == len(all_acc_c)
+        assert len(all_likelihood_accumulate_c) == len(all_acc_c)
         ece, _ = calibration(
             np.ones_like(all_prob_c),
-            all_acc_c.astype(dtype=np.dtype('i4')),
+            all_acc_c.astype(dtype=np.dtype("i4")),
             np.array(all_prob_c),
         )
 
         likelihood_ece, _ = calibration(
             np.ones_like(all_likelihood_accumulate_c),
-            all_acc_c.astype(dtype=np.dtype('i4')),
+            all_acc_c.astype(dtype=np.dtype("i4")),
             np.array(all_likelihood_accumulate_c),
         )
 
         likelihood_normalized, _ = calibration(
             np.ones_like(all_normalized_likelihood_accumulate_c),
-            all_acc_c.astype(dtype=np.dtype('i4')),
+            all_acc_c.astype(dtype=np.dtype("i4")),
             np.array(all_normalized_likelihood_accumulate_c),
         )
 
@@ -632,7 +757,7 @@ def evaluate_oe_uncertainty_sampling(
                 f"{c}_acc": acc.item(),
                 f"{c}_ece_counting": ece,
                 f"{c}_ece_likelihood": likelihood_ece,
-                f"{c}_ece_likelihood_normalized": likelihood_normalized
+                f"{c}_ece_likelihood_normalized": likelihood_normalized,
             }
         )
 
@@ -648,8 +773,7 @@ def evaluate_oe_uncertainty_sampling(
         )
 
     if output_row_path is not None:
-        pd.DataFrame(dump).to_csv(output_row_path, escapechar='\\')
-
+        pd.DataFrame(dump).to_csv(output_row_path, escapechar="\\")
 
     return return_dict
 
@@ -882,12 +1006,12 @@ def evaluate_contextual_calibration_oe(
 
     for c in comparison_strategies:
         all_acc_c = np.array([e.cpu().numpy() for e in all_acc[c]]).flatten()
-        return_dict[f"{c}_acc"] = np.sum(all_acc_c)/len(all_acc_c)
+        return_dict[f"{c}_acc"] = np.sum(all_acc_c) / len(all_acc_c)
 
         c_ece, _ = calibration(
             np.ones_like(all_acc_c),
             all_acc_c,
-            all_cal_p[torch.arange(all_cal_p.size(0)), all_cal_y_hat].cpu().numpy()
+            all_cal_p[torch.arange(all_cal_p.size(0)), all_cal_y_hat].cpu().numpy(),
         )
 
         return_dict[f"{c}_ece"] = c_ece
@@ -1119,12 +1243,12 @@ def evaluate_verbal_elicitation_oe(
 
     for c in comparison_strategies:
         all_acc_c = np.array([e.cpu().numpy() for e in all_acc[c]]).flatten()
-        return_dict[f"{c}_acc"] = np.sum(all_acc_c)/len(all_acc_c)
+        return_dict[f"{c}_acc"] = np.sum(all_acc_c) / len(all_acc_c)
 
         c_ece, _ = calibration(
             np.ones_like(all_acc_c),
             all_acc_c,
-            all_cal_p[torch.arange(all_cal_p.size(0)), all_cal_y_hat].cpu().numpy()
+            all_cal_p[torch.arange(all_cal_p.size(0)), all_cal_y_hat].cpu().numpy(),
         )
 
         return_dict[f"{c}_ece"] = c_ece
