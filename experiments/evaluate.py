@@ -26,7 +26,6 @@ def main(
     scale_temp=False,
     use_dataset_cache=True,
     prompt_style="choice",
-    output_row_path=None,
     mode=None,
 ):
     accelerator = Accelerator()
@@ -40,7 +39,7 @@ def main(
         "eval_kshot": eval_kshot,
         "prompt_style": prompt_style,
         "mode": mode,
-        "output_row_path": output_row_path,
+        "log_dir": log_dir,
     }
     if accelerator.is_main_process:
         wandb.config.update(config)
@@ -53,7 +52,7 @@ def main(
     model = get_model(
         model_name,
         device_map={"": accelerator.local_process_index},
-        torch_dtype=torch.float16,
+        torch_dtype=torch.bfloat16 if torch.cuda.is_bf16_supported() else torch.float16,
         model_dir=model_dir,
         use_cache=False,
         tokenizer=tokenizer,
@@ -101,7 +100,7 @@ def main(
                 eval_kshot=eval_kshot,
                 use_cache=use_dataset_cache,
                 prompt_style=prompt_style,
-                output_row_path=output_row_path,
+                log_dir=log_dir,
                 evaluate_fn=mode,
             )
 

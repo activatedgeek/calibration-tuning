@@ -11,7 +11,7 @@ from .llm_utils import (
 )
 
 
-def openai_query(system_prompt, prompt, openai_model_name='gpt-4-0314'):
+def openai_query(system_prompt, prompt, openai_model_name='gpt-4-1106-preview'):
     sampled_response = None
     while sampled_response is None:
         try:                

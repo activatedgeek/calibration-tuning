@@ -16,13 +16,13 @@ __ATTRS = dict(task_tags=["entailment"])
 
 
 def __format_sample(sample, tokenizer, style):
-    target_prompt = "\nAnswer: "
+    target_prompt = "\nAnswer:"
+
+    premise = sample["premise"]
+    hypothesis = sample["hypothesis"]
+    answer_map = ["Yes", "It's impossible to say", "No"]
 
     if style == "choice":
-        premise = sample["premise"]
-        hypothesis = sample["hypothesis"]
-        answer_map = ["Yes", "It's impossible to say", "No"]
-
         context = "\n".join(
             [
                 "Premise:",
@@ -40,6 +40,16 @@ def __format_sample(sample, tokenizer, style):
         )
 
         target = string.ascii_lowercase[sample["label"]] + tokenizer.eos_token
+    elif style == "oe":
+        context = "\n".join(
+            [
+                "Read the following premise and answer if the hypothesis is true.",
+                premise,
+                f'Hypothesis: {hypothesis}. Is the answer "Yes", "No", or "It\'s impossible to say"? Respond with only the answer and no additional text.',
+            ]
+        )
+
+        target = answer_map[sample["label"]] + tokenizer.eos_token
     else:
         raise NotImplementedError
 
@@ -163,7 +173,7 @@ def get_anli(
     train_data, test_data = [
         data.map(
             lambda x: __format_sample_with_prompt(
-                x, tokenizer, prompt_style, data, k, seed=seed
+                x, tokenizer, prompt_style, dev_data, k, seed=seed
             ).to_pydict(),
             num_proc=num_workers,
             remove_columns=[

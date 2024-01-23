@@ -31,6 +31,7 @@ def __setup():
         "mmlu",
         "nli",
         "obqa",
+        "offline",
         "piqa",
         "sciq",
         "siqa",

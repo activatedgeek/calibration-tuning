@@ -8,9 +8,9 @@ from .llm_utils import get_special_tokens
 __all__ = ["create_tokenizer", "create_model"]
 
 
-def create_tokenizer(model_id=None, cache_dir=None, **_):
+def create_tokenizer(cache_dir=None, **_):
     tokenizer = AutoTokenizer.from_pretrained(
-        model_id,
+        "teknium/OpenHermes-7B",
         cache_dir=os.environ.get("MODELDIR", cache_dir),
         padding_side="left",
         use_fast=True,
@@ -22,11 +22,9 @@ def create_tokenizer(model_id=None, cache_dir=None, **_):
     return tokenizer
 
 
-def create_model(
-    model_dir=None, model_id=None, cache_dir=None, tokenizer=None, **kwargs
-):
+def create_model(model_dir=None, cache_dir=None, tokenizer=None, **kwargs):
     model = AutoModelForCausalLM.from_pretrained(
-        model_dir or model_id,
+        model_dir or "teknium/OpenHermes-7B",
         cache_dir=os.environ.get("MODELDIR", cache_dir),
         **kwargs,
     )
@@ -53,23 +51,10 @@ def create_model(
 
 
 @register_model
-def mistral_7b_tokenizer(**kwargs):
-    return create_tokenizer(**kwargs, model_id="mistralai/Mistral-7B-v0.1")
+def openhermes_7b_tokenizer(**kwargs):
+    return create_tokenizer(**kwargs)
 
 
 @register_model
-def mistral_7b(**kwargs):
-    return create_model(**kwargs, model_id="mistralai/Mistral-7B-v0.1")
-
-
-@register_model
-def mistral_7b_instruct_tokenizer(**kwargs):
-    return create_tokenizer(**kwargs, model_id="mistralai/Mistral-7B-Instruct-v0.2")
-
-
-@register_model
-def mistral_7b_instruct(**kwargs):
-    return create_model(
-        **kwargs,
-        model_id="mistralai/Mistral-7B-Instruct-v0.2",
-    )
+def openhermes_7b(**kwargs):
+    return create_model(**kwargs)

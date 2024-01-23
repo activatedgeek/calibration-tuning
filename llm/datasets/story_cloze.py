@@ -12,12 +12,10 @@ __all__ = [
 
 
 def __format_sample(sample, tokenizer, style):
-    target_prompt = "\nAnswer: "
+    story = " ".join([sample[f"input_sentence_{i}"] for i in range(1, 5)])
+    answer_map = [sample["sentence_quiz1"], sample["sentence_quiz2"]]
 
     if style == "choice":
-        story = " ".join([sample[f"input_sentence_{i}"] for i in range(1, 5)])
-        answer_map = [sample["sentence_quiz1"], sample["sentence_quiz2"]]
-
         context = "\n".join(
             [
                 "Story:",
@@ -32,10 +30,21 @@ def __format_sample(sample, tokenizer, style):
             ]
         )
 
+        target_prompt = "\nAnswer: "
         target = (
             string.ascii_lowercase[sample["answer_right_ending"] - 1]
             + tokenizer.eos_token
         )
+    elif style == "oe":
+        context = "\n".join(
+            [
+                "Complete the ending of the following story.",
+                story,
+            ]
+        )
+
+        target_prompt = "\nEnding: "
+        target = answer_map[sample["answer_right_ending"] - 1] + tokenizer.eos_token
     else:
         raise NotImplementedError
 
@@ -98,6 +107,7 @@ def get_story_cloze(
         "2018",
         data_dir=f"{os.environ.get('HF_DATASETS_CACHE', root)}/story_cloze",
         cache_dir=os.environ.get("HF_DATASETS_CACHE", root),
+        trust_remote_code=True,
     )
     if not use_cache:
         dataset.cleanup_cache_files()

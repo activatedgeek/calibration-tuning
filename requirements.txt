@@ -1,6 +1,7 @@
 tqdm
 fire
 wandb
+pandas
 torch>=2.0
 torchvision
 transformers

@@ -12,19 +12,19 @@ __all__ = [
 
 
 def __format_sample(sample, tokenizer, style):
-    target_prompt = "\nAnswer: "
+    target_prompt = "\nAnswer:"
+
+    question = sample["text"]
+    answer_map = [
+        "Abbreviation",
+        "Entity",
+        "Description and abstract concept",
+        "Human being",
+        "Location",
+        "Numeric value",
+    ]
 
     if style == "choice":
-        question = sample["text"]
-        answer_map = [
-            "Abbreviation",
-            "Entity",
-            "Description and abstract concept",
-            "Human being",
-            "Location",
-            "Numeric value",
-        ]
-
         context = "\n".join(
             [
                 "Question:",
@@ -40,6 +40,16 @@ def __format_sample(sample, tokenizer, style):
         )
 
         target = string.ascii_lowercase[sample["coarse_label"]] + tokenizer.eos_token
+    elif style == "oe":
+        context = "\n".join(
+            [
+                "Read the following question and then pick a category that describes the question.",
+                f"Question: {question}",
+                f"What category is the question in? Choose one from {', '.join(answer_map)}. Respond with only the category and no additional text.",
+            ]
+        )
+
+        target = answer_map[sample["coarse_label"]] + tokenizer.eos_token
     else:
         raise NotImplementedError
 

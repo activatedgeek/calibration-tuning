@@ -26,19 +26,22 @@ def get_cb(
     from datasets import load_dataset
 
     dataset = load_dataset(
-        "super_glue", "cb", cache_dir=os.environ.get("HF_DATASETS_CACHE", root)
+        "super_glue",
+        "cb",
+        cache_dir=os.environ.get("HF_DATASETS_CACHE", root),
+        trust_remote_code=True,
     )
     if not use_cache:
         dataset.cleanup_cache_files()
 
     def __format_sample(sample, tokenizer, style):
-        target_prompt = "\nAnswer: "
+        target_prompt = "\nAnswer:"
+
+        premise = sample["premise"]
+        hypothesis = sample["hypothesis"]
+        answer_map = ["Yes", "No", "It's impossible to say"]
 
         if style == "choice":
-            premise = sample["premise"]
-            hypothesis = sample["hypothesis"]
-            answer_map = ["Yes", "No", "It's impossible to say"]
-
             context = "\n".join(
                 [
                     "Premise:",
@@ -56,6 +59,16 @@ def get_cb(
             )
 
             target = string.ascii_lowercase[sample["label"]] + tokenizer.eos_token
+        elif style == "oe":
+            context = "\n".join(
+                [
+                    "Read the following premise and answer if the hypothesis is true.",
+                    premise,
+                    f'Hypothesis: {hypothesis}. Is the answer "Yes", "No", or "It\'s impossible to say"? Respond with only the answer and no additional text.',
+                ]
+            )
+
+            target = answer_map[sample["label"]] + tokenizer.eos_token
         else:
             raise NotImplementedError
 
@@ -146,25 +159,29 @@ def get_multirc(
     from datasets import load_dataset
 
     dataset = load_dataset(
-        "super_glue", "multirc", cache_dir=os.environ.get("HF_DATASETS_CACHE", root)
+        "super_glue",
+        "multirc",
+        cache_dir=os.environ.get("HF_DATASETS_CACHE", root),
+        trust_remote_code=True,
     )
     if not use_cache:
         dataset.cleanup_cache_files()
 
     def __format_sample(sample, tokenizer, style):
-        target_prompt = "\nAnswer: "
+        target_prompt = "\nAnswer:"
+
+        paragraph = sample["paragraph"]
+        question = sample["question"]
+        answer = sample["answer"]
+        answer_map = ["No", "Yes"]
 
         if style == "choice":
-            paragraph = sample["paragraph"]
-            question = sample["question"]
-            answer_map = ["No", "Yes"]
-
             context = "\n".join(
                 [
                     "Paragraph:",
                     paragraph,
                     f"\nQ: {question}",
-                    f"\nA: {sample['answer']}" "\n\nChoices:",
+                    f"\nA: {answer}" "\n\nChoices:",
                     *[
                         f"  ({n}): {c}"
                         for n, c in zip(
@@ -175,6 +192,18 @@ def get_multirc(
             )
 
             target = string.ascii_lowercase[sample["label"]] + tokenizer.eos_token
+        elif style == "oe":
+            context = "\n".join(
+                [
+                    "Read the following paragraph along with the question and answer. Then, respond with whether the answer is correct.",
+                    f"Passage: {paragraph}\n",
+                    f"Question: {question}\n",
+                    f"Answer: {answer}\n",
+                    'Is the answer correct? Respond with only "Yes" or "No" and no additional text.',
+                ]
+            )
+
+            target = answer_map[sample["label"]] + tokenizer.eos_token
         else:
             raise NotImplementedError
 
@@ -266,18 +295,21 @@ def get_copa(
     from datasets import load_dataset
 
     dataset = load_dataset(
-        "super_glue", "copa", cache_dir=os.environ.get("HF_DATASETS_CACHE", root)
+        "super_glue",
+        "copa",
+        cache_dir=os.environ.get("HF_DATASETS_CACHE", root),
+        trust_remote_code=True,
     )
     if not use_cache:
         dataset.cleanup_cache_files()
 
     def __format_sample(sample, tokenizer, style):
-        target_prompt = "\nAnswer: "
+        target_prompt = "\nAnswer:"
+
+        premise = sample["premise"]
+        answer_map = [sample["choice1"], sample["choice2"]]
 
         if style == "choice":
-            premise = sample["premise"]
-            answer_map = [sample["choice1"], sample["choice2"]]
-
             context = "\n".join(
                 [
                     "Premise:",
@@ -293,9 +325,20 @@ def get_copa(
             )
 
             target = string.ascii_lowercase[sample["label"]] + tokenizer.eos_token
+        elif style == "oe":
+            context = "\n".join(
+                [
+                    "Read the following premise and pick the correct choice. Then, respond with which of the choices is correct.",
+                    f"Premise: {premise}\n",
+                    f"Choice 1: {answer_map[0]}",
+                    f"Choice 2: {answer_map[1]}",
+                    'Which of the choices is correct? Respond with only "1" or "2" and no additional text.',
+                ]
+            )
+
+            target = answer_map[sample["label"]] + tokenizer.eos_token
         else:
             raise NotImplementedError
-
         return LMText(context=context, target_prompt=target_prompt, target=target)
 
     def __generate_fewshot_prompts(

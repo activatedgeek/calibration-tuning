@@ -12,14 +12,12 @@ __all__ = [
 
 
 def __format_sample(sample, tokenizer, style):
-    target_prompt = "\nAnswer: "
+    target_prompt = "\nAnswer:"
+
+    problem = sample["Problem"]
+    answer_map = [opt.split(")")[-1].strip() for opt in sample["options"].split(",")]
 
     if style == "choice":
-        problem = sample["Problem"]
-        answer_map = [
-            opt.split(")")[-1].strip() for opt in sample["options"].split(",")
-        ]
-
         context = "\n".join(
             [
                 "Problem:",
@@ -35,6 +33,20 @@ def __format_sample(sample, tokenizer, style):
         )
 
         target = sample["correct"] + tokenizer.eos_token
+    elif style == "oe":
+        context = "\n".join(
+            [
+                "Provide your best answer for the following math problem. Give ONLY the answer, no other words or explanation.\n"
+                "For example:\n",
+                "Answer: <most likely answer, as short as possible; not a complete sentence, just the answer!>.\n",
+                f"The problem is: {problem}",
+            ]
+        )
+
+        target = (
+            answer_map[string.ascii_lowercase.index(sample["correct"])]
+            + tokenizer.eos_token
+        )
     else:
         raise NotImplementedError
 
@@ -92,7 +104,9 @@ def get_math_qa(
     from datasets import load_dataset
 
     dataset = load_dataset(
-        "math_qa", cache_dir=os.environ.get("HF_DATASETS_CACHE", root)
+        "math_qa",
+        cache_dir=os.environ.get("HF_DATASETS_CACHE", root),
+        trust_remote_code=True,
     )
     if not use_cache:
         dataset.cleanup_cache_files()

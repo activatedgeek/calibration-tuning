@@ -64,7 +64,7 @@ def main(
     loss_mode="reg",
     warmup_steps=100,
     max_steps=1000,
-    save_steps=1000,
+    save_steps=100,
     logging_steps=25,
     use_dataset_cache=True,
     **kwargs,

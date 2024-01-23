@@ -10,16 +10,18 @@ from .eos import (
 from .oe import (
     evaluate_oe,
     evaluate_contextual_calibration_oe,
-    evaluate_oe_uncertainty_sampling
+    evaluate_oe_uncertainty_sampling,
+    evaluate_verbal_elicitation_oe,
 )
 
 EVALUATE_MODE_FN_MAP = {
     "eos": evaluate_via_eos,
+    "cc_eos": evaluate_contextual_calibration_via_eos,
+    "cand_eos": evaluate_candidate_via_eos,
     "oe": evaluate_oe,
     "us_oe": evaluate_oe_uncertainty_sampling,
     "cc_oe": evaluate_contextual_calibration_oe,
-    "cc_eos": evaluate_contextual_calibration_via_eos,
-    "cand_eos": evaluate_candidate_via_eos,
+    "ve_oe": evaluate_verbal_elicitation_oe,
 }
 
 
@@ -38,7 +40,7 @@ def evaluate_dataset(
     eval_kshot=None,
     use_cache=True,
     prompt_style="choice",
-    output_row_path=None,
+    log_dir=None,
     evaluate_fn="eos",
 ):
     ## FIXME: See https://github.com/huggingface/transformers/issues/25790#issuecomment-1695846805.
@@ -46,8 +48,6 @@ def evaluate_dataset(
 
     if output_row_path is not None:
         os.makedirs(os.path.join(output_row_path, dataset), exist_ok=True)
-
-    # import pdb; pdb.set_trace()
 
     if dataset is not None:
         with accelerator.main_process_first():
@@ -90,6 +90,13 @@ def evaluate_dataset(
                 "fuzzy_gpt-3.5-turbo-1106",
             ]
             evaluate_fn = EVALUATE_MODE_FN_MAP["us_oe"]
+        elif "ve_oe" == evaluate_fn:
+            comparison_strategies = [
+                "substring",
+                # "fuzzy_gpt-4-0613",
+                # "fuzzy_gpt-3.5-turbo-1106",
+            ]
+            evaluate_fn = EVALUATE_MODE_FN_MAP["ve_oe"] 
         elif "cc_oe" == evaluate_fn:
             comparison_strategies = [
                 "substring",
@@ -123,11 +130,13 @@ def evaluate_dataset(
                 batch_size=batch_size,
                 pin_memory=True,
                 accelerator=accelerator,
+                # turn list of dicts into dict of lists
+                collate_fn=lambda x: {k: [d[k] for d in x] for k in x[0].keys()},
             ),
             prompt_style=prompt_style,
             comparison_strategies=comparison_strategies,
-            output_row_path=os.path.join(output_row_path, dataset, "train.csv")
-            if output_row_path is not None
+            output_row_path=os.path.join(log_dir, dataset, "train.csv")
+            if log_dir is not None
             else None,
         )
         train_metrics["split"] = "train"
@@ -147,11 +156,12 @@ def evaluate_dataset(
                 batch_size=batch_size,
                 pin_memory=True,
                 accelerator=accelerator,
+                collate_fn=lambda x: {k: [d[k] for d in x] for k in x[0].keys()},
             ),
             prompt_style=prompt_style,
             comparison_strategies=comparison_strategies,
-            output_row_path=os.path.join(output_row_path, dataset, "val.csv")
-            if output_row_path is not None
+            output_row_path=os.path.join(log_dir, dataset, "val.csv")
+            if log_dir is not None
             else None,
         )
         val_metrics["split"] = "validation"
@@ -171,11 +181,12 @@ def evaluate_dataset(
                 batch_size=batch_size,
                 pin_memory=True,
                 accelerator=accelerator,
+                collate_fn=lambda x: {k: [d[k] for d in x] for k in x[0].keys()},
             ),
             prompt_style=prompt_style,
             comparison_strategies=comparison_strategies,
-            output_row_path=os.path.join(output_row_path, dataset, "test.csv")
-            if output_row_path is not None
+            output_row_path=os.path.join(log_dir, dataset, "test.csv")
+            if log_dir is not None
             else None,
         )
         test_metrics["split"] = "test"

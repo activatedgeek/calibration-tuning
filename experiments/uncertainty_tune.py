@@ -15,6 +15,7 @@ def main(
     log_dir=None,
     dataset=None,
     data_dir=None,
+    prompt_style="choice",
     num_workers=8,
     batch_size=1,
     grad_acc=1,
@@ -38,6 +39,7 @@ def main(
     eval_steps=1000,
     use_dataset_cache=True,
     resume_dir=None,
+    fp8=True,
 ):
     accelerator = AcceleratorState()
 
@@ -49,11 +51,11 @@ def main(
     model = get_model(
         model_name,
         device_map={"": accelerator.local_process_index},
-        torch_dtype=torch.float16,
+        torch_dtype=torch.bfloat16 if torch.cuda.is_bf16_supported() else torch.float16,
         model_dir=model_dir,
         use_cache=False,
         tokenizer=tokenizer,
-        load_in_8bit=True,
+        load_in_8bit=fp8,
     )
 
     model = get_lora_model(
@@ -84,6 +86,7 @@ def main(
             seed=seed,
             num_workers=num_workers,
             use_cache=use_dataset_cache,
+            prompt_style=prompt_style,
         )
 
     trainer = UncertaintyTuner(
@@ -117,8 +120,11 @@ def main(
             report_to="wandb",
             dataloader_num_workers=4,
             scale_temp=scale_temp,
+            label_names=["output_ids", "query_label"],
         ),
-        train_dataset=tokenize_datasets(tokenizer, train_data)[0],
+        train_dataset=tokenize_datasets(
+            tokenizer, train_data, prompt_style=prompt_style
+        )[0],
         val_data=val_data,
         test_data=test_data,
         tokenizer=tokenizer,
@@ -132,6 +138,7 @@ def main(
                 lora_rank=lora_rank,
                 lora_alpha=lora_alpha,
                 lora_dropout=lora_dropout,
+                prompt_style=prompt_style,
             ),
         ],
     )

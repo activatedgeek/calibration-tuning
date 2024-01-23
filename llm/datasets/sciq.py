@@ -13,21 +13,21 @@ __all__ = [
 
 
 def __format_sample(sample, tokenizer, style):
-    target_prompt = "\nAnswer: "
+    target_prompt = "\nAnswer:"
+
+    support = sample["support"]
+    question = sample["question"]
+
+    answer_order = np.random.permutation(4).tolist()
+    answer_map = [
+        sample["distractor1"],
+        sample["distractor2"],
+        sample["distractor3"],
+        sample["correct_answer"],
+    ]
+    answer_map = [answer_map[idx] for idx in answer_order]
 
     if style == "choice":
-        support = sample["support"]
-        question = sample["question"]
-
-        answer_order = np.random.permutation(4).tolist()
-        answer_map = [
-            sample["distractor1"],
-            sample["distractor2"],
-            sample["distractor3"],
-            sample["correct_answer"],
-        ]
-        answer_map = [answer_map[idx] for idx in answer_order]
-
         context = "\n".join(
             (["Support:", support] if len(support) else [])
             + [
@@ -43,6 +43,22 @@ def __format_sample(sample, tokenizer, style):
         )
 
         target = string.ascii_lowercase[answer_order.index(3)] + tokenizer.eos_token
+    elif style == "oe":
+        context = "\n".join(
+            [
+                "Read the following paragraph and answer the question. Give ONLY the answer, no other words or explanation.\n",
+                "For example:\n",
+                "Answer: <most likely answer, as short as possible>.\n",
+                f"Paragraph: ",
+            ]
+            + ([support] if len(support) else [])
+            + [
+                "\n",
+                f"Question: {question}",
+            ]
+        )
+
+        target = answer_map[answer_order.index(3)] + tokenizer.eos_token
     else:
         raise NotImplementedError
 
