@@ -21,7 +21,14 @@ from llm.datasets.llm_utils import (
 
 
 def generate_output(
-    accelerator, model, tokenizer, loader, prompt_style="oe", generation_config=None, outputs_only=True
+    accelerator, 
+    model, 
+    tokenizer, 
+    loader, 
+    prompt_style="oe", 
+    generation_config=None, 
+    generation_config_sampling=None,
+    k=None
 ):
     if isinstance(model, PeftModel):
         model.set_adapter("default")
@@ -44,22 +51,31 @@ def generate_output(
             **generation_inputs, generation_config=generation_config
         )
 
+        # if k is not None:
+        #     assert(generation_config_sampling is not None)
+        #     assert(k > 0)
+        #     #https://github.com/huggingface/transformers/issues/14498#issuecomment-977909651
+        #     sampled_outputs = [
+        #         model.generate(
+        #             **generation_inputs,
+        #             generation_config=generation_config_sampling,
+        #             output_scores=True
+        #         )
+        #         for _ in range(k)
+        #     ]
+        # else:
+        sampled_outputs = [[] for _ in range(len(generation_outputs))]
+
         ## NOTE: Verify output extraction pre-condition.
         assert (
             generation_inputs.get("input_ids")
             == generation_outputs[:, : generation_inputs.get("input_ids").size(-1)]
         ).all()
 
-        examples = [dict(zip(inputs.keys(), vals)) for vals in zip(*inputs.values())]
-        examples = [
-            {
-                **o,
-                "output": tokenizer.decode(
-                    t[inp.size(0) :],
-                    skip_special_tokens=True,
-                    clean_up_tokenization_spaces=False,
-                ),
-            } if outputs_only else {
+        examples_pre = [dict(zip(inputs.keys(), vals)) for vals in zip(*inputs.values())]
+        examples = []
+        for o, inp, t, s in zip(examples_pre, generation_inputs.get("input_ids"), generation_outputs, sampled_outputs):
+            example = {
                 **o,
                 "output": tokenizer.decode(
                     t[inp.size(0) :],
@@ -72,22 +88,22 @@ def generate_output(
                     clean_up_tokenization_spaces=False,
                 ),
                 "target": o["target"],
-                # "raw_output": tokenizer.decode(
-                #     t,
-                #     skip_special_tokens=True,
-                #     clean_up_tokenization_spaces=False,
-                # ),
             }
-            for o, inp, t in zip(
-                examples, generation_inputs.get("input_ids"), generation_outputs
-            )
-        ]
+            if k is not None:
+                assert(False)
+                # example["sampled_outputs"] = [
+                #     tokenizer.decode(
+                #         entry[inp.size(0) :],
+                #         skip_special_tokens=True,
+                #         clean_up_tokenization_spaces=False,
+                #     )
+                #     for entry in s
+                # ]
+                # example["sampled_probs"] = [
+                #     entry[inp.size(0) :]
+                #     for entry in s
+                # ]
 
-        # for k in outputs:
-        #     print(k["context"])
-        #     print(k["target_prompt"])
-        #     print("\n##################\n##### OUTPUT #####\n##################\n")
-        #     print(k["output"])
-        #     print("\n*****************************************************************\n*****************************************************************\n")
+            examples.append(example)
 
         yield from examples
