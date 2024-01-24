@@ -27,7 +27,6 @@ def main(
     use_dataset_cache=True,
     prompt_style="choice",
     mode=None,
-    output_row_path=None,
 ):
     accelerator = Accelerator()
 
@@ -41,7 +40,6 @@ def main(
         "prompt_style": prompt_style,
         "mode": mode,
         "log_dir": log_dir,
-        "output_row_path": output_row_path,
     }
     if accelerator.is_main_process:
         wandb.config.update(config)
@@ -104,7 +102,6 @@ def main(
                 prompt_style=prompt_style,
                 log_dir=log_dir,
                 evaluate_fn=mode,
-                output_row_path=output_row_path,
             )
 
         dataset_metrics = list(

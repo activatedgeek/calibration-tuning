@@ -42,7 +42,6 @@ def evaluate_dataset(
     prompt_style="choice",
     log_dir=None,
     evaluate_fn="eos",
-    output_row_path=None
 ):
     ## FIXME: See https://github.com/huggingface/transformers/issues/25790#issuecomment-1695846805.
     assert batch_size == 1, "Only support batch_size 1. See code comments."
