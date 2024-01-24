@@ -1015,7 +1015,7 @@ def evaluate_verbal_elicitation_oe(
     model,
     tokenizer,
     loader,
-    prompt_style="choice",
+    prompt_style="oe",
     query_format="roman_choice",
     comparison_strategies=None,
     max_new_tokens=30,
@@ -1023,63 +1023,42 @@ def evaluate_verbal_elicitation_oe(
 ):
     assert prompt_style == "oe"
     assert (not comparison_strategies is None) and len(comparison_strategies) > 0
+
     device = accelerator.device
     collate_fn = DataCollatorForSupervisedDataset(tokenizer)
 
-    query_token_vec = None
-    # all_oe_inputs = []
-    all_unc_y, all_unc_logits = {c: [] for c in comparison_strategies}, {
-        c: [] for c in comparison_strategies
-    }
+    generation_config = GenerationConfig(
+        pad_token_id=tokenizer.pad_token_id,
+        bos_token_id=tokenizer.bos_token_id,
+        eos_token_id=tokenizer.eos_token_id,
+        max_new_tokens=max_new_tokens,
+    )
+
+    query_token_vec = get_token_vec(tokenizer, format=query_format)
+    all_unc_y, all_unc_logits = {c: [] for c in comparison_strategies}, {c: [] for c in comparison_strategies}
     all_acc = {c: [] for c in comparison_strategies}
     all_oe_target_strings, all_output_strings, all_question_strings = [], [], []
 
-    for inputs in tqdm(loader, leave=False):
-        print(inputs)
+    output_generator = generate_output(
+        accelerator,
+        model,
+        tokenizer,
+        loader,
+        prompt_style=prompt_style,
+        generation_config=generation_config,
+        outputs_only=False
+    )
 
-        inputs = prepare_batch(tokenizer, inputs, prompt_style=prompt_style)
-        inputs = collate_fn(inputs)
+    for example in output_generator:
+        output, raw_input, target = example["output"], example["raw_input"], example["target"]
+        input_question_string = example["context"]
+        oe_target_strings = [target]
+        output_strings = [output]
+        question_strings = [input_question_string]
 
-        # get the target separation between prompt and answer
-        target_start_idx, oe_inputs, oe_targets = extract_oe_inputs(tokenizer, inputs)
-        oe_inputs = collate_fn(oe_inputs)
-        oe_inputs = {k: v.to(device) for k, v in oe_inputs.items()}
-
-        # these are the ground truth strings for this batch
-        oe_target_strings = tokenizer.batch_decode(
-            oe_targets, skip_special_tokens=True, clean_up_tokenization_spaces=False
-        )
-
-        if isinstance(model, PeftModel):
-            model.set_adapter("default")
-
-        # generate 30 more tokens
-        outputs = model.generate(**oe_inputs, max_new_tokens=max_new_tokens)
-
-        # convert those new tokens to the generated strings
-        output_strings = tokenizer.batch_decode(
-            outputs[..., target_start_idx:],
-            skip_special_tokens=True,
-            clean_up_tokenization_spaces=False,
-        )
-
-        question_strings = tokenizer.batch_decode(
-            oe_inputs["input_ids"],
-            skip_special_tokens=True,
-            clean_up_tokenization_spaces=False,
-        )
-
-        # prepare the calibration query with open ended text
-        # the calculation of the accuracy is done within this function
         for c in comparison_strategies:
 
-            print(f"target\n: {oe_target_strings[0]}\n")
-            print(f"output\n: {output_strings[0]}\n")
-            print(f"question\n: {question_strings[0]}\n")
-
-            print(1/0)
-
-            query_inputs, query_token_vec, acc = prepare_oe_calibration_query(
+            query_inputs, acc = prepare_oe_calibration_query(
                 tokenizer,
                 oe_target_strings,
                 output_strings,
@@ -1128,6 +1107,7 @@ def evaluate_verbal_elicitation_oe(
         sum(all_output_strings, []),
         sum(all_question_strings, []),
     )
+    
     dump = {
         "oe_target_strings": all_oe_target_strings,
         "output_strings": all_output_strings,
@@ -1177,7 +1157,5 @@ def evaluate_verbal_elicitation_oe(
         if not os.path.exists(os.path.dirname(output_row_path)):
             os.makedirs(os.path.dirname(output_row_path))
         pd.DataFrame(dump).to_csv(output_row_path, escapechar="\\")
-
-    # print(pd.DataFrame(dump))
 
     return return_dict
