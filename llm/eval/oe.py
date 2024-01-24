@@ -3,20 +3,24 @@ from tqdm.auto import tqdm
 import torch
 from peft import PeftModel
 import pandas as pd
-import numpy as np
+import numpy as np 
 
-from ..datasets.llm_utils import (
+from llm.datasets.llm_utils import (
+    get_token_vec,
     DataCollatorForSupervisedDataset,
     extract_qa_exact,
     prepare_batch,
 )
-from ..datasets.llm_utils_oe import (
+from llm.datasets.llm_utils_oe import (
+    extract_qa_oe,
     extract_oe_inputs,
     prepare_oe_calibration_query,
     clustering_equivalency_with_oracle,
     openai_query,
 )
-from .third_party.calibration import calibration
+from llm.eval.third_party.calibration import calibration
+from llm.utils.generate_utils import generate_output
+from transformers import GenerationConfig
 
 
 @torch.inference_mode()
@@ -33,54 +37,41 @@ def evaluate_oe(
 ):
     assert prompt_style == "oe"
     assert (not comparison_strategies is None) and len(comparison_strategies) > 0
+
     device = accelerator.device
     collate_fn = DataCollatorForSupervisedDataset(tokenizer)
 
-    query_token_vec = None
-    # all_oe_inputs = []
-    all_unc_y, all_unc_logits = {c: [] for c in comparison_strategies}, {
-        c: [] for c in comparison_strategies
-    }
+    generation_config = GenerationConfig(
+        pad_token_id=tokenizer.pad_token_id,
+        bos_token_id=tokenizer.bos_token_id,
+        eos_token_id=tokenizer.eos_token_id,
+        max_new_tokens=max_new_tokens,
+    )
+
+    query_token_vec = get_token_vec(tokenizer, format=query_format)
+    all_unc_y, all_unc_logits = {c: [] for c in comparison_strategies}, {c: [] for c in comparison_strategies}
     all_acc = {c: [] for c in comparison_strategies}
     all_oe_target_strings, all_output_strings, all_question_strings = [], [], []
 
-    for inputs in tqdm(loader, leave=False):
-        inputs = prepare_batch(tokenizer, inputs, prompt_style=prompt_style)
-        inputs = collate_fn(inputs)
+    output_generator = generate_output(
+        accelerator,
+        model,
+        tokenizer,
+        loader,
+        prompt_style=prompt_style,
+        generation_config=generation_config,
+        outputs_only=False
+    )
 
-        # get the target separation between prompt and answer
-        target_start_idx, oe_inputs, oe_targets = extract_oe_inputs(tokenizer, inputs)
-        oe_inputs = collate_fn(oe_inputs)
-        oe_inputs = {k: v.to(device) for k, v in oe_inputs.items()}
+    for example in output_generator:
+        output, raw_input, target = example["output"], example["raw_input"], example["target"]
+        input_question_string = example["context"]
+        oe_target_strings = [target]
+        output_strings = [output]
+        question_strings = [input_question_string]
 
-        # these are the ground truth strings for this batch
-        oe_target_strings = tokenizer.batch_decode(
-            oe_targets, skip_special_tokens=True, clean_up_tokenization_spaces=False
-        )
-
-        if isinstance(model, PeftModel):
-            model.set_adapter("default")
-
-        # generate 30 more tokens
-        outputs = model.generate(**oe_inputs, max_new_tokens=max_new_tokens)
-
-        # convert those new tokens to the generated strings
-        output_strings = tokenizer.batch_decode(
-            outputs[..., target_start_idx:],
-            skip_special_tokens=True,
-            clean_up_tokenization_spaces=False,
-        )
-
-        question_strings = tokenizer.batch_decode(
-            oe_inputs["input_ids"],
-            skip_special_tokens=True,
-            clean_up_tokenization_spaces=False,
-        )
-
-        # prepare the calibration query with open ended text
-        # the calculation of the accuracy is done within this function
         for c in comparison_strategies:
-            query_inputs, query_token_vec, acc = prepare_oe_calibration_query(
+            query_inputs, acc = prepare_oe_calibration_query(
                 tokenizer,
                 oe_target_strings,
                 output_strings,
@@ -129,6 +120,7 @@ def evaluate_oe(
         sum(all_output_strings, []),
         sum(all_question_strings, []),
     )
+    
     dump = {
         "oe_target_strings": all_oe_target_strings,
         "output_strings": all_output_strings,
@@ -178,8 +170,6 @@ def evaluate_oe(
         if not os.path.exists(os.path.dirname(output_row_path)):
             os.makedirs(os.path.dirname(output_row_path))
         pd.DataFrame(dump).to_csv(output_row_path, escapechar="\\")
-
-    # print(pd.DataFrame(dump))
 
     return return_dict
 

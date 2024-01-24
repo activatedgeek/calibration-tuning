@@ -21,6 +21,7 @@ from llm.logging import entrypoint
 
 from llm.datasets.llm_utils_oe import prepare_oe_calibration_query
 
+from llm.utils.generate_utils import generate_output
 
 def prepare_model(
     accelerator,
@@ -59,66 +60,6 @@ def prepare_model(
     model.eval()
 
     return tokenizer, model
-
-
-def generate_output(
-    accelerator, model, tokenizer, loader, prompt_style="oe", generation_config=None
-):
-    if isinstance(model, PeftModel):
-        model.set_adapter("default")
-
-    collate_fn = DataCollatorForSupervisedDataset(tokenizer)
-
-    for inputs in tqdm(loader):
-        generation_inputs = prepare_batch(
-            tokenizer,
-            ## Skip "target" for generation.
-            {k: v for k, v in inputs.items() if k != "target"},
-            prompt_style=prompt_style,
-        )
-        generation_inputs = {
-            k: v.to(accelerator.device)
-            for k, v in collate_fn(generation_inputs).items()
-        }
-
-        generation_outputs = model.generate(
-            **generation_inputs, generation_config=generation_config
-        )
-
-        ## NOTE: Verify output extraction pre-condition.
-        assert (
-            generation_inputs.get("input_ids")
-            == generation_outputs[:, : generation_inputs.get("input_ids").size(-1)]
-        ).all()
-
-        outputs = [dict(zip(inputs.keys(), vals)) for vals in zip(*inputs.values())]
-        outputs = [
-            {
-                **o,
-                "output": tokenizer.decode(
-                    t[inp.size(0) :],
-                    skip_special_tokens=True,
-                    clean_up_tokenization_spaces=False,
-                ),
-                # "raw_input": tokenizer.decode(
-                #     inp,
-                #     skip_special_tokens=True,
-                #     clean_up_tokenization_spaces=False,
-                # ),
-                # "target": o["target"],
-                # "raw_output": tokenizer.decode(
-                #     t,
-                #     skip_special_tokens=True,
-                #     clean_up_tokenization_spaces=False,
-                # ),
-            }
-            for o, inp, t in zip(
-                outputs, generation_inputs.get("input_ids"), generation_outputs
-            )
-        ]
-
-        yield from outputs
-
 
 def generate_outputs_main(
     seed=137,
@@ -202,6 +143,7 @@ def generate_outputs_main(
             loader,
             prompt_style=prompt_style,
             generation_config=generation_config,
+            outputs_only=True,
         )
 
         csv_path = f"{log_dir}/outputs/{split}"
@@ -245,7 +187,7 @@ def generate_query_label(
                 # Everything before the substring + everything after the substring
                 oe_target_strings[i] = x[:index]
 
-        _, _, acc = prepare_oe_calibration_query(
+        _, acc = prepare_oe_calibration_query(
             tokenizer,
             oe_target_strings,
             output_strings,

@@ -4,7 +4,10 @@ import torch
 import logging
 import time
 
-from .llm_utils import get_token_vec, IGNORE_LABEL, tokenize_for_causal_lm
+from .llm_utils import (
+    IGNORE_LABEL,
+    tokenize_for_causal_lm
+)
 
 
 def openai_query(system_prompt, prompt, openai_model_name="gpt-4-1106-preview"):
@@ -192,8 +195,6 @@ def prepare_oe_calibration_query(
     else:
         raise NotImplementedError
 
-    return (
-        query_inputs,
-        get_token_vec(tokenizer, format=format),
-        torch.Tensor([1 if a else 0 for a in acc]),
-    )
+    return query_inputs, torch.Tensor(
+            [1 if a else 0 for a in acc]
+        )
