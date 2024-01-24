@@ -46,9 +46,6 @@ def evaluate_dataset(
     ## FIXME: See https://github.com/huggingface/transformers/issues/25790#issuecomment-1695846805.
     assert batch_size == 1, "Only support batch_size 1. See code comments."
 
-    if output_row_path is not None:
-        os.makedirs(os.path.join(output_row_path, dataset), exist_ok=True)
-
     if dataset is not None:
         with accelerator.main_process_first():
             _extra_args = dict()
@@ -96,7 +93,7 @@ def evaluate_dataset(
                 # "fuzzy_gpt-4-0613",
                 # "fuzzy_gpt-3.5-turbo-1106",
             ]
-            evaluate_fn = EVALUATE_MODE_FN_MAP["ve_oe"] 
+            evaluate_fn = EVALUATE_MODE_FN_MAP["ve_oe"]
         elif "cc_oe" == evaluate_fn:
             comparison_strategies = [
                 "substring",
