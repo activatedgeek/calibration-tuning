@@ -30,9 +30,7 @@ class DataCollatorForSupervisedDataset:
             )
             batch_dict["labels"] = labels
 
-        if "query_label" in instances[0].keys() and any(
-            [len(i["query_label"]) > 0 for i in instances]
-        ):
+        if "query_label" in instances[0].keys():
             query_labels = torch.tensor(
                 [instance["query_label"] for instance in instances]
             )
