@@ -1,9 +1,8 @@
-import os
 from tqdm.auto import tqdm
 import torch
 from peft import PeftModel
 import pandas as pd
-import numpy as np 
+import numpy as np
 
 from llm.datasets.llm_utils import (
     get_token_vec,
@@ -12,7 +11,6 @@ from llm.datasets.llm_utils import (
     prepare_batch,
 )
 from llm.datasets.llm_utils_oe import (
-    extract_qa_oe,
     extract_oe_inputs,
     prepare_oe_calibration_query,
     clustering_equivalency_with_oracle,
@@ -49,7 +47,9 @@ def evaluate_oe(
     )
 
     query_token_vec = get_token_vec(tokenizer, format=query_format)
-    all_unc_y, all_unc_logits = {c: [] for c in comparison_strategies}, {c: [] for c in comparison_strategies}
+    all_unc_y, all_unc_logits = {c: [] for c in comparison_strategies}, {
+        c: [] for c in comparison_strategies
+    }
     all_acc = {c: [] for c in comparison_strategies}
     all_oe_target_strings, all_output_strings, all_question_strings = [], [], []
 
@@ -63,7 +63,11 @@ def evaluate_oe(
     )
 
     for example in output_generator:
-        output, raw_input, target = example["output"], example["raw_input"], example["target"]
+        output, raw_input, target = (
+            example["output"],
+            example["raw_input"],
+            example["target"],
+        )
         input_question_string = example["context"]
         oe_target_strings = [target]
         output_strings = [output]
@@ -164,9 +168,7 @@ def evaluate_oe(
             }
         )
 
-    if output_row_path is not None:
-        if not os.path.exists(os.path.dirname(output_row_path)):
-            os.makedirs(os.path.dirname(output_row_path))
+    if accelerator.num_processes == 1 and output_row_path is not None:
         pd.DataFrame(dump).to_csv(output_row_path, escapechar="\\")
 
     return return_dict
@@ -183,7 +185,6 @@ def evaluate_oe_uncertainty_sampling(
     comparison_strategies=None,
     max_new_tokens=30,
     output_row_path=None,
-
     top_p=0.95,
     k=10,
 ):
@@ -205,7 +206,7 @@ def evaluate_oe_uncertainty_sampling(
         bos_token_id=tokenizer.bos_token_id,
         eos_token_id=tokenizer.eos_token_id,
         max_new_tokens=max_new_tokens,
-        top_p=top_p
+        top_p=top_p,
     )
 
     query_token_vec = get_token_vec(tokenizer, format=query_format)
@@ -230,11 +231,15 @@ def evaluate_oe_uncertainty_sampling(
         prompt_style=prompt_style,
         generation_config=generation_config,
         generation_config_sampling=generation_config_sampling,
-        k=k
+        k=k,
     )
 
     for example in output_generator:
-        output, raw_input, target = example["output"], example["raw_input"], example["target"]
+        output, raw_input, target = (
+            example["output"],
+            example["raw_input"],
+            example["target"],
+        )
         input_question_string = example["context"]
         oe_target_strings = [target]
         output_strings = [output]
@@ -242,7 +247,7 @@ def evaluate_oe_uncertainty_sampling(
 
         # generate 30 more tokens k addtl times for the uncertainty estimation
         sampled_outputs = example["sampled_outputs"]
-        sampled_probs   = example["sampled_outputs"]
+        sampled_probs = example["sampled_outputs"]
         outputs_list = []
         length_normalized_likelihoods_list = []
         for i in range(k):
@@ -449,14 +454,11 @@ def evaluate_oe_uncertainty_sampling(
             }
         )
 
-    if output_row_path is not None:
-        if not os.path.exists(os.path.dirname(output_row_path)):
-            os.makedirs(os.path.dirname(output_row_path))
+    if accelerator.num_processes == 1 and output_row_path is not None:
         pd.DataFrame(dump).to_csv(output_row_path, escapechar="\\")
 
-    # print(pd.DataFrame(dump))
-
     return return_dict
+
 
 # https://github.com/tonyzhaozh/few-shot-learning/blob/e04d8643be91c2cce63f33e07760ff75d5aa3ad0/run_extraction.py#L144C9-L144C9
 # Using the hack of contextual calibration for generation tasks from the original paper.
