@@ -64,7 +64,7 @@ def generate_output(
         #         for _ in range(k)
         #     ]
         # else:
-        sampled_outputs = [[] for _ in len(generation_outputs)]
+        sampled_outputs = [[] for _ in range(len(generation_outputs))]
 
         ## NOTE: Verify output extraction pre-condition.
         assert (
