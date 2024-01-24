@@ -175,7 +175,10 @@ def get_mmlu(
     from datasets import load_dataset
 
     dataset = load_dataset(
-        "cais/mmlu", instance, cache_dir=os.environ.get("HF_DATASETS_CACHE", root)
+        "cais/mmlu",
+        instance,
+        cache_dir=os.environ.get("HF_DATASETS_CACHE", root),
+        trust_remote_code=True,
     )
     if not use_cache:
         dataset.cleanup_cache_files()
