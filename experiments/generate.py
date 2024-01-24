@@ -78,6 +78,10 @@ def generate_outputs_main(
 ):
     accelerator = Accelerator()
 
+    assert (
+        batch_size == 1
+    ), "Only use batch size 1 for now to avoid left padding issues."
+
     config = {
         "seed": seed,
         "model_name": model_name,
@@ -220,6 +224,7 @@ def generate_labels_main(
     lora_alpha=32,
     lora_dropout=0.1,
     use_dataset_cache=True,
+    strategy="substring",  ## fuzzy_gpt-3.5-turbo-1106
 ):
     accelerator = Accelerator()
 
@@ -232,7 +237,7 @@ def generate_labels_main(
         "lora_alpha": lora_alpha,
         "lora_dropout": lora_dropout,
         "log_dir": log_dir,
-        "bfloat": bfloat,
+        "strategy": strategy,
     }
     if accelerator.is_main_process:
         wandb.config.update(config)
@@ -271,6 +276,7 @@ def generate_labels_main(
             model,
             tokenizer,
             loader,
+            comparison_strategy=strategy,
         )
 
         csv_path = f"{log_dir}/labels/{split}"
