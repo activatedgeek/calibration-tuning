@@ -703,23 +703,23 @@ def evaluate_contextual_calibration_oe(
 
 
 VERBAL_ELICITATION_UNC_QUERIES = {
-    "ve_2c": "".join([
+    "2s1CoT": "".join([
         "Provide the probability that your guess is correct. Give ONLY the probability, no other words or explanation.\n\n",
         "For example:\n\n",
         "Probability: <the probability between 0.0 and 1.0 that your guess is correct, without any extra commentary whatsoever; just the probability!>\n",
     ]),
-    "ve_21": "".join([
+    "2s1g": "".join([
         "Provide the probability that your guess is correct. Give ONLY the probability, no other words or explanation.\n\n",
         "For example:\n\n",
         "Probability: <the probability between 0.0 and 1.0 that your guess is correct, without any extra commentary whatsoever; just the probability!>\n",
     ]),
-    "ve_22": "".join([
+    "2s2g": "".join([
         "Provide the probability that each of your guesses is correct. Give ONLY the probabilities, no other words or explanation.\n\n",
         "For example:\n\n",
         "P1: <the probability between 0.0 and 1.0 that G1 is correct, without any extra commentary whatsoever; just the probability!>\n",
         "P2: <the probability between 0.0 and 1.0 that G2 is correct, without any extra commentary whatsoever; just the probability!>\n",
     ]),
-    "ve_24": "".join([
+    "2s4g": "".join([
         "Provide the probability that each of your guesses is correct. Give ONLY the probabilities, no other words or explanation.\n\n",
         "For example:\n\n",
         "P1: <the probability between 0.0 and 1.0 that G1 is correct, without any extra commentary whatsoever; just the probability!>\n",
@@ -731,23 +731,83 @@ VERBAL_ELICITATION_UNC_QUERIES = {
 
 def parse_verbal_elicitation_oe(
     output_string,
+    ve_style,
+    stage=1,
 ):
-    parts = output_string.split("\n")[:2]
-
-    if len(parts) == 2:
-        output, prob = parts 
+    stages,guess_style = ve_style.split("s")
+    stages = int(stages)
+    num_guesses = int(guess_style[0])
+    is_CoT = guess_style[1] == "C"
+    
+    if stages == 1:
+        expected_lines = 2 * num_guesses
     else:
-        output = parts[0]
-        if "Probability" in output:
-            prob = output
-            output = ""
-        else:
-            prob = ""
+        expected_lines = num_guesses
+        if stage == 1:
+            expected_lines += 1 if is_CoT else 0
 
-    try:
-        prob = float(prob.split(":")[-1].strip())
-    except:
+    output_string = output_string.replace("\n\n","\n")
+    parts = output_string.split("\n")[:expected_lines]
+
+    if len(parts) == 0:
+        return "", torch.tensor([0]), torch.tensor([[1, 0]])
+
+    def parse_guess(guess, idx):
+        if (num_guesses == 1) and ('Probability:' in guess):
+            return None
+        elif (num_guesses > 1) and any([
+            (f"P{i+1}:" in guess) for i in range(num_guesses)
+        ]):
+            return None
+
+        guess = guess.split(":")[-1].strip()
+        return guess
+
+    def parse_prob(prob, idx):
+        if (num_guesses == 1) and ('Probability:' not in prob):
+            return None
+        elif (num_guesses > 1) and (f"P{idx+1}:" not in prob):   
+            return None
+        try:
+            prob = float(prob.split(":")[-1].strip())
+        except:
+            prob = 0.5
+        return prob
+
+    if stages == 1:
+        guesses = [
+            parse_guess(g, i) for i, g in enumerate(parts[::2])
+        ]
+        probs = [
+            parse_prob(p, i) for i, p in enumerate(parts[1::2])
+        ]
+    elif stage == 1:
+        guesses = [
+            parse_guess(g, i) for i, g in enumerate(parts)
+        ]
+        probs = []
+    elif stage == 2:
+        guesses = []
+        probs = [
+            parse_prob(p, i) for i, p in enumerate(parts)
+        ]
+
+
+    if guesses[0] is None:
+        return "", torch.tensor([0]), torch.tensor([[1, 0]])
+    elif any([g is None for g in guesses]):
+        output = guesses[0]
+        prob = 0.5 if (probs[0] is None) else probs[0]
+    elif all([p is None for p in probs]):
+        output = guesses[0]
         prob = 0.5
+    else:
+        guesses, probs = zip(*[
+            (g, p) for g, p in zip(guesses, probs) if p is not None
+        ])
+        max_idx = np.argmax(probs)
+        output = guesses[max_idx]
+        prob = probs[max_idx]
 
     y = torch.tensor([prob > 0.5])
     logits = torch.tensor([[1 - prob, prob]])
@@ -756,6 +816,7 @@ def parse_verbal_elicitation_oe(
 
 @torch.inference_mode()
 def evaluate_verbal_elicitation_oe(
+    ve_style,
     accelerator,
     model,
     tokenizer,
@@ -770,6 +831,11 @@ def evaluate_verbal_elicitation_oe(
     assert (not comparison_strategies is None) and len(comparison_strategies) > 0
 
     device = accelerator.device
+
+    stages, guess_style = ve_style.split("s")
+    stages = int(stages)
+    num_guesses = int(guess_style[0])
+    max_new_tokens = max(30 * num_guesses, max_new_tokens)
 
     generation_config = GenerationConfig(
         pad_token_id=tokenizer.pad_token_id,
@@ -798,10 +864,12 @@ def evaluate_verbal_elicitation_oe(
     #     from pprint import pprint
     #     pprint(example)
 
-    #     parse_verbal_elicitation_oe(example["output"])
+    #     parse_verbal_elicitation_oe(
+    #         example["output"], ve_style, stage=1
+    #     )
     #     # print("\n")
     #     i += 1
-    #     if i > 20:
+    #     if i > 10:
     #         break
     
     # print(1/0)
@@ -813,7 +881,9 @@ def evaluate_verbal_elicitation_oe(
             example["target"],
         )
 
-        output, unc_y, unc_logits = parse_verbal_elicitation_oe(output)
+        output, unc_y, unc_logits = parse_verbal_elicitation_oe(
+            output, ve_style, stage=1
+        )
 
         unc_y = unc_y.to(device)
         unc_logits = unc_logits.to(device)

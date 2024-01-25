@@ -1,5 +1,6 @@
 import logging
 import os
+from functools import partial
 
 from ..datasets import get_dataset, get_loader
 from .eos import (
@@ -25,7 +26,7 @@ EVALUATE_MODE_FN_MAP = {
 }
 
 VERBAL_ELICITATION_MAP = {
-    "ve": {
+    "1s1g": {
         "prompt": "".join([
             "Provide your best guess and the probability that it is correct (0.0 to 1.0) for ",
             "the following question. Give ONLY the guess and probability, no other words or ",
@@ -36,7 +37,7 @@ VERBAL_ELICITATION_MAP = {
         ]),
         "target_prompt": "\nGuess: ",
     },
-    "ve_12": {
+    "1s2g": {
         "prompt": "".join([
             "Provide your 2 best guesses and the probability that each is correct (0.0 to ",
             "1.0) for the following question. Give ONLY the guesses and probabilities, no other ",
@@ -50,7 +51,7 @@ VERBAL_ELICITATION_MAP = {
         ]),
         "target_prompt": "\nG1: ",
     },
-    "ve_14": {
+    "1s4g": {
         "prompt": "".join([
             "Provide your 4 best guesses and the probability that each is correct (0.0 to ",
             "1.0) for the following question. Give ONLY the guesses and probabilities, no other ",
@@ -70,7 +71,7 @@ VERBAL_ELICITATION_MAP = {
         ]),
         "target_prompt": "\nG1: ",
     },
-    "ve_2c": {
+    "2s1CoT": {
         "prompt": "".join([
             "Provide your best guess for the following question. Before giving your answer, ",
             "provide a step-by-step explanation of your thought process. Then on a new line ",
@@ -81,7 +82,7 @@ VERBAL_ELICITATION_MAP = {
         ]),
         "target_prompt": "\nGuess: ",
     },
-    "ve_21": {
+    "2s1g": {
         "prompt": "".join([
             "Provide your best guess for the following question. Give ONLY the guess, no ",
             "other words or explanation.\n\nFor example:\n\nGuess: <most likely guess, as ",
@@ -89,7 +90,7 @@ VERBAL_ELICITATION_MAP = {
         ]),
         "target_prompt": "\nGuess: ",
     },
-    "ve_22": {
+    "2s2g": {
         "prompt": "".join([
             "Provide your 2 best guesses for the following question. Give ONLY the guesses, ",
             "no other words or explanation. For example:\n\nG1: <first most likely guess, as ",
@@ -100,7 +101,7 @@ VERBAL_ELICITATION_MAP = {
         ]),
         "target_prompt": "\nG1: ",
     },
-    "ve_24": {
+    "2s4g": {
         "prompt": "".join([
             "Provide your 4 best guesses for the following question. Give ONLY the guesses, ",
             "no other words or explanation. For example:\n\nG1: <first most likely guess, as ",
@@ -160,9 +161,11 @@ def evaluate_dataset(
             logging.warning(f"Missing val_data or test_data.")
 
     if "ve" in evaluate_fn:
+        style = evaluate_fn.split("_")[1]
+
         def switch_prompt(example):
-            example["prompt"] = VERBAL_ELICITATION_MAP["ve"]["prompt"]
-            example["target_prompt"] = VERBAL_ELICITATION_MAP["ve"]["target_prompt"]
+            example["prompt"] = VERBAL_ELICITATION_MAP[style]["prompt"]
+            example["target_prompt"] = VERBAL_ELICITATION_MAP[style]["target_prompt"]
             return example
 
         if train_data:
@@ -179,10 +182,16 @@ def evaluate_dataset(
             assert evaluate_fn[:6] == "us_oe_"
             comparison_strategies = [evaluate_fn[6:]]  # clip us_oe_
             evaluate_fn = EVALUATE_MODE_FN_MAP["us_oe"]
-        elif "ve_oe_" in evaluate_fn:
-            assert evaluate_fn[:6] == "ve_oe_"
-            comparison_strategies = [evaluate_fn[6:]]  # clip oe_
+        elif "ve_" in evaluate_fn and "oe" in evaluate_fn:
+            assert evaluate_fn[:3] == "ve_"
+            strategy = "_".join(evaluate_fn.split("_")[3:])
+            if len(strategy) == 0:
+                strategy = "substring"
+            comparison_strategies = [strategy]  # clip oe_
+            
+            ve_style = evaluate_fn.split("_")[1]
             evaluate_fn = EVALUATE_MODE_FN_MAP["ve_oe"]
+            evaluate_fn = partial(evaluate_fn, ve_style)
         elif "oe_" in evaluate_fn:
             assert evaluate_fn[:3] == "oe_"
             comparison_strategies = [evaluate_fn[3:]]  # clip oe_
@@ -194,13 +203,6 @@ def evaluate_dataset(
                 "fuzzy_gpt-3.5-turbo-1106",
             ]
             evaluate_fn = EVALUATE_MODE_FN_MAP["us_oe"]
-        elif "ve_oe" == evaluate_fn:
-            comparison_strategies = [
-                "substring",
-                # "fuzzy_gpt-4-0613",
-                # "fuzzy_gpt-3.5-turbo-1106",
-            ]
-            evaluate_fn = EVALUATE_MODE_FN_MAP["ve_oe"]
         elif "cc_oe" == evaluate_fn:
             comparison_strategies = [
                 "substring",
