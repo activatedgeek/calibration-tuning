@@ -129,15 +129,12 @@ def extract_oe_inputs(tokenizer, inputs):
     return target_start_idx, oe_inputs, oe_targets
 
 
-def prepare_oe_calibration_query(
-    tokenizer,
+def grade_oe_preds(
     true,
     pred,
     questions,
-    format="roman_choice",
     comparison_strategy="substring",
 ):
-
     # calculate accuracy
     if comparison_strategy == "substring":
         comparison_fn = lambda t, p, q: t in p
@@ -152,6 +149,18 @@ def prepare_oe_calibration_query(
     else:
         raise ValueError(f"Invalid comparison strategy {comparison_strategy}")
     acc = [comparison_fn(t, p, q) for t, p, q in zip(true, pred, questions)]
+    return acc
+
+def prepare_oe_calibration_query(
+    tokenizer,
+    true,
+    pred,
+    questions,
+    format="roman_choice",
+    comparison_strategy="substring",
+):
+
+    acc = grade_oe_preds(true, pred, questions, comparison_strategy)
 
     if format == "bool":
         ## NOTE: Probably don't use, often seems to be biased towards a yes.

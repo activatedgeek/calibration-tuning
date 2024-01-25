@@ -13,6 +13,7 @@ from llm.datasets.llm_utils import (
 from llm.datasets.llm_utils_oe import (
     extract_oe_inputs,
     prepare_oe_calibration_query,
+    grade_oe_preds,
     clustering_equivalency_with_oracle,
     openai_query,
 )
@@ -701,6 +702,58 @@ def evaluate_contextual_calibration_oe(
     return return_dict
 
 
+VERBAL_ELICITATION_UNC_QUERIES = {
+    "ve_2c": "".join([
+        "Provide the probability that your guess is correct. Give ONLY the probability, no other words or explanation.\n\n",
+        "For example:\n\n",
+        "Probability: <the probability between 0.0 and 1.0 that your guess is correct, without any extra commentary whatsoever; just the probability!>\n",
+    ]),
+    "ve_21": "".join([
+        "Provide the probability that your guess is correct. Give ONLY the probability, no other words or explanation.\n\n",
+        "For example:\n\n",
+        "Probability: <the probability between 0.0 and 1.0 that your guess is correct, without any extra commentary whatsoever; just the probability!>\n",
+    ]),
+    "ve_22": "".join([
+        "Provide the probability that each of your guesses is correct. Give ONLY the probabilities, no other words or explanation.\n\n",
+        "For example:\n\n",
+        "P1: <the probability between 0.0 and 1.0 that G1 is correct, without any extra commentary whatsoever; just the probability!>\n",
+        "P2: <the probability between 0.0 and 1.0 that G2 is correct, without any extra commentary whatsoever; just the probability!>\n",
+    ]),
+    "ve_24": "".join([
+        "Provide the probability that each of your guesses is correct. Give ONLY the probabilities, no other words or explanation.\n\n",
+        "For example:\n\n",
+        "P1: <the probability between 0.0 and 1.0 that G1 is correct, without any extra commentary whatsoever; just the probability!>\n",
+        "P2: <the probability between 0.0 and 1.0 that G2 is correct, without any extra commentary whatsoever; just the probability!>\n",
+        "P3: <the probability between 0.0 and 1.0 that G3 is correct, without any extra commentary whatsoever; just the probability!>\n",
+        "P4: <the probability between 0.0 and 1.0 that G4 is correct, without any extra commentary whatsoever; just the probability!>\n",
+    ]),
+}
+
+def parse_verbal_elicitation_oe(
+    output_string,
+):
+    parts = output_string.split("\n")[:2]
+
+    if len(parts) == 2:
+        output, prob = parts 
+    else:
+        output = parts[0]
+        if "Probability" in output:
+            prob = output
+            output = ""
+        else:
+            prob = ""
+
+    try:
+        prob = float(prob.split(":")[-1].strip())
+    except:
+        prob = 0.5
+
+    y = torch.tensor([prob > 0.5])
+    logits = torch.tensor([[1 - prob, prob]])
+
+    return output, y, logits
+
 @torch.inference_mode()
 def evaluate_verbal_elicitation_oe(
     accelerator,
@@ -708,16 +761,15 @@ def evaluate_verbal_elicitation_oe(
     tokenizer,
     loader,
     prompt_style="oe",
-    query_format="roman_choice",
     comparison_strategies=None,
     max_new_tokens=30,
     output_row_path=None,
+    **_,
 ):
     assert prompt_style == "oe"
     assert (not comparison_strategies is None) and len(comparison_strategies) > 0
 
     device = accelerator.device
-    collate_fn = DataCollatorForSupervisedDataset(tokenizer)
 
     generation_config = GenerationConfig(
         pad_token_id=tokenizer.pad_token_id,
@@ -726,8 +778,9 @@ def evaluate_verbal_elicitation_oe(
         max_new_tokens=max_new_tokens,
     )
 
-    query_token_vec = get_token_vec(tokenizer, format=query_format)
-    all_unc_y, all_unc_logits = {c: [] for c in comparison_strategies}, {c: [] for c in comparison_strategies}
+    all_unc_y, all_unc_logits = {c: [] for c in comparison_strategies}, {
+        c: [] for c in comparison_strategies
+    }
     all_acc = {c: [] for c in comparison_strategies}
     all_oe_target_strings, all_output_strings, all_question_strings = [], [], []
 
@@ -738,45 +791,53 @@ def evaluate_verbal_elicitation_oe(
         loader,
         prompt_style=prompt_style,
         generation_config=generation_config,
-        outputs_only=False
     )
 
+    # i = 0
+    # for example in output_generator:
+    #     from pprint import pprint
+    #     pprint(example)
+
+    #     parse_verbal_elicitation_oe(example["output"])
+    #     # print("\n")
+    #     i += 1
+    #     if i > 20:
+    #         break
+    
+    # print(1/0)
+
     for example in output_generator:
-        output, raw_input, target = example["output"], example["raw_input"], example["target"]
+        output, raw_input, target = (
+            example["output"],
+            example["raw_input"],
+            example["target"],
+        )
+
+        output, unc_y, unc_logits = parse_verbal_elicitation_oe(output)
+
+        unc_y = unc_y.to(device)
+        unc_logits = unc_logits.to(device)
+
         input_question_string = example["context"]
         oe_target_strings = [target]
         output_strings = [output]
         question_strings = [input_question_string]
 
         for c in comparison_strategies:
-
-            query_inputs, acc = prepare_oe_calibration_query(
-                tokenizer,
-                oe_target_strings,
-                output_strings,
-                question_strings,
-                format=query_format,
-                comparison_strategy=c,
-            )
-
-            acc = acc.to(device)
-            query_inputs = collate_fn(query_inputs)
-
-            if isinstance(model, PeftModel) and "query" in model.peft_config:
-                model.set_adapter("query")
-
-            query_inputs = {k: v.to(device) for k, v in query_inputs.items()}
-            query_outputs = model(**query_inputs)
-
-            _, unc_y, unc_logits = extract_qa_exact(
-                tokenizer, query_inputs, outputs=query_outputs
-            )
+            acc = torch.tensor(
+                grade_oe_preds(
+                    oe_target_strings,
+                    output_strings,
+                    question_strings,
+                    comparison_strategy=c,
+                )
+            ).to(device)
 
             [
                 l.append(v)
                 for l, v in zip(
                     (all_unc_y[c], all_unc_logits[c], all_acc[c]),
-                    accelerator.gather_for_metrics((unc_y, unc_logits, acc)),
+                    (unc_y, unc_logits, acc),
                 )
             ]
 
@@ -784,22 +845,18 @@ def evaluate_verbal_elicitation_oe(
             l.append(v)
             for l, v in zip(
                 (all_oe_target_strings, all_output_strings, all_question_strings),
-                accelerator.gather_for_metrics(
-                    (oe_target_strings, output_strings, question_strings)
-                ),
+                (oe_target_strings, output_strings, question_strings),
             )
         ]
-
-    return_dict = {
-        "N": len(all_oe_target_strings),
-    }
 
     all_oe_target_strings, all_output_strings, all_question_strings = (
         sum(all_oe_target_strings, []),
         sum(all_output_strings, []),
         sum(all_question_strings, []),
     )
-    
+
+    return_dict = {}
+    # note if using multiple gpus/processes, these string lists will be incomplete.
     dump = {
         "oe_target_strings": all_oe_target_strings,
         "output_strings": all_output_strings,
@@ -808,17 +865,15 @@ def evaluate_verbal_elicitation_oe(
 
     for c in comparison_strategies:
 
-        query_token_vec = query_token_vec.to(device)
-        all_unc_y_c, all_unc_logits_c, all_acc_c = [
+        all_unc_y_c, all_unc_p, all_acc_c = [
             torch.cat(l, dim=0) for l in (all_unc_y[c], all_unc_logits[c], all_acc[c])
         ]
 
         acc = all_acc_c.float().mean()
 
-        all_unc_y_c, all_unc_p = (
-            (all_unc_y_c.unsqueeze(-1) == query_token_vec).long().argmax(dim=-1),
-            all_unc_logits_c[:, query_token_vec].softmax(dim=-1),
-        )
+        all_unc_y_c = (
+            all_unc_y_c.unsqueeze(-1) == torch.arange(2).to(device)
+        ).long().argmax(dim=-1)
         all_unc_y_hat = all_unc_p.argmax(dim=-1)
         unc_acc = (all_unc_y_c == all_unc_y_hat).float().mean()
         unc_ece, _ = calibration(
@@ -832,6 +887,7 @@ def evaluate_verbal_elicitation_oe(
                 f"{c}_acc": acc.item(),
                 f"{c}_unc_acc": unc_acc.item(),
                 f"{c}_unc_ece": unc_ece,
+                "N": all_unc_p.size(0),
             }
         )
 
@@ -845,9 +901,10 @@ def evaluate_verbal_elicitation_oe(
             }
         )
 
-    if output_row_path is not None:
-        if not os.path.exists(os.path.dirname(output_row_path)):
-            os.makedirs(os.path.dirname(output_row_path))
+    if accelerator.num_processes == 1 and output_row_path is not None:
+        #create parent dir if it doesn't exist
+        import os
+        os.makedirs(os.path.dirname(output_row_path), exist_ok=True)
         pd.DataFrame(dump).to_csv(output_row_path, escapechar="\\")
 
     return return_dict
