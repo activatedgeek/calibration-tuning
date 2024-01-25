@@ -170,7 +170,7 @@ def evaluate_oe(
         )
 
     if accelerator.num_processes == 1 and output_row_path is not None:
-        pd.DataFrame(dump).to_csv(output_row_path, escapechar="\\")
+        pd.DataFrame(dump).to_csv(output_row_path, escapechar="\\", index=False)
 
     return return_dict
 
@@ -456,7 +456,7 @@ def evaluate_oe_uncertainty_sampling(
         )
 
     if accelerator.num_processes == 1 and output_row_path is not None:
-        pd.DataFrame(dump).to_csv(output_row_path, escapechar="\\")
+        pd.DataFrame(dump).to_csv(output_row_path, escapechar="\\", index=False)
 
     return return_dict
 
