@@ -144,6 +144,13 @@ def all_20k_uniform(*args, max_n=20_000, **kwargs):
 
 
 @register_dataset
+def all_20k_uniform_c(*args, max_n=20_000, **kwargs):
+    tr, _, _ = all_20k_uniform(*args, complement=True, **kwargs)
+    tr = tr.select(range(max_n))
+    return tr, None, None
+
+
+@register_dataset
 def cal_all_50k(*args, max_n=50_000, prompt_style="choice", **kwargs):
     _, vl, _ = get_combined_dataset(
         all_dataset_names=get_all_datasets_list("all:train", prompt_style=prompt_style),

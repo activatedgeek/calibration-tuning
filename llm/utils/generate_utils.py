@@ -1,7 +1,7 @@
 # import os
 # import wandb
 # import pandas as pd
-# import torch
+import torch
 # from accelerate import Accelerator
 from tqdm.auto import tqdm
 from peft import PeftModel
@@ -51,20 +51,19 @@ def generate_output(
             **generation_inputs, generation_config=generation_config
         )
 
-        # if k is not None:
-        #     assert(generation_config_sampling is not None)
-        #     assert(k > 0)
-        #     #https://github.com/huggingface/transformers/issues/14498#issuecomment-977909651
-        #     sampled_outputs = [
-        #         model.generate(
-        #             **generation_inputs,
-        #             generation_config=generation_config_sampling,
-        #             output_scores=True
-        #         )
-        #         for _ in range(k)
-        #     ]
-        # else:
-        sampled_outputs = [[] for _ in range(len(generation_outputs))]
+        if k is not None:
+            assert(generation_config_sampling is not None)
+            assert(k > 0)
+            #https://github.com/huggingface/transformers/issues/14498#issuecomment-977909651
+            sampled_outputs = [
+                model.generate(
+                    **generation_inputs,
+                    generation_config=generation_config_sampling,
+                    return_dict_in_generate=True,
+                    output_scores=True
+                )
+                for _ in range(k)
+            ]
 
         ## NOTE: Verify output extraction pre-condition.
         assert (
@@ -74,7 +73,7 @@ def generate_output(
 
         examples_pre = [dict(zip(inputs.keys(), vals)) for vals in zip(*inputs.values())]
         examples = []
-        for o, inp, t, s in zip(examples_pre, generation_inputs.get("input_ids"), generation_outputs, sampled_outputs):
+        for i, o, inp, t in zip(range(len(examples_pre)), examples_pre, generation_inputs.get("input_ids"), generation_outputs):
             example = {
                 **o,
                 "output": tokenizer.decode(
@@ -90,20 +89,19 @@ def generate_output(
                 "target": o["target"],
             }
             if k is not None:
-                assert(False)
-                # example["sampled_outputs"] = [
-                #     tokenizer.decode(
-                #         entry[inp.size(0) :],
-                #         skip_special_tokens=True,
-                #         clean_up_tokenization_spaces=False,
-                #     )
-                #     for entry in s
-                # ]
-                # example["sampled_probs"] = [
-                #     entry[inp.size(0) :]
-                #     for entry in s
-                # ]
 
+                example["sampled_outputs"] = [
+                    tokenizer.decode(
+                        entry['sequences'][i][inp.size(0) :],
+                        skip_special_tokens=True,
+                        clean_up_tokenization_spaces=False,
+                    )
+                    for entry in sampled_outputs
+                ]
+                example["sampled_log_probs"] = [
+                    torch.nn.functional.log_softmax(torch.cat(entry['scores'],dim=0), dim=-1)
+                    for entry in sampled_outputs
+                ]
             examples.append(example)
 
         yield from examples

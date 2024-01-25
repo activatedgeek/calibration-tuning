@@ -170,6 +170,7 @@ def evaluate_oe(
         )
 
     if accelerator.num_processes == 1 and output_row_path is not None:
+        os.makedirs(output_row_path, exist_ok=True)
         pd.DataFrame(dump).to_csv(output_row_path, escapechar="\\")
 
     return return_dict
@@ -200,6 +201,7 @@ def evaluate_oe_uncertainty_sampling(
         bos_token_id=tokenizer.bos_token_id,
         eos_token_id=tokenizer.eos_token_id,
         max_new_tokens=max_new_tokens,
+        do_sample=False,
     )
 
     generation_config_sampling = GenerationConfig(
@@ -208,6 +210,7 @@ def evaluate_oe_uncertainty_sampling(
         eos_token_id=tokenizer.eos_token_id,
         max_new_tokens=max_new_tokens,
         top_p=top_p,
+        do_sample=True,
     )
 
     query_token_vec = get_token_vec(tokenizer, format=query_format)
@@ -248,26 +251,27 @@ def evaluate_oe_uncertainty_sampling(
 
         # generate 30 more tokens k addtl times for the uncertainty estimation
         sampled_outputs = example["sampled_outputs"]
-        sampled_probs = example["sampled_outputs"]
-        outputs_list = []
-        length_normalized_likelihoods_list = []
-        for i in range(k):
+        sampled_log_probs = example["sampled_log_probs"]
 
-            length_normalized_likelihoods_list.append(
-                [
-                    np.exp(
-                        np.sum(
-                            np.log(
-                                outputs_pre_cluster[..., target_start_idx:]
-                                .detach()
-                                .cpu()
-                                .numpy()
-                            )
-                        )
-                        / len(outputs_pre_cluster[..., target_start_idx:][0])
-                    )
-                ]
+        length_normalized_likelihoods = [
+            # get back in likelihood space
+            np.exp(
+                # get the average log-likelihood among the num_tokens (equivalent to summing and dividing by length)
+                np.mean(
+                    # get the max per row of a tensor shaped like [num_tokens, vocab_size]
+                    np.max(
+                        sequence_probs
+                        .detach()
+                        .cpu()
+                        .numpy()
+                    , axis=-1)
+                )
             )
+            for sequence_probs in sampled_log_probs
+        ]
+
+        outputs_list = [sampled_outputs]
+        length_normalized_likelihoods_list = [length_normalized_likelihoods]
 
         # page 15 is original algorithm: https://arxiv.org/pdf/2302.09664.pdf
         # our modification is based on finding the likelihood under the sampling procedure of the greedy decoded answer's equivalence class
@@ -287,17 +291,15 @@ def evaluate_oe_uncertainty_sampling(
         likelihood_score = []
         normalized_likelihood_score = []
         likelihood_output_list = []
-        for i, question_string, greedy in zip(
-            range(len(question_strings)), question_strings, output_strings
+        for i, question_string, greedy, output_sequences, output_likelihoods in zip(
+            range(len(question_strings)), question_strings, output_strings, outputs_list, length_normalized_likelihoods_list
         ):
             n_cluster = 0
             likelihood_accumulate = 0
 
-            for sample, likelihoods in zip(
-                outputs_list, length_normalized_likelihoods_list
+            for generation, likelihood in zip(
+                output_sequences, output_likelihoods
             ):
-                likelihood = likelihoods[i]
-                generation = sample[i]
 
                 add_to_cluster = clustering_equivalency_with_oracle(
                     greedy,
@@ -317,10 +319,10 @@ def evaluate_oe_uncertainty_sampling(
             likelihood_score.append(likelihood_accumulate)
             normalized_likelihood_score.append(
                 likelihood_accumulate
-                / sum([l[i] for l in length_normalized_likelihoods_list])
+                / sum(output_likelihoods)
             )
             likelihood_output_list.append(
-                [l[i] for l in length_normalized_likelihoods_list]
+                output_likelihoods
             )
 
         prob = np.array(prob)
@@ -334,7 +336,7 @@ def evaluate_oe_uncertainty_sampling(
         # prepare the calibration query with open ended text
         # the calculation of the accuracy is done within this function
         for c in comparison_strategies:
-            _, _, acc = prepare_oe_calibration_query(
+            _, acc = prepare_oe_calibration_query(
                 tokenizer,
                 oe_target_strings,
                 output_strings,
@@ -440,7 +442,7 @@ def evaluate_oe_uncertainty_sampling(
                 f"{c}_ece_counting": ece,
                 f"{c}_ece_likelihood": likelihood_ece,
                 f"{c}_ece_likelihood_normalized": likelihood_normalized,
-                "N": all_unc_p.size(0),
+                "N": len(all_acc_c),
             }
         )
 
@@ -456,250 +458,251 @@ def evaluate_oe_uncertainty_sampling(
         )
 
     if accelerator.num_processes == 1 and output_row_path is not None:
+        os.makedirs(output_row_path, exist_ok=True)
         pd.DataFrame(dump).to_csv(output_row_path, escapechar="\\")
 
     return return_dict
 
 
-# https://github.com/tonyzhaozh/few-shot-learning/blob/e04d8643be91c2cce63f33e07760ff75d5aa3ad0/run_extraction.py#L144C9-L144C9
-# Using the hack of contextual calibration for generation tasks from the original paper.
-# Calibrate first token of generation against first token of ground truth, then greedily decode the rest of the sequence BASED ON THE CALIBRATED TOKEN.
-# Therefore the first token is the one used for all ece computation/confidence, but the entire sequence matters for accuracy.
-@torch.inference_mode()
-def evaluate_contextual_calibration_oe(
-    accelerator,
-    model,
-    tokenizer,
-    loader,
-    prompt_style="choice",
-    query_format="roman_choice",
-    comparison_strategies=None,
-    max_new_tokens=30,
-    **_,
-):
-    """
-    Assumes all answers are 1 token and end immediately with EOS token.
-    """
+# # https://github.com/tonyzhaozh/few-shot-learning/blob/e04d8643be91c2cce63f33e07760ff75d5aa3ad0/run_extraction.py#L144C9-L144C9
+# # Using the hack of contextual calibration for generation tasks from the original paper.
+# # Calibrate first token of generation against first token of ground truth, then greedily decode the rest of the sequence BASED ON THE CALIBRATED TOKEN.
+# # Therefore the first token is the one used for all ece computation/confidence, but the entire sequence matters for accuracy.
+# @torch.inference_mode()
+# def evaluate_contextual_calibration_oe(
+#     accelerator,
+#     model,
+#     tokenizer,
+#     loader,
+#     prompt_style="choice",
+#     query_format="roman_choice",
+#     comparison_strategies=None,
+#     max_new_tokens=30,
+#     **_,
+# ):
+#     """
+#     Assumes all answers are 1 token and end immediately with EOS token.
+#     """
 
-    assert prompt_style == "oe"
+#     assert prompt_style == "oe"
 
-    device = accelerator.device
-    collate_fn = DataCollatorForSupervisedDataset(tokenizer)
+#     device = accelerator.device
+#     collate_fn = DataCollatorForSupervisedDataset(tokenizer)
 
-    if isinstance(model, PeftModel):
-        model.set_adapter("default")
+#     if isinstance(model, PeftModel):
+#         model.set_adapter("default")
 
-    all_y, all_logits = [], []
-    all_platt_logits = []
+#     all_y, all_logits = [], []
+#     all_platt_logits = []
 
-    for raw_inputs in tqdm(loader, leave=False):
-        platt_logits = []
+#     for raw_inputs in tqdm(loader, leave=False):
+#         platt_logits = []
 
-        for cf_str in [
-            "Question: N/A",
-            "Question: ",
-            f"Question: {tokenizer.pad_token}",
-        ]:
+#         for cf_str in [
+#             "Question: N/A",
+#             "Question: ",
+#             f"Question: {tokenizer.pad_token}",
+#         ]:
 
-            calib_inputs = {
-                **raw_inputs,
-                "context": [cf_str] * len(raw_inputs["context"]),
-            }
-            # OE changes: prompt style
-            calib_inputs = prepare_batch(
-                tokenizer, calib_inputs, prompt_style=prompt_style
-            )
-            # calib_inputs = prepare_batch(tokenizer, calib_inputs)
-            calib_inputs = collate_fn(calib_inputs)
+#             calib_inputs = {
+#                 **raw_inputs,
+#                 "context": [cf_str] * len(raw_inputs["context"]),
+#             }
+#             # OE changes: prompt style
+#             calib_inputs = prepare_batch(
+#                 tokenizer, calib_inputs, prompt_style=prompt_style
+#             )
+#             # calib_inputs = prepare_batch(tokenizer, calib_inputs)
+#             calib_inputs = collate_fn(calib_inputs)
 
-            calib_inputs = {k: v.to(device) for k, v in calib_inputs.items()}
-            calib_outputs = model(**calib_inputs)
+#             calib_inputs = {k: v.to(device) for k, v in calib_inputs.items()}
+#             calib_outputs = model(**calib_inputs)
 
-            # OE changes: extract oe inputs
+#             # OE changes: extract oe inputs
 
-            calib_target_start_idx, _, _ = extract_oe_inputs(tokenizer, calib_inputs)
-            _c_logits = torch.squeeze(
-                calib_outputs.logits[:, calib_target_start_idx, :], dim=1
-            )  # first token only
+#             calib_target_start_idx, _, _ = extract_oe_inputs(tokenizer, calib_inputs)
+#             _c_logits = torch.squeeze(
+#                 calib_outputs.logits[:, calib_target_start_idx, :], dim=1
+#             )  # first token only
 
-            # _, _, _c_logits = extract_qa_exact(
-            #     tokenizer, calib_inputs, outputs=calib_outputs
-            # )
+#             # _, _, _c_logits = extract_qa_exact(
+#             #     tokenizer, calib_inputs, outputs=calib_outputs
+#             # )
 
-            platt_logits.append(_c_logits)
+#             platt_logits.append(_c_logits)
 
-        ## Ensemble over context-free strings.
-        platt_logits = torch.stack(platt_logits).mean(dim=0)
+#         ## Ensemble over context-free strings.
+#         platt_logits = torch.stack(platt_logits).mean(dim=0)
 
-        # OE changes: prompt style
-        inputs = prepare_batch(tokenizer, raw_inputs, prompt_style=prompt_style)
-        inputs = collate_fn(inputs)
+#         # OE changes: prompt style
+#         inputs = prepare_batch(tokenizer, raw_inputs, prompt_style=prompt_style)
+#         inputs = collate_fn(inputs)
 
-        inputs = {k: v.to(device) for k, v in inputs.items()}
-        outputs = model(**inputs)
+#         inputs = {k: v.to(device) for k, v in inputs.items()}
+#         outputs = model(**inputs)
 
-        # OE changes: extract first token
-        target_start_idx, _, oe_targets = extract_oe_inputs(tokenizer, inputs)
-        logits = torch.squeeze(outputs.logits[:, target_start_idx, :], dim=1)
-        y = oe_targets[:, 0]
-        # _, y, logits = extract_qa_exact(tokenizer, inputs, outputs=outputs)
+#         # OE changes: extract first token
+#         target_start_idx, _, oe_targets = extract_oe_inputs(tokenizer, inputs)
+#         logits = torch.squeeze(outputs.logits[:, target_start_idx, :], dim=1)
+#         y = oe_targets[:, 0]
+#         # _, y, logits = extract_qa_exact(tokenizer, inputs, outputs=outputs)
 
-        [
-            l.append(v)
-            for l, v in zip(
-                (all_y, all_logits, all_platt_logits),
-                accelerator.gather_for_metrics((y, logits, platt_logits)),
-            )
-        ]
+#         [
+#             l.append(v)
+#             for l, v in zip(
+#                 (all_y, all_logits, all_platt_logits),
+#                 accelerator.gather_for_metrics((y, logits, platt_logits)),
+#             )
+#         ]
 
-    all_y, all_logits, all_platt_logits = [
-        torch.cat(l, dim=0) for l in (all_y, all_logits, all_platt_logits)
-    ]
+#     all_y, all_logits, all_platt_logits = [
+#         torch.cat(l, dim=0) for l in (all_y, all_logits, all_platt_logits)
+#     ]
 
-    all_p = all_logits.softmax(dim=-1)
-    all_y_hat = all_p.argmax(dim=-1)
-    acc = (all_y == all_y_hat).float().mean()
-    logits_ece, _ = calibration(
-        all_y, all_y_hat, all_p[torch.arange(all_p.size(0)), all_y_hat]
-    )
+#     all_p = all_logits.softmax(dim=-1)
+#     all_y_hat = all_p.argmax(dim=-1)
+#     acc = (all_y == all_y_hat).float().mean()
+#     logits_ece, _ = calibration(
+#         all_y, all_y_hat, all_p[torch.arange(all_p.size(0)), all_y_hat]
+#     )
 
-    all_cal_logits = all_logits - all_platt_logits
-    all_cal_p = all_cal_logits.softmax(dim=-1)
-    all_cal_y_hat = all_cal_p.argmax(dim=-1)
-    cal_acc = (all_y == all_cal_y_hat).float().mean()
-    cal_ece, _ = calibration(
-        all_y, all_y_hat, all_cal_p[torch.arange(all_cal_p.size(0)), all_cal_y_hat]
-    )
+#     all_cal_logits = all_logits - all_platt_logits
+#     all_cal_p = all_cal_logits.softmax(dim=-1)
+#     all_cal_y_hat = all_cal_p.argmax(dim=-1)
+#     cal_acc = (all_y == all_cal_y_hat).float().mean()
+#     cal_ece, _ = calibration(
+#         all_y, all_y_hat, all_cal_p[torch.arange(all_cal_p.size(0)), all_cal_y_hat]
+#     )
 
-    return_dict = {
-        "N": all_y.size(0),
-        # OE Change: acc -> first_token_acc
-        "first_token_acc": acc.item(),
-        "logits_ece": logits_ece,
-        # OE Change: acc -> first token acc
-        "cal_first_token_acc": cal_acc.item(),
-        "cal_ece": cal_ece,
-    }
+#     return_dict = {
+#         "N": all_y.size(0),
+#         # OE Change: acc -> first_token_acc
+#         "first_token_acc": acc.item(),
+#         "logits_ece": logits_ece,
+#         # OE Change: acc -> first token acc
+#         "cal_first_token_acc": cal_acc.item(),
+#         "cal_ece": cal_ece,
+#     }
 
-    # CHANGE FOR OE
-    # generate the entire remainder of the sequence for each element
+#     # CHANGE FOR OE
+#     # generate the entire remainder of the sequence for each element
 
-    # all_oe_inputs = []
-    all_acc = {c: [] for c in comparison_strategies}
-    all_oe_target_strings, all_output_strings, all_question_strings = [], [], []
+#     # all_oe_inputs = []
+#     all_acc = {c: [] for c in comparison_strategies}
+#     all_oe_target_strings, all_output_strings, all_question_strings = [], [], []
 
-    all_cal_p_index = 0
+#     all_cal_p_index = 0
 
-    for inputs in tqdm(loader, leave=False):
+#     for inputs in tqdm(loader, leave=False):
 
-        inputs = prepare_batch(tokenizer, inputs, prompt_style=prompt_style)
-        inputs = collate_fn(inputs)
+#         inputs = prepare_batch(tokenizer, inputs, prompt_style=prompt_style)
+#         inputs = collate_fn(inputs)
 
-        # extract first token
-        first_token = all_cal_p[
-            all_cal_p_index : all_cal_p_index + len(inputs["input_ids"])
-        ]
-        all_cal_p_index += len(inputs["input_ids"])
+#         # extract first token
+#         first_token = all_cal_p[
+#             all_cal_p_index : all_cal_p_index + len(inputs["input_ids"])
+#         ]
+#         all_cal_p_index += len(inputs["input_ids"])
 
-        target_start_idx, oe_inputs_base, oe_targets = extract_oe_inputs(
-            tokenizer, inputs
-        )
+#         target_start_idx, oe_inputs_base, oe_targets = extract_oe_inputs(
+#             tokenizer, inputs
+#         )
 
-        oe_inputs = collate_fn(oe_inputs_base)
-        oe_inputs = {k: v.to(device) for k, v in oe_inputs.items()}
+#         oe_inputs = collate_fn(oe_inputs_base)
+#         oe_inputs = {k: v.to(device) for k, v in oe_inputs.items()}
 
-        oe_inputs_extended = collate_fn(oe_inputs_base)
-        oe_inputs_extended = {k: v.to(device) for k, v in oe_inputs_extended.items()}
+#         oe_inputs_extended = collate_fn(oe_inputs_base)
+#         oe_inputs_extended = {k: v.to(device) for k, v in oe_inputs_extended.items()}
 
-        # add the calibrated first token
-        oe_inputs_extended["input_ids"] = torch.cat(
-            [
-                oe_inputs_extended["input_ids"],
-                first_token.argmax(dim=-1).unsqueeze(dim=1).to(device),
-            ],
-            dim=-1,
-        )
-        oe_inputs_extended["attention_mask"] = torch.cat(
-            [
-                oe_inputs_extended["attention_mask"],
-                torch.ones(oe_inputs_extended["attention_mask"].shape[0], 1).to(device),
-            ],
-            dim=-1,
-        )
+#         # add the calibrated first token
+#         oe_inputs_extended["input_ids"] = torch.cat(
+#             [
+#                 oe_inputs_extended["input_ids"],
+#                 first_token.argmax(dim=-1).unsqueeze(dim=1).to(device),
+#             ],
+#             dim=-1,
+#         )
+#         oe_inputs_extended["attention_mask"] = torch.cat(
+#             [
+#                 oe_inputs_extended["attention_mask"],
+#                 torch.ones(oe_inputs_extended["attention_mask"].shape[0], 1).to(device),
+#             ],
+#             dim=-1,
+#         )
 
-        # import pdb; pdb.set_trace()
+#         # import pdb; pdb.set_trace()
 
-        if isinstance(model, PeftModel):
-            model.set_adapter("default")
+#         if isinstance(model, PeftModel):
+#             model.set_adapter("default")
 
-        # generate 30 - 1 more tokens
-        outputs = model.generate(
-            **oe_inputs_extended, max_new_tokens=max_new_tokens - 1
-        )
+#         # generate 30 - 1 more tokens
+#         outputs = model.generate(
+#             **oe_inputs_extended, max_new_tokens=max_new_tokens - 1
+#         )
 
-        # convert those new tokens to the generated strings
-        output_strings = tokenizer.batch_decode(
-            outputs[..., target_start_idx:],
-            skip_special_tokens=True,
-            clean_up_tokenization_spaces=False,
-        )
+#         # convert those new tokens to the generated strings
+#         output_strings = tokenizer.batch_decode(
+#             outputs[..., target_start_idx:],
+#             skip_special_tokens=True,
+#             clean_up_tokenization_spaces=False,
+#         )
 
-        # these are the ground truth strings for this batch
-        oe_target_strings = tokenizer.batch_decode(
-            oe_targets, skip_special_tokens=True, clean_up_tokenization_spaces=False
-        )
+#         # these are the ground truth strings for this batch
+#         oe_target_strings = tokenizer.batch_decode(
+#             oe_targets, skip_special_tokens=True, clean_up_tokenization_spaces=False
+#         )
 
-        question_strings = tokenizer.batch_decode(
-            oe_inputs["input_ids"],
-            skip_special_tokens=True,
-            clean_up_tokenization_spaces=False,
-        )
+#         question_strings = tokenizer.batch_decode(
+#             oe_inputs["input_ids"],
+#             skip_special_tokens=True,
+#             clean_up_tokenization_spaces=False,
+#         )
 
-        # prepare the calibration query with open ended text
-        # the calculation of the accuracy is done within this function
-        for c in comparison_strategies:
-            _, _, acc = prepare_oe_calibration_query(
-                tokenizer,
-                oe_target_strings,
-                output_strings,
-                question_strings,
-                format=query_format,
-                comparison_strategy=c,
-            )
+#         # prepare the calibration query with open ended text
+#         # the calculation of the accuracy is done within this function
+#         for c in comparison_strategies:
+#             _, _, acc = prepare_oe_calibration_query(
+#                 tokenizer,
+#                 oe_target_strings,
+#                 output_strings,
+#                 question_strings,
+#                 format=query_format,
+#                 comparison_strategy=c,
+#             )
 
-            acc = acc.to(device)
+#             acc = acc.to(device)
 
-            [
-                l.append(v)
-                for l, v in zip(
-                    (all_acc[c]),
-                    accelerator.gather_for_metrics((acc)),
-                )
-            ]
+#             [
+#                 l.append(v)
+#                 for l, v in zip(
+#                     (all_acc[c]),
+#                     accelerator.gather_for_metrics((acc)),
+#                 )
+#             ]
 
-        [
-            l.append(v)
-            for l, v in zip(
-                (all_oe_target_strings, all_output_strings, all_question_strings),
-                accelerator.gather_for_metrics(
-                    (oe_target_strings, output_strings, question_strings)
-                ),
-            )
-        ]
+#         [
+#             l.append(v)
+#             for l, v in zip(
+#                 (all_oe_target_strings, all_output_strings, all_question_strings),
+#                 accelerator.gather_for_metrics(
+#                     (oe_target_strings, output_strings, question_strings)
+#                 ),
+#             )
+#         ]
 
-    for c in comparison_strategies:
-        all_acc_c = np.array([e.cpu().numpy() for e in all_acc[c]]).flatten()
-        return_dict[f"{c}_acc"] = np.sum(all_acc_c) / len(all_acc_c)
+#     for c in comparison_strategies:
+#         all_acc_c = np.array([e.cpu().numpy() for e in all_acc[c]]).flatten()
+#         return_dict[f"{c}_acc"] = np.sum(all_acc_c) / len(all_acc_c)
 
-        c_ece, _ = calibration(
-            np.ones_like(all_acc_c),
-            all_acc_c,
-            all_cal_p[torch.arange(all_cal_p.size(0)), all_cal_y_hat].cpu().numpy(),
-        )
+#         c_ece, _ = calibration(
+#             np.ones_like(all_acc_c),
+#             all_acc_c,
+#             all_cal_p[torch.arange(all_cal_p.size(0)), all_cal_y_hat].cpu().numpy(),
+#         )
 
-        return_dict[f"{c}_ece"] = c_ece
+#         return_dict[f"{c}_ece"] = c_ece
 
-    return return_dict
+#     return return_dict
 
 
 VERBAL_ELICITATION_UNC_QUERIES = {
