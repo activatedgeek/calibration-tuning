@@ -9,7 +9,7 @@ from .eos import (
 )
 from .oe import (
     evaluate_oe,
-    evaluate_contextual_calibration_oe,
+    # evaluate_contextual_calibration_oe,
     evaluate_oe_uncertainty_sampling,
     evaluate_verbal_elicitation_oe,
 )
@@ -20,7 +20,7 @@ EVALUATE_MODE_FN_MAP = {
     "cand_eos": evaluate_candidate_via_eos,
     "oe": evaluate_oe,
     "us_oe": evaluate_oe_uncertainty_sampling,
-    "cc_oe": evaluate_contextual_calibration_oe,
+    # "cc_oe": evaluate_contextual_calibration_oe,
     "ve_oe": evaluate_verbal_elicitation_oe,
 }
 
