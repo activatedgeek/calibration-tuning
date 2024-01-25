@@ -7,6 +7,8 @@ from tqdm.auto import tqdm
 from peft import PeftModel
 from transformers import GenerationConfig
 
+from datasets import Dataset
+
 from llm.datasets import get_dataset, get_loader
 from llm.datasets.llm_utils import (
     LMText,
@@ -252,15 +254,19 @@ def generate_labels_main(
         lora_dropout=lora_dropout,
     )
 
-    with accelerator.main_process_first():
-        train_data, _, _ = get_dataset(
-            dataset,
-            root=data_dir,
-            tokenizer=tokenizer,
-            seed=seed,
-            num_workers=num_workers,
-            use_cache=use_dataset_cache,
-        )
+    if ".csv" in dataset:
+        df = pd.read_csv(dataset)
+        train_data = Dataset.from_pandas(df)
+    else:
+        with accelerator.main_process_first():
+            train_data, _, _ = get_dataset(
+                dataset,
+                root=data_dir,
+                tokenizer=tokenizer,
+                seed=seed,
+                num_workers=num_workers,
+                use_cache=use_dataset_cache,
+            )
 
     for data, split in zip([train_data], ["train"]):
 
@@ -269,6 +275,7 @@ def generate_labels_main(
             batch_size=batch_size,
             pin_memory=True,
             accelerator=accelerator,
+            collate_fn=lambda x: {k: [d[k] for d in x] for k in x[0].keys()},
         )
 
         label_generator = generate_query_label(

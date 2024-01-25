@@ -24,6 +24,98 @@ EVALUATE_MODE_FN_MAP = {
     "ve_oe": evaluate_verbal_elicitation_oe,
 }
 
+VERBAL_ELICITATION_MAP = {
+    "ve": {
+        "prompt": "".join([
+            "Provide your best guess and the probability that it is correct (0.0 to 1.0) for ",
+            "the following question. Give ONLY the guess and probability, no other words or ",
+            "explanation. For example:\n\nGuess: <most likely guess, as short as possible; not ",
+            "a complete sentence, just the guess!>\nProbability: <the probability between 0.0 ",
+            "and 1.0 that your guess is correct, without any extra commentary whatsoever; just ",
+            "the probability!>\n\n",
+        ]),
+        "target_prompt": "\nGuess: ",
+    },
+    "ve_12": {
+        "prompt": "".join([
+            "Provide your 2 best guesses and the probability that each is correct (0.0 to ",
+            "1.0) for the following question. Give ONLY the guesses and probabilities, no other ",
+            "words or explanation. For example:\n\nG1: <first most likely guess, as short as ",
+            "possible; not a complete sentence, just the guess!>\n\nP1: <the probability between ",
+            "0.0 and 1.0 that G1 is correct, without any extra commentary whatsoever; just the ",
+            "probability!>\n\nG2: <second most likely guess, as short as possible; ",
+            "not a complete sentence, just the guess!>\n\nP2: <the probability between 0.0 ",
+            "and 1.0 that G2 is correct, without any extra commentary whatsoever; just the ",
+            "probability!>\n\n",
+        ]),
+        "target_prompt": "\nG1: ",
+    },
+    "ve_14": {
+        "prompt": "".join([
+            "Provide your 4 best guesses and the probability that each is correct (0.0 to ",
+            "1.0) for the following question. Give ONLY the guesses and probabilities, no other ",
+            "words or explanation. For example:\n\nG1: <first most likely guess, as short as ",
+            "possible; not a complete sentence, just the guess!>\n\nP1: <the probability between ",
+            "0.0 and 1.0 that G1 is correct, without any extra commentary whatsoever; just the ",
+            "probability!>\n\nG2: <second most likely guess, as short as possible; ",
+            "not a complete sentence, just the guess!>\n\nP2: <the probability between 0.0 ",
+            "and 1.0 that G2 is correct, without any extra commentary whatsoever; just the ",
+            "probability!>\n\nG3: <third most likely guess, as short as possible; ",
+            "not a complete sentence, just the guess!>\n\nP3: <the probability between 0.0 ",
+            "and 1.0 that G3 is correct, without any extra commentary whatsoever; just the ",
+            "probability!>\n\nG4: <fourth most likely guess, as short as possible; ",
+            "not a complete sentence, just the guess!>\n\nP4: <the probability between 0.0 ",
+            "and 1.0 that G4 is correct, without any extra commentary whatsoever; just the ",
+            "probability!>\n\n",
+        ]),
+        "target_prompt": "\nG1: ",
+    },
+    "ve_2c": {
+        "prompt": "".join([
+            "Provide your best guess for the following question. Before giving your answer, ",
+            "provide a step-by-step explanation of your thought process. Then on a new line ",
+            "give the guess with no other words or explanation.\n\nFor example:\n\nExplanation: ",
+            "<one sentence step-by-step explanation of your thought process>\n\nGuess: ",
+            "<most likely guess, as short as possible; not a complete sentence, just the ",
+            "guess!>\n\n",
+        ]),
+        "target_prompt": "\nGuess: ",
+    },
+    "ve_21": {
+        "prompt": "".join([
+            "Provide your best guess for the following question. Give ONLY the guess, no ",
+            "other words or explanation.\n\nFor example:\n\nGuess: <most likely guess, as ",
+            "short as possible; not a complete sentence, just the guess!>\n\n",
+        ]),
+        "target_prompt": "\nGuess: ",
+    },
+    "ve_22": {
+        "prompt": "".join([
+            "Provide your 2 best guesses for the following question. Give ONLY the guesses, ",
+            "no other words or explanation. For example:\n\nG1: <first most likely guess, as ",
+            "short as possible; not a complete sentence, just the guess!>\n\nP1: <the probability ",
+            "between 0.0 and 1.0 that G1 is correct, without any extra commentary whatsoever; ",
+            "just the probability!>\n\nG2: <second most likely guess, as short as possible; ",
+            "not a complete sentence, just the guess!>\n\n",
+        ]),
+        "target_prompt": "\nG1: ",
+    },
+    "ve_24": {
+        "prompt": "".join([
+            "Provide your 4 best guesses for the following question. Give ONLY the guesses, ",
+            "no other words or explanation. For example:\n\nG1: <first most likely guess, as ",
+            "short as possible; not a complete sentence, just the guess!>\n\nP1: <the probability ",
+            "between 0.0 and 1.0 that G1 is correct, without any extra commentary whatsoever; ",
+            "just the probability!>\n\nG2: <second most likely guess, as short as possible; ",
+            "not a complete sentence, just the guess!>\n\nP2: <the probability between 0.0 ",
+            "and 1.0 that G2 is correct, without any extra commentary whatsoever; just the ",
+            "probability!>\n\nG3: <third most likely guess, as short as possible; ",
+            "not a complete sentence, just the guess!>\n\nG4: <fourth most likely guess, ",
+            "as short as possible; not a complete sentence, just the guess!>\n\n",
+        ]),
+        "target_prompt": "\nG1: ",
+    },
+}
 
 def evaluate_dataset(
     accelerator,
@@ -67,6 +159,17 @@ def evaluate_dataset(
         if (val_data is not None) and (test_data is not None):
             logging.warning(f"Missing val_data or test_data.")
 
+    if "ve" in evaluate_fn:
+        def switch_prompt(example):
+            example["prompt"] = VERBAL_ELICITATION_MAP["ve"]["prompt"]
+            example["target_prompt"] = VERBAL_ELICITATION_MAP["ve"]["target_prompt"]
+            return example
+
+        if train_data:
+            train_data = train_data.map(switch_prompt)
+        val_data = val_data.map(switch_prompt)
+        test_data = test_data.map(switch_prompt)
+
     if isinstance(evaluate_fn, str):
         if "cc_oe_" in evaluate_fn:
             assert evaluate_fn[:6] == "cc_oe_"
@@ -76,6 +179,10 @@ def evaluate_dataset(
             assert evaluate_fn[:6] == "us_oe_"
             comparison_strategies = [evaluate_fn[6:]]  # clip us_oe_
             evaluate_fn = EVALUATE_MODE_FN_MAP["us_oe"]
+        elif "ve_oe_" in evaluate_fn:
+            assert evaluate_fn[:6] == "ve_oe_"
+            comparison_strategies = [evaluate_fn[6:]]  # clip oe_
+            evaluate_fn = EVALUATE_MODE_FN_MAP["ve_oe"]
         elif "oe_" in evaluate_fn:
             assert evaluate_fn[:3] == "oe_"
             comparison_strategies = [evaluate_fn[3:]]  # clip oe_

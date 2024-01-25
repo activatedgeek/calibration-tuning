@@ -118,6 +118,10 @@ def main(
 
         accelerator.free_memory()
 
+    accelerator.wait_for_everyone()
+    if accelerator.process_index == 0:
+        pd.DataFrame(all_metrics).to_csv(f"{log_dir}/metrics.csv", index=False)
+
 
 if __name__ == "__main__":
     import fire

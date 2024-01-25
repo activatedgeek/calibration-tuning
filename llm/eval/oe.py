@@ -13,6 +13,7 @@ from llm.datasets.llm_utils import (
 from llm.datasets.llm_utils_oe import (
     extract_oe_inputs,
     prepare_oe_calibration_query,
+    grade_oe_preds,
     clustering_equivalency_with_oracle,
     openai_query,
 )
@@ -704,215 +705,142 @@ def evaluate_oe_uncertainty_sampling(
 #     return return_dict
 
 
+VERBAL_ELICITATION_UNC_QUERIES = {
+    "ve_2c": "".join([
+        "Provide the probability that your guess is correct. Give ONLY the probability, no other words or explanation.\n\n",
+        "For example:\n\n",
+        "Probability: <the probability between 0.0 and 1.0 that your guess is correct, without any extra commentary whatsoever; just the probability!>\n",
+    ]),
+    "ve_21": "".join([
+        "Provide the probability that your guess is correct. Give ONLY the probability, no other words or explanation.\n\n",
+        "For example:\n\n",
+        "Probability: <the probability between 0.0 and 1.0 that your guess is correct, without any extra commentary whatsoever; just the probability!>\n",
+    ]),
+    "ve_22": "".join([
+        "Provide the probability that each of your guesses is correct. Give ONLY the probabilities, no other words or explanation.\n\n",
+        "For example:\n\n",
+        "P1: <the probability between 0.0 and 1.0 that G1 is correct, without any extra commentary whatsoever; just the probability!>\n",
+        "P2: <the probability between 0.0 and 1.0 that G2 is correct, without any extra commentary whatsoever; just the probability!>\n",
+    ]),
+    "ve_24": "".join([
+        "Provide the probability that each of your guesses is correct. Give ONLY the probabilities, no other words or explanation.\n\n",
+        "For example:\n\n",
+        "P1: <the probability between 0.0 and 1.0 that G1 is correct, without any extra commentary whatsoever; just the probability!>\n",
+        "P2: <the probability between 0.0 and 1.0 that G2 is correct, without any extra commentary whatsoever; just the probability!>\n",
+        "P3: <the probability between 0.0 and 1.0 that G3 is correct, without any extra commentary whatsoever; just the probability!>\n",
+        "P4: <the probability between 0.0 and 1.0 that G4 is correct, without any extra commentary whatsoever; just the probability!>\n",
+    ]),
+}
+
+def parse_verbal_elicitation_oe(
+    output_string,
+):
+    parts = output_string.split("\n")[:2]
+
+    if len(parts) == 2:
+        output, prob = parts 
+    else:
+        output = parts[0]
+        if "Probability" in output:
+            prob = output
+            output = ""
+        else:
+            prob = ""
+
+    try:
+        prob = float(prob.split(":")[-1].strip())
+    except:
+        prob = 0.5
+
+    y = torch.tensor([prob > 0.5])
+    logits = torch.tensor([[1 - prob, prob]])
+
+    return output, y, logits
+
 @torch.inference_mode()
 def evaluate_verbal_elicitation_oe(
     accelerator,
     model,
     tokenizer,
     loader,
-    prompt_style="choice",
-    query_format="roman_choice",
+    prompt_style="oe",
     comparison_strategies=None,
     max_new_tokens=30,
+    output_row_path=None,
     **_,
 ):
-    """
-    Assumes all answers are 1 token and end immediately with EOS token.
-    """
-
     assert prompt_style == "oe"
+    assert (not comparison_strategies is None) and len(comparison_strategies) > 0
 
     device = accelerator.device
-    collate_fn = DataCollatorForSupervisedDataset(tokenizer)
 
-    if isinstance(model, PeftModel):
-        model.set_adapter("default")
-
-    all_y, all_logits = [], []
-    all_platt_logits = []
-
-    for raw_inputs in tqdm(loader, leave=False):
-        platt_logits = []
-
-        for cf_str in [
-            "Question: N/A",
-            "Question: ",
-            f"Question: {tokenizer.pad_token}",
-        ]:
-
-            calib_inputs = {
-                **raw_inputs,
-                "context": [cf_str] * len(raw_inputs["context"]),
-            }
-            # OE changes: prompt style
-            calib_inputs = prepare_batch(
-                tokenizer, calib_inputs, prompt_style=prompt_style
-            )
-            # calib_inputs = prepare_batch(tokenizer, calib_inputs)
-            calib_inputs = collate_fn(calib_inputs)
-
-            calib_inputs = {k: v.to(device) for k, v in calib_inputs.items()}
-            calib_outputs = model(**calib_inputs)
-
-            # OE changes: extract oe inputs
-
-            calib_target_start_idx, _, _ = extract_oe_inputs(tokenizer, calib_inputs)
-            _c_logits = torch.squeeze(
-                calib_outputs.logits[:, calib_target_start_idx, :], dim=1
-            )  # first token only
-
-            # _, _, _c_logits = extract_qa_exact(
-            #     tokenizer, calib_inputs, outputs=calib_outputs
-            # )
-
-            platt_logits.append(_c_logits)
-
-        ## Ensemble over context-free strings.
-        platt_logits = torch.stack(platt_logits).mean(dim=0)
-
-        # OE changes: prompt style
-        inputs = prepare_batch(tokenizer, raw_inputs, prompt_style=prompt_style)
-        inputs = collate_fn(inputs)
-
-        inputs = {k: v.to(device) for k, v in inputs.items()}
-        outputs = model(**inputs)
-
-        # OE changes: extract first token
-        target_start_idx, _, oe_targets = extract_oe_inputs(tokenizer, inputs)
-        logits = torch.squeeze(outputs.logits[:, target_start_idx, :], dim=1)
-        y = oe_targets[:, 0]
-        # _, y, logits = extract_qa_exact(tokenizer, inputs, outputs=outputs)
-
-        [
-            l.append(v)
-            for l, v in zip(
-                (all_y, all_logits, all_platt_logits),
-                accelerator.gather_for_metrics((y, logits, platt_logits)),
-            )
-        ]
-
-    all_y, all_logits, all_platt_logits = [
-        torch.cat(l, dim=0) for l in (all_y, all_logits, all_platt_logits)
-    ]
-
-    all_p = all_logits.softmax(dim=-1)
-    all_y_hat = all_p.argmax(dim=-1)
-    acc = (all_y == all_y_hat).float().mean()
-    logits_ece, _ = calibration(
-        all_y, all_y_hat, all_p[torch.arange(all_p.size(0)), all_y_hat]
+    generation_config = GenerationConfig(
+        pad_token_id=tokenizer.pad_token_id,
+        bos_token_id=tokenizer.bos_token_id,
+        eos_token_id=tokenizer.eos_token_id,
+        max_new_tokens=max_new_tokens,
     )
 
-    all_cal_logits = all_logits - all_platt_logits
-    all_cal_p = all_cal_logits.softmax(dim=-1)
-    all_cal_y_hat = all_cal_p.argmax(dim=-1)
-    cal_acc = (all_y == all_cal_y_hat).float().mean()
-    cal_ece, _ = calibration(
-        all_y, all_y_hat, all_cal_p[torch.arange(all_cal_p.size(0)), all_cal_y_hat]
-    )
-
-    return_dict = {
-        "N": all_y.size(0),
-        # OE Change: acc -> first_token_acc
-        "first_token_acc": acc.item(),
-        "logits_ece": logits_ece,
-        # OE Change: acc -> first token acc
-        "cal_first_token_acc": cal_acc.item(),
-        "cal_ece": cal_ece,
+    all_unc_y, all_unc_logits = {c: [] for c in comparison_strategies}, {
+        c: [] for c in comparison_strategies
     }
-
-    # CHANGE FOR OE
-    # generate the entire remainder of the sequence for each element
-
-    # all_oe_inputs = []
     all_acc = {c: [] for c in comparison_strategies}
     all_oe_target_strings, all_output_strings, all_question_strings = [], [], []
 
-    all_cal_p_index = 0
+    output_generator = generate_output(
+        accelerator,
+        model,
+        tokenizer,
+        loader,
+        prompt_style=prompt_style,
+        generation_config=generation_config,
+    )
 
-    for inputs in tqdm(loader, leave=False):
+    # i = 0
+    # for example in output_generator:
+    #     from pprint import pprint
+    #     pprint(example)
 
-        inputs = prepare_batch(tokenizer, inputs, prompt_style=prompt_style)
-        inputs = collate_fn(inputs)
+    #     parse_verbal_elicitation_oe(example["output"])
+    #     # print("\n")
+    #     i += 1
+    #     if i > 20:
+    #         break
+    
+    # print(1/0)
 
-        # extract first token
-        first_token = all_cal_p[
-            all_cal_p_index : all_cal_p_index + len(inputs["input_ids"])
-        ]
-        all_cal_p_index += len(inputs["input_ids"])
-
-        target_start_idx, oe_inputs_base, oe_targets = extract_oe_inputs(
-            tokenizer, inputs
+    for example in output_generator:
+        output, raw_input, target = (
+            example["output"],
+            example["raw_input"],
+            example["target"],
         )
 
-        oe_inputs = collate_fn(oe_inputs_base)
-        oe_inputs = {k: v.to(device) for k, v in oe_inputs.items()}
+        output, unc_y, unc_logits = parse_verbal_elicitation_oe(output)
 
-        oe_inputs_extended = collate_fn(oe_inputs_base)
-        oe_inputs_extended = {k: v.to(device) for k, v in oe_inputs_extended.items()}
+        unc_y = unc_y.to(device)
+        unc_logits = unc_logits.to(device)
 
-        # add the calibrated first token
-        oe_inputs_extended["input_ids"] = torch.cat(
-            [
-                oe_inputs_extended["input_ids"],
-                first_token.argmax(dim=-1).unsqueeze(dim=1).to(device),
-            ],
-            dim=-1,
-        )
-        oe_inputs_extended["attention_mask"] = torch.cat(
-            [
-                oe_inputs_extended["attention_mask"],
-                torch.ones(oe_inputs_extended["attention_mask"].shape[0], 1).to(device),
-            ],
-            dim=-1,
-        )
+        input_question_string = example["context"]
+        oe_target_strings = [target]
+        output_strings = [output]
+        question_strings = [input_question_string]
 
-        # import pdb; pdb.set_trace()
-
-        if isinstance(model, PeftModel):
-            model.set_adapter("default")
-
-        # generate 30 - 1 more tokens
-        outputs = model.generate(
-            **oe_inputs_extended, max_new_tokens=max_new_tokens - 1
-        )
-
-        # convert those new tokens to the generated strings
-        output_strings = tokenizer.batch_decode(
-            outputs[..., target_start_idx:],
-            skip_special_tokens=True,
-            clean_up_tokenization_spaces=False,
-        )
-
-        # these are the ground truth strings for this batch
-        oe_target_strings = tokenizer.batch_decode(
-            oe_targets, skip_special_tokens=True, clean_up_tokenization_spaces=False
-        )
-
-        question_strings = tokenizer.batch_decode(
-            oe_inputs["input_ids"],
-            skip_special_tokens=True,
-            clean_up_tokenization_spaces=False,
-        )
-
-        # prepare the calibration query with open ended text
-        # the calculation of the accuracy is done within this function
         for c in comparison_strategies:
-            _, _, acc = prepare_oe_calibration_query(
-                tokenizer,
-                oe_target_strings,
-                output_strings,
-                question_strings,
-                format=query_format,
-                comparison_strategy=c,
-            )
-
-            acc = acc.to(device)
+            acc = torch.tensor(
+                grade_oe_preds(
+                    oe_target_strings,
+                    output_strings,
+                    question_strings,
+                    comparison_strategy=c,
+                )
+            ).to(device)
 
             [
                 l.append(v)
                 for l, v in zip(
-                    (all_acc[c]),
-                    accelerator.gather_for_metrics((acc)),
+                    (all_unc_y[c], all_unc_logits[c], all_acc[c]),
+                    (unc_y, unc_logits, acc),
                 )
             ]
 
@@ -920,22 +848,66 @@ def evaluate_verbal_elicitation_oe(
             l.append(v)
             for l, v in zip(
                 (all_oe_target_strings, all_output_strings, all_question_strings),
-                accelerator.gather_for_metrics(
-                    (oe_target_strings, output_strings, question_strings)
-                ),
+                (oe_target_strings, output_strings, question_strings),
             )
         ]
 
-    for c in comparison_strategies:
-        all_acc_c = np.array([e.cpu().numpy() for e in all_acc[c]]).flatten()
-        return_dict[f"{c}_acc"] = np.sum(all_acc_c) / len(all_acc_c)
+    all_oe_target_strings, all_output_strings, all_question_strings = (
+        sum(all_oe_target_strings, []),
+        sum(all_output_strings, []),
+        sum(all_question_strings, []),
+    )
 
-        c_ece, _ = calibration(
-            np.ones_like(all_acc_c),
-            all_acc_c,
-            all_cal_p[torch.arange(all_cal_p.size(0)), all_cal_y_hat].cpu().numpy(),
+    return_dict = {}
+    # note if using multiple gpus/processes, these string lists will be incomplete.
+    dump = {
+        "oe_target_strings": all_oe_target_strings,
+        "output_strings": all_output_strings,
+        "question_strings": all_question_strings,
+    }
+
+    for c in comparison_strategies:
+
+        all_unc_y_c, all_unc_p, all_acc_c = [
+            torch.cat(l, dim=0) for l in (all_unc_y[c], all_unc_logits[c], all_acc[c])
+        ]
+
+        acc = all_acc_c.float().mean()
+
+        all_unc_y_c = (
+            all_unc_y_c.unsqueeze(-1) == torch.arange(2).to(device)
+        ).long().argmax(dim=-1)
+        all_unc_y_hat = all_unc_p.argmax(dim=-1)
+        unc_acc = (all_unc_y_c == all_unc_y_hat).float().mean()
+        unc_ece, _ = calibration(
+            all_unc_y_c,
+            all_unc_y_hat,
+            all_unc_p[torch.arange(all_unc_p.size(0)), all_unc_y_hat],
         )
 
-        return_dict[f"{c}_ece"] = c_ece
+        return_dict.update(
+            {
+                f"{c}_acc": acc.item(),
+                f"{c}_unc_acc": unc_acc.item(),
+                f"{c}_unc_ece": unc_ece,
+                "N": all_unc_p.size(0),
+            }
+        )
+
+        dump.update(
+            {
+                f"{c}_acc": all_acc_c.cpu().numpy(),
+                f"{c}_all_unc_y": all_unc_y_c.cpu().numpy(),
+                f"{c}_all_unc_y_hat": all_unc_y_hat.cpu().numpy(),
+                f"{c}_unc_acc": unc_acc.item(),
+                f"{c}_unc_ece": unc_ece,
+            }
+        )
+
+    if accelerator.num_processes == 1 and output_row_path is not None:
+        #create parent dir if it doesn't exist
+        import os
+        os.makedirs(os.path.dirname(output_row_path), exist_ok=True)
+        pd.DataFrame(dump).to_csv(output_row_path, escapechar="\\")
 
     return return_dict

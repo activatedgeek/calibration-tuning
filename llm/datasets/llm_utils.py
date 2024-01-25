@@ -61,7 +61,12 @@ class LMText:
     query_label: int = None
 
     def __str__(self):
-        return (self.prompt + self.context + self.target_prompt + self.target).strip()
+        return (
+            (self.prompt if self.prompt is not None else "") + 
+            (self.context if self.context is not None else "") + 
+            (self.target_prompt if self.target_prompt is not None else "") +
+            (self.target if self.target is not None else "")
+        ).strip()
 
     def to_pydict(self):
         return {k: v for k, v in dataclassasdict(self).items() if v is not None}

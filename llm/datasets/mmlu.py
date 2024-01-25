@@ -110,7 +110,7 @@ def __generate_fewshot_prompts(
 ):
     if kshot <= 0:
         return ""
-
+    
     if prompt_style == "oe":
         fewshot_prompt = "\n".join(
             [
