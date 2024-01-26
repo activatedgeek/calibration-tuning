@@ -193,13 +193,10 @@ def create_model(
     tokenizer=None,
     load_in_8bit=True,
     base_model=None,
-    scale_temp=False,
     **kwargs,
 ):
     if causal_lm:
-        model = (
-            TemperatureScaledLlamaForCausalLM if scale_temp else LlamaForCausalLM
-        ).from_pretrained(
+        model = TemperatureScaledLlamaForCausalLM.from_pretrained(
             model_dir or f"meta-llama/Llama-2-{size}-hf",
             cache_dir=os.environ.get("MODELDIR", cache_dir),
             load_in_8bit=load_in_8bit,
