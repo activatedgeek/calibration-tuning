@@ -55,7 +55,7 @@ def __format_sample(sample, tokenizer, style):
             ]
         )
 
-        target = answer_map[int(sample["answer"]) - 1] + tokenizer.eos_token
+        target = sample["answer"] + tokenizer.eos_token
     else:
         raise NotImplementedError
 

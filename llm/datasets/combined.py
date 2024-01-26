@@ -2,7 +2,6 @@ import numpy as np
 from datasets import concatenate_datasets
 
 from .registry import get_dataset, list_datasets, register_dataset, get_dataset_attrs
-from ..random import FixedSeed
 
 
 def get_all_datasets_list(dataset_str, prompt_style=None):
@@ -140,6 +139,11 @@ def all_200k_uniform(*args, max_n=200_000, **kwargs):
 
 @register_dataset
 def all_20k_uniform(*args, max_n=20_000, **kwargs):
+    return all_200k_uniform(*args, max_n=max_n, **kwargs)
+
+
+@register_dataset
+def all_100_uniform(*args, max_n=100, **kwargs):
     return all_200k_uniform(*args, max_n=max_n, **kwargs)
 
 

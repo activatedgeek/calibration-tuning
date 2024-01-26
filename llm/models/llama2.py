@@ -7,7 +7,7 @@ import torch.nn as nn
 from torch.nn import BCEWithLogitsLoss, CrossEntropyLoss, MSELoss
 from peft import PeftModel
 
-from transformers import LlamaTokenizer, LlamaPreTrainedModel
+from transformers import LlamaTokenizer, LlamaForCausalLM, LlamaPreTrainedModel
 from transformers.modeling_outputs import SequenceClassifierOutputWithPast
 from transformers.utils import WEIGHTS_NAME
 from peft import prepare_model_for_kbit_training
@@ -193,10 +193,13 @@ def create_model(
     tokenizer=None,
     load_in_8bit=True,
     base_model=None,
+    scale_temp=False,
     **kwargs,
 ):
     if causal_lm:
-        model = TemperatureScaledLlamaForCausalLM.from_pretrained(
+        model = (
+            TemperatureScaledLlamaForCausalLM if scale_temp else LlamaForCausalLM
+        ).from_pretrained(
             model_dir or f"meta-llama/Llama-2-{size}-hf",
             cache_dir=os.environ.get("MODELDIR", cache_dir),
             load_in_8bit=load_in_8bit,
