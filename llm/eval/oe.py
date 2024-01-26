@@ -235,7 +235,7 @@ def evaluate_oe_uncertainty_sampling(
         prompt_style=prompt_style,
         generation_config=generation_config,
         generation_config_sampling=generation_config_sampling,
-        k=k,
+        n_samples=k,
     )
 
     for example in output_generator:

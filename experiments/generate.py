@@ -7,14 +7,8 @@ from tqdm.auto import tqdm
 from peft import PeftModel
 from transformers import GenerationConfig
 
-from datasets import Dataset
-
 from llm.datasets import get_dataset, get_loader
-from llm.datasets.llm_utils import (
-    LMText,
-    prepare_batch,
-    DataCollatorForSupervisedDataset,
-)
+from llm.datasets.llm_utils import LMText
 from llm.models import get_model
 from llm.models.peft import get_lora_model
 from llm.logging import entrypoint
@@ -255,19 +249,15 @@ def generate_labels_main(
         lora_dropout=lora_dropout,
     )
 
-    if ".csv" in dataset:
-        df = pd.read_csv(dataset)
-        train_data = Dataset.from_pandas(df)
-    else:
-        with accelerator.main_process_first():
-            train_data, _, _ = get_dataset(
-                dataset,
-                root=data_dir,
-                tokenizer=tokenizer,
-                seed=seed,
-                num_workers=num_workers,
-                use_cache=use_dataset_cache,
-            )
+    with accelerator.main_process_first():
+        train_data, _, _ = get_dataset(
+            dataset,
+            root=data_dir,
+            tokenizer=tokenizer,
+            seed=seed,
+            num_workers=num_workers,
+            use_cache=use_dataset_cache,
+        )
 
     for data, split in zip([train_data], ["train"]):
 

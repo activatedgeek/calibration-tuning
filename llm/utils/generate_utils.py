@@ -1,34 +1,22 @@
-# import os
-# import wandb
-# import pandas as pd
 import torch
-# from accelerate import Accelerator
 from tqdm.auto import tqdm
 from peft import PeftModel
-# from transformers import GenerationConfig
 
-# from llm.datasets import get_dataset, get_loader
 from llm.datasets.llm_utils import (
-    LMText,
     prepare_batch,
     DataCollatorForSupervisedDataset,
 )
-# from llm.models import get_model
-# from llm.models.peft import get_lora_model
-# from llm.logging import entrypoint
-
-# from llm.datasets.llm_utils_oe import prepare_oe_calibration_query
 
 
 def generate_output(
-    accelerator, 
-    model, 
-    tokenizer, 
-    loader, 
-    prompt_style="oe", 
-    generation_config=None, 
+    accelerator,
+    model,
+    tokenizer,
+    loader,
+    prompt_style="oe",
+    generation_config=None,
     generation_config_sampling=None,
-    k=None
+    n_samples=0,
 ):
     if isinstance(model, PeftModel):
         model.set_adapter("default")
@@ -51,10 +39,10 @@ def generate_output(
             **generation_inputs, generation_config=generation_config
         )
 
-        if k is not None:
-            assert(generation_config_sampling is not None)
-            assert(k > 0)
-            #https://github.com/huggingface/transformers/issues/14498#issuecomment-977909651
+        if n_samples:
+            assert generation_config_sampling is not None
+
+            # https://github.com/huggingface/transformers/issues/14498#issuecomment-977909651
             sampled_outputs = [
                 model.generate(
                     **generation_inputs,
@@ -62,7 +50,7 @@ def generate_output(
                     return_dict_in_generate=True,
                     output_scores=True
                 )
-                for _ in range(k)
+                for _ in range(n_samples)
             ]
 
         ## NOTE: Verify output extraction pre-condition.
@@ -71,9 +59,13 @@ def generate_output(
             == generation_outputs[:, : generation_inputs.get("input_ids").size(-1)]
         ).all()
 
-        examples_pre = [dict(zip(inputs.keys(), vals)) for vals in zip(*inputs.values())]
+        examples_pre = [
+            dict(zip(inputs.keys(), vals)) for vals in zip(*inputs.values())
+        ]
         examples = []
-        for i, o, inp, t in zip(range(len(examples_pre)), examples_pre, generation_inputs.get("input_ids"), generation_outputs):
+        for o, inp, t in zip(
+            examples_pre, generation_inputs.get("input_ids"), generation_outputs
+        ):
             example = {
                 **o,
                 "output": tokenizer.decode(
@@ -81,25 +73,27 @@ def generate_output(
                     skip_special_tokens=True,
                     clean_up_tokenization_spaces=False,
                 ),
-                "raw_input": tokenizer.decode(
-                    inp,
-                    skip_special_tokens=True,
-                    clean_up_tokenization_spaces=False,
-                ),
+                # "raw_input": tokenizer.decode(
+                #     inp,
+                #     skip_special_tokens=True,
+                #     clean_up_tokenization_spaces=False,
+                # ),
                 "target": o["target"],
             }
-            if k is not None:
 
+            if n_samples:
                 example["sampled_outputs"] = [
                     tokenizer.decode(
-                        entry['sequences'][i][inp.size(0) :],
+                        entry["sequences"][i][inp.size(0) :],
                         skip_special_tokens=True,
                         clean_up_tokenization_spaces=False,
                     )
                     for entry in sampled_outputs
                 ]
                 example["sampled_log_probs"] = [
-                    torch.nn.functional.log_softmax(torch.cat(entry['scores'],dim=0), dim=-1)
+                    torch.nn.functional.log_softmax(
+                        torch.cat(entry["scores"], dim=0), dim=-1
+                    )
                     for entry in sampled_outputs
                 ]
             examples.append(example)
