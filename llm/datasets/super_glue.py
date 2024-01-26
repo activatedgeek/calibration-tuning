@@ -336,7 +336,7 @@ def get_copa(
                 ]
             )
 
-            target = answer_map[sample["label"]] + tokenizer.eos_token
+            target = str(sample["label"] + 1) + tokenizer.eos_token
         else:
             raise NotImplementedError
         return LMText(context=context, target_prompt=target_prompt, target=target)
