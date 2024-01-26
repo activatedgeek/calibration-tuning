@@ -19,7 +19,7 @@ def main(
     model_dir=None,
     num_tokens=32,
     peft_dir=None,
-    fp8=True,
+    int8=True,
     dataset=None,
     data_dir=None,
     use_dataset_cache=True,
@@ -42,7 +42,7 @@ def main(
                 "model_dir": model_dir,
                 "peft_dir": peft_dir,
                 "num_tokens": num_tokens,
-                "fp8": fp8,
+                "int8": int8,
                 "dataset": dataset,
                 "data_dir": data_dir,
                 "batch_size": batch_size,
@@ -67,7 +67,7 @@ def main(
         model_dir=model_dir,
         use_cache=False,
         tokenizer=tokenizer,
-        load_in_8bit=fp8,
+        load_in_8bit=int8,
     )
     model = get_prompt_tuning_model(model, peft_dir=peft_dir, num_tokens=num_tokens)
 

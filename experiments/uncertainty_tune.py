@@ -39,7 +39,7 @@ def main(
     eval_steps=1000,
     use_dataset_cache=True,
     resume_dir=None,
-    fp8=True,
+    int8=True,
 ):
     accelerator = AcceleratorState()
 
@@ -55,7 +55,7 @@ def main(
         model_dir=model_dir,
         use_cache=False,
         tokenizer=tokenizer,
-        load_in_8bit=fp8,
+        load_in_8bit=int8,
     )
 
     model = get_lora_model(

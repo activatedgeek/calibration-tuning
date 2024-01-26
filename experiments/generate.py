@@ -4,7 +4,6 @@ import pandas as pd
 import torch
 from accelerate import Accelerator
 from tqdm.auto import tqdm
-from peft import PeftModel
 from transformers import GenerationConfig
 
 from llm.datasets import get_dataset, get_loader
@@ -16,45 +15,6 @@ from llm.logging import entrypoint
 from llm.datasets.llm_utils_oe import prepare_oe_calibration_query
 
 from llm.utils.generate_utils import generate_output
-
-
-def prepare_model(
-    accelerator,
-    model_name=None,
-    model_dir=None,
-    peft_dir=None,
-    lora_rank=None,
-    lora_alpha=None,
-    lora_dropout=None,
-):
-    tokenizer = get_model(
-        f"{model_name}_tokenizer",
-        model_dir=model_dir,
-    )
-
-    model = get_model(
-        model_name,
-        device_map={"": accelerator.local_process_index},
-        torch_dtype=torch.bfloat16 if torch.cuda.is_bf16_supported() else torch.float16,
-        model_dir=model_dir,
-        use_cache=False,
-        tokenizer=tokenizer,
-    )
-
-    if peft_dir is not None:
-        model = get_lora_model(
-            model,
-            peft_dir=peft_dir,
-            lora_rank=lora_rank,
-            lora_alpha=lora_alpha,
-            lora_dropout=lora_dropout,
-            is_trainable=False,
-            adapter_name="default",
-        )
-
-    model.eval()
-
-    return tokenizer, model
 
 
 def generate_outputs_main(
@@ -73,6 +33,7 @@ def generate_outputs_main(
     use_dataset_cache=True,
     prompt_style="oe",
     max_new_tokens=30,
+    int8=False,
 ):
     accelerator = Accelerator()
 
@@ -87,19 +48,38 @@ def generate_outputs_main(
         "prompt_style": prompt_style,
         "max_new_tokens": max_new_tokens,
         "log_dir": log_dir,
+        "int8": int8,
     }
     if accelerator.is_main_process:
         wandb.config.update(config)
 
-    tokenizer, model = prepare_model(
-        accelerator,
-        model_name=model_name,
+    tokenizer = get_model(
+        f"{model_name}_tokenizer",
         model_dir=model_dir,
-        peft_dir=peft_dir,
-        lora_rank=lora_rank,
-        lora_alpha=lora_alpha,
-        lora_dropout=lora_dropout,
     )
+
+    model = get_model(
+        model_name,
+        device_map={"": accelerator.local_process_index},
+        torch_dtype=torch.bfloat16 if torch.cuda.is_bf16_supported() else torch.float16,
+        model_dir=model_dir,
+        use_cache=False,
+        tokenizer=tokenizer,
+        load_in_8bit=int8,
+    )
+
+    if peft_dir is not None:
+        model = get_lora_model(
+            model,
+            peft_dir=peft_dir,
+            lora_rank=lora_rank,
+            lora_alpha=lora_alpha,
+            lora_dropout=lora_dropout,
+            is_trainable=False,
+            adapter_name="default",
+        )
+
+    model.eval()
 
     with accelerator.main_process_first():
         train_data, _, _ = get_dataset(
@@ -149,15 +129,11 @@ def generate_outputs_main(
 
 def generate_query_label(
     accelerator,
-    model,
     tokenizer,
     loader,
     query_format="roman_choice",
     comparison_strategy="substring",
 ):
-    if isinstance(model, PeftModel):
-        model.set_adapter("default")
-
     for inputs in tqdm(loader):
         inputs_list = []
         for i in range(len(inputs[next(iter(inputs))])):
@@ -235,14 +211,9 @@ def generate_labels_main(
     if accelerator.is_main_process:
         wandb.config.update(config)
 
-    tokenizer, model = prepare_model(
-        accelerator,
-        model_name=model_name,
+    tokenizer = get_model(
+        f"{model_name}_tokenizer",
         model_dir=model_dir,
-        peft_dir=peft_dir,
-        lora_rank=lora_rank,
-        lora_alpha=lora_alpha,
-        lora_dropout=lora_dropout,
     )
 
     with accelerator.main_process_first():
@@ -256,18 +227,15 @@ def generate_labels_main(
         )
 
     for data, split in zip([train_data], ["train"]):
-
         loader = get_loader(
             data,
             batch_size=batch_size,
             pin_memory=True,
             accelerator=accelerator,
-            collate_fn=lambda x: {k: [d[k] for d in x] for k in x[0].keys()},
         )
 
         label_generator = generate_query_label(
             accelerator,
-            model,
             tokenizer,
             loader,
             comparison_strategy=strategy,
