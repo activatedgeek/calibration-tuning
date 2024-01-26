@@ -146,9 +146,11 @@ def generate_outputs_main(
             if accelerator.is_main_process:
                 os.makedirs(csv_path)
 
-        pd.DataFrame(output_generator).to_csv(
-            f"{csv_path}/{accelerator.process_index}.csv", index=False
-        )
+        df = pd.DataFrame(output_generator)
+        ## NOTE: Avoid spec errors when loading for labeling.
+        df["query_label"] = -1
+
+        df.to_csv(f"{csv_path}/{accelerator.process_index}.csv", index=False)
 
 
 def generate_query_label(
@@ -199,7 +201,7 @@ def generate_query_label(
             {
                 **s.to_pydict(),
                 "target": inputs["target"][i],
-                "label": t.item(),
+                "query_label": int(t.item()),
             }
             for i, (s, t) in enumerate(zip(outputs, acc))
         ]
