@@ -191,7 +191,7 @@ def create_model(
     cache_dir=None,
     causal_lm=True,
     tokenizer=None,
-    load_in_8bit=True,
+    load_in_8bit=False,
     base_model=None,
     **kwargs,
 ):

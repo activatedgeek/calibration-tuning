@@ -76,10 +76,6 @@ def generate_outputs_main(
 ):
     accelerator = Accelerator()
 
-    assert (
-        batch_size == 1
-    ), "Only use batch size 1 for now to avoid left padding issues."
-
     config = {
         "seed": seed,
         "model_name": model_name,
@@ -129,7 +125,6 @@ def generate_outputs_main(
             batch_size=batch_size,
             pin_memory=True,
             accelerator=accelerator,
-            collate_fn=lambda x: {k: [d[k] for d in x] for k in x[0].keys()},
         )
 
         output_generator = generate_output(
