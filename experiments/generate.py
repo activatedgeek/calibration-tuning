@@ -23,6 +23,7 @@ from llm.datasets.llm_utils_oe import prepare_oe_calibration_query
 
 from llm.utils.generate_utils import generate_output
 
+
 def prepare_model(
     accelerator,
     model_name=None,
@@ -60,6 +61,7 @@ def prepare_model(
     model.eval()
 
     return tokenizer, model
+
 
 def generate_outputs_main(
     seed=137,
@@ -143,7 +145,6 @@ def generate_outputs_main(
             loader,
             prompt_style=prompt_style,
             generation_config=generation_config,
-            outputs_only=True,
         )
 
         csv_path = f"{log_dir}/outputs/{split}"
