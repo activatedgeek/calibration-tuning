@@ -1,11 +1,9 @@
 import torch
+import torch.nn.functional as F
 from tqdm.auto import tqdm
 from peft import PeftModel
 
-from llm.datasets.llm_utils import (
-    prepare_batch,
-    DataCollatorForSupervisedDataset,
-)
+from llm.datasets.llm_utils import StringDataCollator
 
 
 def generate_output(
@@ -13,7 +11,6 @@ def generate_output(
     model,
     tokenizer,
     loader,
-    prompt_style="oe",
     generation_config=None,
     generation_config_sampling=None,
     n_samples=0,
@@ -21,23 +18,41 @@ def generate_output(
     if isinstance(model, PeftModel):
         model.set_adapter("default")
 
-    collate_fn = DataCollatorForSupervisedDataset(tokenizer)
+    collate_fn = StringDataCollator(tokenizer)
 
     for inputs in tqdm(loader):
-        generation_inputs = prepare_batch(
-            tokenizer,
-            ## Skip "target" for generation.
-            {k: v for k, v in inputs.items() if k != "target"},
-            prompt_style=prompt_style,
-        )
+        ## Convert to list of dictionaries, without target for generation.
+        targets = inputs["target"]
+        inputs = {k: v for k, v in inputs.items() if k != "target"}
+        inputs = [dict(zip(inputs.keys(), vals)) for vals in zip(*inputs.values())]
+
         generation_inputs = {
-            k: v.to(accelerator.device)
-            for k, v in collate_fn(generation_inputs).items()
+            k: v.to(accelerator.device) for k, v in collate_fn(inputs).items()
         }
 
         generation_outputs = model.generate(
             **generation_inputs, generation_config=generation_config
         )
+
+        ## Verify output extraction pre-condition.
+        # assert (
+        #     generation_inputs.get("input_ids")
+        #     == generation_outputs[:, : generation_inputs.get("input_ids").size(-1)]
+        # ).all()
+        padded_input_len = generation_inputs.get("input_ids").size(-1)
+
+        outputs = [
+            {
+                **inp,
+                "target": tgt,
+                "output": tokenizer.decode(
+                    go[padded_input_len:],
+                    skip_special_tokens=True,
+                    clean_up_tokenization_spaces=False,
+                ),
+            }
+            for inp, tgt, go in zip(inputs, targets, generation_outputs)
+        ]
 
         if n_samples:
             assert generation_config_sampling is not None
@@ -53,49 +68,17 @@ def generate_output(
                 for _ in range(n_samples)
             ]
 
-        ## NOTE: Verify output extraction pre-condition.
-        assert (
-            generation_inputs.get("input_ids")
-            == generation_outputs[:, : generation_inputs.get("input_ids").size(-1)]
-        ).all()
+            outputs = [
+                {
+                    **o,
+                    "sampled_outputs": tokenizer.batch_decode(
+                        so["sequences"][:, padded_input_len:]
+                    ),
+                    "sampled_log_probs": F.log_softmax(
+                        torch.cat(so["scores"], dim=0), dim=-1
+                    ),
+                }
+                for o, so in zip(outputs, sampled_outputs)
+            ]
 
-        examples_pre = [
-            dict(zip(inputs.keys(), vals)) for vals in zip(*inputs.values())
-        ]
-        examples = []
-        for o, inp, t in zip(
-            examples_pre, generation_inputs.get("input_ids"), generation_outputs
-        ):
-            example = {
-                **o,
-                "output": tokenizer.decode(
-                    t[inp.size(0) :],
-                    skip_special_tokens=True,
-                    clean_up_tokenization_spaces=False,
-                ),
-                # "raw_input": tokenizer.decode(
-                #     inp,
-                #     skip_special_tokens=True,
-                #     clean_up_tokenization_spaces=False,
-                # ),
-                "target": o["target"],
-            }
-
-            if n_samples:
-                example["sampled_outputs"] = [
-                    tokenizer.decode(
-                        entry["sequences"][i][inp.size(0) :],
-                        skip_special_tokens=True,
-                        clean_up_tokenization_spaces=False,
-                    )
-                    for entry in sampled_outputs
-                ]
-                example["sampled_log_probs"] = [
-                    torch.nn.functional.log_softmax(
-                        torch.cat(entry["scores"], dim=0), dim=-1
-                    )
-                    for entry in sampled_outputs
-                ]
-            examples.append(example)
-
-        yield from examples
+        yield from outputs

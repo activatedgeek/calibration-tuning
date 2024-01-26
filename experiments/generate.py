@@ -132,7 +132,6 @@ def generate_outputs_main(
             model,
             tokenizer,
             loader,
-            prompt_style=prompt_style,
             generation_config=generation_config,
         )
 
