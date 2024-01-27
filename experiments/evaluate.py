@@ -27,6 +27,7 @@ def main(
     use_dataset_cache=True,
     prompt_style="choice",
     mode=None,
+    int8=False,
 ):
     accelerator = Accelerator()
 
@@ -40,6 +41,7 @@ def main(
         "prompt_style": prompt_style,
         "mode": mode,
         "log_dir": log_dir,
+        "int8": int8,
     }
     if accelerator.is_main_process:
         wandb.config.update(config)
@@ -56,6 +58,7 @@ def main(
         model_dir=model_dir,
         use_cache=False,
         tokenizer=tokenizer,
+        load_in_8bit=int8,
     )
 
     model = get_lora_model(

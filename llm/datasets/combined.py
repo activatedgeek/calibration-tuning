@@ -2,6 +2,7 @@ import numpy as np
 from datasets import concatenate_datasets
 
 from .registry import get_dataset, list_datasets, register_dataset, get_dataset_attrs
+from ..random import FixedSeed
 
 
 def get_all_datasets_list(dataset_str, prompt_style=None):
@@ -60,11 +61,17 @@ def _concat_datasets(datasets, max_n, complement=False, uniform=False):
         equal_n = max_n // len(all_n)
         select_n = [min(equal_n, len(ds)) for ds in datasets]
 
+        if complement:
+            return concatenate_datasets(
+                [
+                    ds.select(range(n, N))
+                    for ds, N, n in zip(datasets, all_n, select_n)
+                    if n < N
+                ]
+            )
+
         return concatenate_datasets(
-            [
-                ds.select(range(n, N) if complement else range(n))
-                for ds, N, n in zip(datasets, all_n, select_n)
-            ]
+            [ds.select(range(n)) for ds, n in zip(datasets, select_n)]
         )
 
     select_n = ((np.array(all_n) / sum(all_n)) * total_n).astype(int)
@@ -120,14 +127,14 @@ def get_combined_dataset(
 
 
 @register_dataset
-def all_200k(*args, max_n=200_000, prompt_style="choice", **kwargs):
+def all_200k(*args, max_n=200_000, prompt_style="choice", complement=False, **kwargs):
     tr, _, _ = get_combined_dataset(
         all_dataset_names=get_all_datasets_list("all:train", prompt_style=prompt_style),
         *args,
         **kwargs,
         prompt_style=prompt_style,
         max_n=max_n,
-        complement=False,
+        complement=complement,
     )
     return tr, None, None
 
@@ -148,9 +155,10 @@ def all_100_uniform(*args, max_n=100, **kwargs):
 
 
 @register_dataset
-def all_20k_uniform_c(*args, max_n=20_000, **kwargs):
-    tr, _, _ = all_20k_uniform(*args, complement=True, **kwargs)
-    tr = tr.select(range(max_n))
+def all_20k_uniform_c(*args, seed=137, max_n=20_000, **kwargs):
+    tr, _, _ = all_20k_uniform(*args, seed=seed, complement=True, **kwargs)
+    with FixedSeed(seed):
+        tr = tr.select(np.random.choice(range(len(tr)), max_n))
     return tr, None, None
 
 
