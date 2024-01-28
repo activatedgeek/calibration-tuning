@@ -156,25 +156,26 @@ def grade_oe_preds(
 
 def prepare_oe_uncertainty_query(
     tokenizer,
-    outputs,
+    inputs,
+    targets,
+    predictions,
     strategy="substring",
     format="roman_choice",
 ):
-    targets = [out.pop("target") for out in outputs]
-    predictions = [out.pop("output") for out in outputs]
-    inputs = [str(LMText.from_(out)) for out in outputs]
-
-    query_labels = grade_oe_preds(targets, predictions, inputs, strategy)
     query_token_vec = get_token_vec(tokenizer, format=format)
+
+    contexts = [str(LMText.from_(inp)) for inp in inputs]
+
+    query_labels = grade_oe_preds(targets, predictions, contexts, strategy)
 
     if format == "roman_choice":
         query_inputs = [
             {
-                "context": f"{ic + ' ' + p}\n\nIs the proposed answer correct?\n\nChoices:\n(i): no\n(ii): yes",
+                "context": f"{c + ' ' + p}\n\nIs the proposed answer correct?\nChoices:\n(i): no\n(ii): yes",
                 "target_prompt": "\nAnswer:",
-                # "target": ("ii" if a else "i"),
+                # "target": ("ii" if l else "i"),
             }
-            for ic, p, a in zip(inputs, predictions, query_labels)
+            for c, p, l in zip(contexts, predictions, query_labels)
         ]
     else:
         raise NotImplementedError

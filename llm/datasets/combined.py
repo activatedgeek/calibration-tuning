@@ -127,16 +127,27 @@ def get_combined_dataset(
 
 
 @register_dataset
-def all_200k(*args, max_n=200_000, prompt_style="choice", complement=False, **kwargs):
-    tr, _, _ = get_combined_dataset(
+def all_200k(
+    *args, max_n=200_000, prompt_style="choice", seed=137, complement=False, **kwargs
+):
+    tr, vl, _ = get_combined_dataset(
         all_dataset_names=get_all_datasets_list("all:train", prompt_style=prompt_style),
         *args,
         **kwargs,
+        seed=seed,
         prompt_style=prompt_style,
         max_n=max_n,
         complement=complement,
     )
-    return tr, None, None
+
+    with FixedSeed(seed):
+        vl = vl.select(
+            np.random.choice(
+                range(min(len(vl), max_n)), min(len(vl), max_n), replace=False
+            )
+        )
+
+    return tr, vl, None
 
 
 @register_dataset
@@ -151,16 +162,7 @@ def all_20k_uniform(*args, max_n=20_000, **kwargs):
 
 @register_dataset
 def all_100_uniform(*args, max_n=100, **kwargs):
-    tr, *_ = all_200k_uniform(*args, max_n=max_n, **kwargs)
-    return tr, tr, None
-
-
-@register_dataset
-def all_20k_uniform_val(*args, seed=137, max_n=20_000, **kwargs):
-    tr, _, _ = all_20k_uniform(*args, seed=seed, complement=True, **kwargs)
-    with FixedSeed(seed):
-        tr = tr.select(np.random.choice(range(len(tr)), max_n))
-    return None, tr, None
+    return all_200k_uniform(*args, max_n=max_n, **kwargs)
 
 
 @register_dataset

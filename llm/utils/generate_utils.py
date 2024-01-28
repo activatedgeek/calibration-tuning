@@ -32,17 +32,15 @@ def generate_output(
             **generation_inputs, generation_config=generation_config
         )
 
+        generations = tokenizer.batch_decode(
+            generation_outputs[:, generation_inputs.get("input_ids").size(-1) :],
+            skip_special_tokens=True,
+            clean_up_tokenization_spaces=False,
+        )
+
         outputs = [
-            {
-                **inp,
-                "target": tgt,
-                "output": tokenizer.decode(
-                    go[generation_inputs.get("input_ids").size(-1) :],
-                    skip_special_tokens=True,
-                    clean_up_tokenization_spaces=False,
-                ),
-            }
-            for inp, tgt, go in zip(inputs, targets, generation_outputs)
+            {**inp, "target": tgt, "output": gen}
+            for inp, tgt, gen in zip(inputs, targets, generations)
         ]
 
         if n_samples:

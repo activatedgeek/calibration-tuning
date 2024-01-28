@@ -57,18 +57,11 @@ def evaluate_oe(
             **generation_inputs, generation_config=generation_config
         )
 
-        outputs = [
-            {
-                **inp,
-                "target": tgt,
-                "output": tokenizer.decode(
-                    go[generation_inputs.get("input_ids").size(-1) :],
-                    skip_special_tokens=True,
-                    clean_up_tokenization_spaces=False,
-                ),
-            }
-            for inp, tgt, go in zip(inputs, targets, generation_outputs)
-        ]
+        generations = tokenizer.batch_decode(
+            generation_outputs[:, generation_inputs.get("input_ids").size(-1) :],
+            skip_special_tokens=True,
+            clean_up_tokenization_spaces=False,
+        )
 
         if isinstance(model, PeftModel) and "query" in model.peft_config:
             model.set_adapter("query")
@@ -76,7 +69,9 @@ def evaluate_oe(
         for cs in comparison_strategies:
             q_inputs, q_labels, q_token_vec = prepare_oe_uncertainty_query(
                 tokenizer,
-                outputs,
+                inputs,
+                targets,
+                generations,
                 strategy=cs,
                 format=query_format,
             )
