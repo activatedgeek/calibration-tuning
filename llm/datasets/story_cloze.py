@@ -30,7 +30,7 @@ def __format_sample(sample, tokenizer, style):
             ]
         )
 
-        target_prompt = "\nAnswer: "
+        target_prompt = "\nAnswer:"
         target = (
             string.ascii_lowercase[sample["answer_right_ending"] - 1]
             + tokenizer.eos_token
@@ -43,7 +43,7 @@ def __format_sample(sample, tokenizer, style):
             ]
         )
 
-        target_prompt = "\nEnding: "
+        target_prompt = "\nEnding:"
         target = answer_map[sample["answer_right_ending"] - 1] + tokenizer.eos_token
     else:
         raise NotImplementedError

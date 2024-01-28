@@ -6,7 +6,9 @@ import time
 
 from .llm_utils import (
     IGNORE_LABEL,
-    tokenize_for_causal_lm
+    tokenize_for_causal_lm,
+    get_token_vec,
+    LMText,
 )
 
 
@@ -151,6 +153,39 @@ def grade_oe_preds(
     acc = [comparison_fn(t, p, q) for t, p, q in zip(true, pred, questions)]
     return acc
 
+
+def prepare_oe_uncertainty_query(
+    tokenizer,
+    outputs,
+    strategy="substring",
+    format="roman_choice",
+):
+    targets = [out.pop("target") for out in outputs]
+    predictions = [out.pop("output") for out in outputs]
+    inputs = [str(LMText.from_(out)) for out in outputs]
+
+    query_labels = grade_oe_preds(targets, predictions, inputs, strategy)
+    query_token_vec = get_token_vec(tokenizer, format=format)
+
+    if format == "roman_choice":
+        query_inputs = [
+            {
+                "context": f"{ic + ' ' + p}\n\nIs the proposed answer correct?\n\nChoices:\n(i): no\n(ii): yes",
+                "target_prompt": "\nAnswer:",
+                # "target": ("ii" if a else "i"),
+            }
+            for ic, p, a in zip(inputs, predictions, query_labels)
+        ]
+    else:
+        raise NotImplementedError
+
+    return (
+        query_inputs,
+        torch.Tensor(query_labels).long(),
+        query_token_vec,
+    )
+
+
 def prepare_oe_calibration_query(
     tokenizer,
     true,
@@ -159,7 +194,6 @@ def prepare_oe_calibration_query(
     format="roman_choice",
     comparison_strategy="substring",
 ):
-
     acc = grade_oe_preds(true, pred, questions, comparison_strategy)
 
     if format == "bool":
@@ -169,7 +203,7 @@ def prepare_oe_calibration_query(
                 tokenizer,
                 {
                     "context": f"{r}\n\nIs the proposed answer correct? ",
-                    "target": ("yes" if a else "no") + tokenizer.eos_token,
+                    "target": ("yes" if a else "no"),
                 },
                 prompt_style="choice",
             )
@@ -181,8 +215,8 @@ def prepare_oe_calibration_query(
                 tokenizer,
                 {
                     "context": f"{r}\n\nIs the proposed answer correct?\n\nChoices:\n(a): no\n(b): yes",
-                    "target_prompt": "\nAnswer: ",
-                    "target": ("b" if a else "a") + tokenizer.eos_token,
+                    "target_prompt": "\nAnswer:",
+                    "target": ("b" if a else "a"),
                 },
                 prompt_style="choice",
             )
@@ -194,8 +228,8 @@ def prepare_oe_calibration_query(
                 tokenizer,
                 {
                     "context": f"{r}\n\nIs the proposed answer correct?\n\nChoices:\n(i): no\n(ii): yes",
-                    "target_prompt": "\nAnswer: ",
-                    "target": ("ii" if a else "i") + tokenizer.eos_token,
+                    "target_prompt": "\nAnswer:",
+                    "target": ("ii" if a else "i"),
                 },
                 prompt_style="choice",
             )
@@ -204,6 +238,4 @@ def prepare_oe_calibration_query(
     else:
         raise NotImplementedError
 
-    return query_inputs, torch.Tensor(
-            [1 if a else 0 for a in acc]
-        )
+    return query_inputs, torch.Tensor([1 if a else 0 for a in acc])

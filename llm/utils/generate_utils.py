@@ -15,38 +15,29 @@ def generate_output(
     generation_config_sampling=None,
     n_samples=0,
 ):
-    if isinstance(model, PeftModel):
-        model.set_adapter("default")
-
     collate_fn = StringDataCollator(tokenizer)
 
     for inputs in tqdm(loader):
-        ## Convert to list of dictionaries, without target for generation.
-        targets = inputs["target"]
-        inputs = {k: v for k, v in inputs.items() if k != "target"}
         inputs = [dict(zip(inputs.keys(), vals)) for vals in zip(*inputs.values())]
+        targets = [inp.pop("target") for inp in inputs]
 
         generation_inputs = {
             k: v.to(accelerator.device) for k, v in collate_fn(inputs).items()
         }
 
+        if isinstance(model, PeftModel):
+            model.set_adapter("default")
+
         generation_outputs = model.generate(
             **generation_inputs, generation_config=generation_config
         )
-
-        ## Verify output extraction pre-condition.
-        # assert (
-        #     generation_inputs.get("input_ids")
-        #     == generation_outputs[:, : generation_inputs.get("input_ids").size(-1)]
-        # ).all()
-        padded_input_len = generation_inputs.get("input_ids").size(-1)
 
         outputs = [
             {
                 **inp,
                 "target": tgt,
                 "output": tokenizer.decode(
-                    go[padded_input_len:],
+                    go[generation_inputs.get("input_ids").size(-1) :],
                     skip_special_tokens=True,
                     clean_up_tokenization_spaces=False,
                 ),
@@ -72,7 +63,9 @@ def generate_output(
                 {
                     **o,
                     "sampled_outputs": tokenizer.batch_decode(
-                        so["sequences"][:, padded_input_len:]
+                        so["sequences"][
+                            :, generation_inputs.get("input_ids").size(-1) :
+                        ]
                     ),
                     "sampled_log_probs": F.log_softmax(
                         torch.cat(so["scores"], dim=0), dim=-1

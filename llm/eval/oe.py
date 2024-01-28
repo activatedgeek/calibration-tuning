@@ -3,23 +3,20 @@ import torch
 from peft import PeftModel
 import pandas as pd
 import numpy as np
+from transformers import GenerationConfig
 
 from llm.datasets.llm_utils import (
     get_token_vec,
-    DataCollatorForSupervisedDataset,
-    extract_qa_exact,
-    prepare_batch,
+    StringDataCollator,
 )
 from llm.datasets.llm_utils_oe import (
-    extract_oe_inputs,
     prepare_oe_calibration_query,
-    grade_oe_preds,
+    prepare_oe_uncertainty_query,
     clustering_equivalency_with_oracle,
     openai_query,
 )
 from llm.eval.third_party.calibration import calibration
 from llm.utils.generate_utils import generate_output
-from transformers import GenerationConfig
 
 
 @torch.inference_mode()
@@ -28,18 +25,11 @@ def evaluate_oe(
     model,
     tokenizer,
     loader,
-    prompt_style="oe",
     query_format="roman_choice",
     comparison_strategies=None,
     max_new_tokens=30,
-    output_row_path=None,
+    **_,
 ):
-    assert prompt_style == "oe"
-    assert (not comparison_strategies is None) and len(comparison_strategies) > 0
-
-    device = accelerator.device
-    collate_fn = DataCollatorForSupervisedDataset(tokenizer)
-
     generation_config = GenerationConfig(
         pad_token_id=tokenizer.pad_token_id,
         bos_token_id=tokenizer.bos_token_id,
@@ -47,133 +37,92 @@ def evaluate_oe(
         max_new_tokens=max_new_tokens,
     )
 
-    query_token_vec = get_token_vec(tokenizer, format=query_format)
-    all_unc_y, all_unc_logits = {c: [] for c in comparison_strategies}, {
-        c: [] for c in comparison_strategies
-    }
-    all_acc = {c: [] for c in comparison_strategies}
-    all_oe_target_strings, all_output_strings, all_question_strings = [], [], []
+    collate_fn = StringDataCollator(tokenizer)
 
-    output_generator = generate_output(
-        accelerator,
-        model,
-        tokenizer,
-        loader,
-        prompt_style=prompt_style,
-        generation_config=generation_config,
-    )
+    cs_q_labels = {c: [] for c in comparison_strategies}
+    cs_q_logits = {c: [] for c in comparison_strategies}
 
-    for example in output_generator:
-        output, raw_input, target = (
-            example["output"],
-            example["raw_input"],
-            example["target"],
+    for inputs in tqdm(loader):
+        inputs = [dict(zip(inputs.keys(), vals)) for vals in zip(*inputs.values())]
+        targets = [inp.pop("target") for inp in inputs]
+
+        generation_inputs = {
+            k: v.to(accelerator.device) for k, v in collate_fn(inputs).items()
+        }
+
+        if isinstance(model, PeftModel):
+            model.set_adapter("default")
+
+        generation_outputs = model.generate(
+            **generation_inputs, generation_config=generation_config
         )
-        input_question_string = example["context"]
-        oe_target_strings = [target]
-        output_strings = [output]
-        question_strings = [input_question_string]
 
-        for c in comparison_strategies:
-            query_inputs, acc = prepare_oe_calibration_query(
+        outputs = [
+            {
+                **inp,
+                "target": tgt,
+                "output": tokenizer.decode(
+                    go[generation_inputs.get("input_ids").size(-1) :],
+                    skip_special_tokens=True,
+                    clean_up_tokenization_spaces=False,
+                ),
+            }
+            for inp, tgt, go in zip(inputs, targets, generation_outputs)
+        ]
+
+        if isinstance(model, PeftModel) and "query" in model.peft_config:
+            model.set_adapter("query")
+
+        for cs in comparison_strategies:
+            q_inputs, q_labels, q_token_vec = prepare_oe_uncertainty_query(
                 tokenizer,
-                oe_target_strings,
-                output_strings,
-                question_strings,
+                outputs,
+                strategy=cs,
                 format=query_format,
-                comparison_strategy=c,
             )
+            q_labels = q_labels.to(accelerator.device)
+            # q_targets = [qi.pop("target") for qi in q_inputs]
 
-            acc = acc.to(device)
-            query_inputs = collate_fn(query_inputs)
+            q_generation_inputs = {
+                k: v.to(accelerator.device) for k, v in collate_fn(q_inputs).items()
+            }
 
-            if isinstance(model, PeftModel) and "query" in model.peft_config:
-                model.set_adapter("query")
-
-            query_inputs = {k: v.to(device) for k, v in query_inputs.items()}
-            query_outputs = model(**query_inputs)
-
-            _, unc_y, unc_logits = extract_qa_exact(
-                tokenizer, query_inputs, outputs=query_outputs
-            )
+            q_generation_outputs = model(**q_generation_inputs)
+            q_logits = q_generation_outputs.logits[..., -1, :]
 
             [
                 l.append(v)
                 for l, v in zip(
-                    (all_unc_y[c], all_unc_logits[c], all_acc[c]),
-                    accelerator.gather_for_metrics((unc_y, unc_logits, acc)),
+                    (cs_q_labels[cs], cs_q_logits[cs]),
+                    accelerator.gather_for_metrics((q_labels, q_logits)),
                 )
             ]
 
-        [
-            l.append(v)
-            for l, v in zip(
-                (all_oe_target_strings, all_output_strings, all_question_strings),
-                accelerator.gather_for_metrics(
-                    (oe_target_strings, output_strings, question_strings)
-                ),
-            )
-        ]
+    metrics_dict = {}
+    for cs in comparison_strategies:
+        q_labels = torch.cat(cs_q_labels[cs], dim=0)
+        q_p = torch.cat(cs_q_logits[cs], dim=0)[:, q_token_vec].softmax(dim=-1)
 
-    all_oe_target_strings, all_output_strings, all_question_strings = (
-        sum(all_oe_target_strings, []),
-        sum(all_output_strings, []),
-        sum(all_question_strings, []),
-    )
+        acc = q_labels.float().mean(dim=0)
+        q_pred = q_p.argmax(dim=-1)
+        q_acc = (q_pred == q_labels).float().mean(dim=0)
 
-    return_dict = {}
-    # note if using multiple gpus/processes, these string lists will be incomplete.
-    dump = {
-        "oe_target_strings": all_oe_target_strings,
-        "output_strings": all_output_strings,
-        "question_strings": all_question_strings,
-    }
-
-    for c in comparison_strategies:
-
-        query_token_vec = query_token_vec.to(device)
-        all_unc_y_c, all_unc_logits_c, all_acc_c = [
-            torch.cat(l, dim=0) for l in (all_unc_y[c], all_unc_logits[c], all_acc[c])
-        ]
-
-        acc = all_acc_c.float().mean()
-
-        all_unc_y_c, all_unc_p = (
-            (all_unc_y_c.unsqueeze(-1) == query_token_vec).long().argmax(dim=-1),
-            all_unc_logits_c[:, query_token_vec].softmax(dim=-1),
-        )
-        all_unc_y_hat = all_unc_p.argmax(dim=-1)
-        unc_acc = (all_unc_y_c == all_unc_y_hat).float().mean()
-        unc_ece, _ = calibration(
-            all_unc_y_c,
-            all_unc_y_hat,
-            all_unc_p[torch.arange(all_unc_p.size(0)), all_unc_y_hat],
+        q_ece, _ = calibration(
+            q_labels,
+            q_pred,
+            q_p[torch.arange(q_p.size(0)), q_pred],
         )
 
-        return_dict.update(
+        metrics_dict.update(
             {
-                f"{c}_acc": acc.item(),
-                f"{c}_unc_acc": unc_acc.item(),
-                f"{c}_unc_ece": unc_ece,
-                "N": all_unc_p.size(0),
+                "N": q_labels.size(0),
+                f"{cs}_acc": acc.item(),
+                f"{cs}_unc_acc": q_acc.item(),
+                f"{cs}_unc_ece": q_ece,
             }
         )
 
-        dump.update(
-            {
-                f"{c}_acc": all_acc_c.cpu().numpy(),
-                f"{c}_all_unc_y": all_unc_y_c.cpu().numpy(),
-                f"{c}_all_unc_y_hat": all_unc_y_hat.cpu().numpy(),
-                f"{c}_unc_acc": unc_acc.item(),
-                f"{c}_unc_ece": unc_ece,
-            }
-        )
-
-    if accelerator.num_processes == 1 and output_row_path is not None:
-        os.makedirs(output_row_path, exist_ok=True)
-        pd.DataFrame(dump).to_csv(output_row_path, escapechar="\\")
-
-    return return_dict
+    return metrics_dict
 
 
 @torch.inference_mode()
@@ -259,12 +208,7 @@ def evaluate_oe_uncertainty_sampling(
                 # get the average log-likelihood among the num_tokens (equivalent to summing and dividing by length)
                 np.mean(
                     # get the max per row of a tensor shaped like [num_tokens, vocab_size]
-                    np.max(
-                        sequence_probs
-                        .detach()
-                        .cpu()
-                        .numpy()
-                    , axis=-1)
+                    np.max(sequence_probs.detach().cpu().numpy(), axis=-1)
                 )
             )
             for sequence_probs in sampled_log_probs
@@ -292,15 +236,16 @@ def evaluate_oe_uncertainty_sampling(
         normalized_likelihood_score = []
         likelihood_output_list = []
         for i, question_string, greedy, output_sequences, output_likelihoods in zip(
-            range(len(question_strings)), question_strings, output_strings, outputs_list, length_normalized_likelihoods_list
+            range(len(question_strings)),
+            question_strings,
+            output_strings,
+            outputs_list,
+            length_normalized_likelihoods_list,
         ):
             n_cluster = 0
             likelihood_accumulate = 0
 
-            for generation, likelihood in zip(
-                output_sequences, output_likelihoods
-            ):
-
+            for generation, likelihood in zip(output_sequences, output_likelihoods):
                 add_to_cluster = clustering_equivalency_with_oracle(
                     greedy,
                     generation,
@@ -318,12 +263,9 @@ def evaluate_oe_uncertainty_sampling(
             prob.append(n_cluster / k)
             likelihood_score.append(likelihood_accumulate)
             normalized_likelihood_score.append(
-                likelihood_accumulate
-                / sum(output_likelihoods)
+                likelihood_accumulate / sum(output_likelihoods)
             )
-            likelihood_output_list.append(
-                output_likelihoods
-            )
+            likelihood_output_list.append(output_likelihoods)
 
         prob = np.array(prob)
         likelihood_score = np.array(likelihood_score)
@@ -404,7 +346,6 @@ def evaluate_oe_uncertainty_sampling(
     }
 
     for c in comparison_strategies:
-
         all_acc_c = np.concatenate([c.cpu() for c in all_acc[c]], axis=0)
         all_prob_c = np.concatenate([p for p in all_prob[c]], axis=0)
         all_likelihood_accumulate_c = np.concatenate(
@@ -706,42 +647,51 @@ def evaluate_oe_uncertainty_sampling(
 
 
 VERBAL_ELICITATION_UNC_QUERIES = {
-    "2s1CoT": "".join([
-        "Provide the probability that your guess is correct. Give ONLY the probability, no other words or explanation.\n\n",
-        "For example:\n\n",
-        "Probability: <the probability between 0.0 and 1.0 that your guess is correct, without any extra commentary whatsoever; just the probability!>\n",
-    ]),
-    "2s1g": "".join([
-        "Provide the probability that your guess is correct. Give ONLY the probability, no other words or explanation.\n\n",
-        "For example:\n\n",
-        "Probability: <the probability between 0.0 and 1.0 that your guess is correct, without any extra commentary whatsoever; just the probability!>\n",
-    ]),
-    "2s2g": "".join([
-        "Provide the probability that each of your guesses is correct. Give ONLY the probabilities, no other words or explanation.\n\n",
-        "For example:\n\n",
-        "P1: <the probability between 0.0 and 1.0 that G1 is correct, without any extra commentary whatsoever; just the probability!>\n",
-        "P2: <the probability between 0.0 and 1.0 that G2 is correct, without any extra commentary whatsoever; just the probability!>\n",
-    ]),
-    "2s4g": "".join([
-        "Provide the probability that each of your guesses is correct. Give ONLY the probabilities, no other words or explanation.\n\n",
-        "For example:\n\n",
-        "P1: <the probability between 0.0 and 1.0 that G1 is correct, without any extra commentary whatsoever; just the probability!>\n",
-        "P2: <the probability between 0.0 and 1.0 that G2 is correct, without any extra commentary whatsoever; just the probability!>\n",
-        "P3: <the probability between 0.0 and 1.0 that G3 is correct, without any extra commentary whatsoever; just the probability!>\n",
-        "P4: <the probability between 0.0 and 1.0 that G4 is correct, without any extra commentary whatsoever; just the probability!>\n",
-    ]),
+    "2s1CoT": "".join(
+        [
+            "Provide the probability that your guess is correct. Give ONLY the probability, no other words or explanation.\n\n",
+            "For example:\n\n",
+            "Probability: <the probability between 0.0 and 1.0 that your guess is correct, without any extra commentary whatsoever; just the probability!>\n",
+        ]
+    ),
+    "2s1g": "".join(
+        [
+            "Provide the probability that your guess is correct. Give ONLY the probability, no other words or explanation.\n\n",
+            "For example:\n\n",
+            "Probability: <the probability between 0.0 and 1.0 that your guess is correct, without any extra commentary whatsoever; just the probability!>\n",
+        ]
+    ),
+    "2s2g": "".join(
+        [
+            "Provide the probability that each of your guesses is correct. Give ONLY the probabilities, no other words or explanation.\n\n",
+            "For example:\n\n",
+            "P1: <the probability between 0.0 and 1.0 that G1 is correct, without any extra commentary whatsoever; just the probability!>\n",
+            "P2: <the probability between 0.0 and 1.0 that G2 is correct, without any extra commentary whatsoever; just the probability!>\n",
+        ]
+    ),
+    "2s4g": "".join(
+        [
+            "Provide the probability that each of your guesses is correct. Give ONLY the probabilities, no other words or explanation.\n\n",
+            "For example:\n\n",
+            "P1: <the probability between 0.0 and 1.0 that G1 is correct, without any extra commentary whatsoever; just the probability!>\n",
+            "P2: <the probability between 0.0 and 1.0 that G2 is correct, without any extra commentary whatsoever; just the probability!>\n",
+            "P3: <the probability between 0.0 and 1.0 that G3 is correct, without any extra commentary whatsoever; just the probability!>\n",
+            "P4: <the probability between 0.0 and 1.0 that G4 is correct, without any extra commentary whatsoever; just the probability!>\n",
+        ]
+    ),
 }
+
 
 def parse_verbal_elicitation_oe(
     output_string,
     ve_style,
     stage=1,
 ):
-    stages,guess_style = ve_style.split("s")
+    stages, guess_style = ve_style.split("s")
     stages = int(stages)
     num_guesses = int(guess_style[0])
     is_CoT = guess_style[1] == "C"
-    
+
     if stages == 1:
         expected_lines = 2 * num_guesses
     else:
@@ -749,27 +699,27 @@ def parse_verbal_elicitation_oe(
         if stage == 1:
             expected_lines += 1 if is_CoT else 0
 
-    output_string = output_string.replace("\n\n","\n")
+    output_string = output_string.replace("\n\n", "\n")
     parts = output_string.split("\n")[:expected_lines]
 
     if len(parts) == 0:
         return "", torch.tensor([0]), torch.tensor([[1, 0]])
 
     def parse_guess(guess, idx):
-        if (num_guesses == 1) and ('Probability:' in guess):
+        if (num_guesses == 1) and ("Probability:" in guess):
             return None
-        elif (num_guesses > 1) and any([
-            (f"P{i+1}:" in guess) for i in range(num_guesses)
-        ]):
+        elif (num_guesses > 1) and any(
+            [(f"P{i+1}:" in guess) for i in range(num_guesses)]
+        ):
             return None
 
         guess = guess.split(":")[-1].strip()
         return guess
 
     def parse_prob(prob, idx):
-        if (num_guesses == 1) and ('Probability:' not in prob):
+        if (num_guesses == 1) and ("Probability:" not in prob):
             return None
-        elif (num_guesses > 1) and (f"P{idx+1}:" not in prob):   
+        elif (num_guesses > 1) and (f"P{idx+1}:" not in prob):
             return None
         try:
             prob = float(prob.split(":")[-1].strip())
@@ -778,23 +728,14 @@ def parse_verbal_elicitation_oe(
         return prob
 
     if stages == 1:
-        guesses = [
-            parse_guess(g, i) for i, g in enumerate(parts[::2])
-        ]
-        probs = [
-            parse_prob(p, i) for i, p in enumerate(parts[1::2])
-        ]
+        guesses = [parse_guess(g, i) for i, g in enumerate(parts[::2])]
+        probs = [parse_prob(p, i) for i, p in enumerate(parts[1::2])]
     elif stage == 1:
-        guesses = [
-            parse_guess(g, i) for i, g in enumerate(parts)
-        ]
+        guesses = [parse_guess(g, i) for i, g in enumerate(parts)]
         probs = []
     elif stage == 2:
         guesses = []
-        probs = [
-            parse_prob(p, i) for i, p in enumerate(parts)
-        ]
-
+        probs = [parse_prob(p, i) for i, p in enumerate(parts)]
 
     if guesses[0] is None:
         return "", torch.tensor([0]), torch.tensor([[1, 0]])
@@ -805,9 +746,7 @@ def parse_verbal_elicitation_oe(
         output = guesses[0]
         prob = 0.5
     else:
-        guesses, probs = zip(*[
-            (g, p) for g, p in zip(guesses, probs) if p is not None
-        ])
+        guesses, probs = zip(*[(g, p) for g, p in zip(guesses, probs) if p is not None])
         max_idx = np.argmax(probs)
         output = guesses[max_idx]
         prob = probs[max_idx]
@@ -816,6 +755,7 @@ def parse_verbal_elicitation_oe(
     logits = torch.tensor([[1 - prob, prob]])
 
     return output, y, logits
+
 
 @torch.inference_mode()
 def evaluate_verbal_elicitation_oe(
@@ -874,7 +814,7 @@ def evaluate_verbal_elicitation_oe(
     #     i += 1
     #     if i > 10:
     #         break
-    
+
     # print(1/0)
 
     for example in output_generator:
@@ -937,7 +877,6 @@ def evaluate_verbal_elicitation_oe(
     }
 
     for c in comparison_strategies:
-
         all_unc_y_c, all_unc_p, all_acc_c = [
             torch.cat(l, dim=0) for l in (all_unc_y[c], all_unc_logits[c], all_acc[c])
         ]
@@ -945,8 +884,10 @@ def evaluate_verbal_elicitation_oe(
         acc = all_acc_c.float().mean()
 
         all_unc_y_c = (
-            all_unc_y_c.unsqueeze(-1) == torch.arange(2).to(device)
-        ).long().argmax(dim=-1)
+            (all_unc_y_c.unsqueeze(-1) == torch.arange(2).to(device))
+            .long()
+            .argmax(dim=-1)
+        )
         all_unc_y_hat = all_unc_p.argmax(dim=-1)
         unc_acc = (all_unc_y_c == all_unc_y_hat).float().mean()
         unc_ece, _ = calibration(
@@ -975,8 +916,9 @@ def evaluate_verbal_elicitation_oe(
         )
 
     if accelerator.num_processes == 1 and output_row_path is not None:
-        #create parent dir if it doesn't exist
+        # create parent dir if it doesn't exist
         import os
+
         os.makedirs(os.path.dirname(output_row_path), exist_ok=True)
         pd.DataFrame(dump).to_csv(output_row_path, escapechar="\\")
 

@@ -151,9 +151,6 @@ def evaluate_dataset(
     log_dir=None,
     evaluate_fn="eos",
 ):
-    ## FIXME: See https://github.com/huggingface/transformers/issues/25790#issuecomment-1695846805.
-    assert batch_size == 1, "Only support batch_size 1. See code comments."
-
     if dataset is not None:
         with accelerator.main_process_first():
             _extra_args = dict()

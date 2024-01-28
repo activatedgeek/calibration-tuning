@@ -75,7 +75,7 @@ __ATTRS = dict(tasks=__TASKS)
 
 
 def __format_sample(sample, tokenizer, style):
-    target_prompt = "\nAnswer: "
+    target_prompt = "\nAnswer:"
 
     if style == "choice":
         question = sample["question"]
@@ -110,7 +110,7 @@ def __generate_fewshot_prompts(
 ):
     if kshot <= 0:
         return ""
-    
+
     if prompt_style == "oe":
         fewshot_prompt = "\n".join(
             [

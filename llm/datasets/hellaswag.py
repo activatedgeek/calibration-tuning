@@ -30,7 +30,7 @@ def __format_sample(sample, tokenizer, style):
             ]
         )
 
-        target_prompt = "\nAnswer: "
+        target_prompt = "\nAnswer:"
         target = string.ascii_lowercase[int(sample["label"])] + tokenizer.eos_token
     elif style == "oe":
         context = "\n".join(

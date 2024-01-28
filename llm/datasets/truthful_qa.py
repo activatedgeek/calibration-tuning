@@ -13,7 +13,7 @@ __all__ = [
 
 
 def __format_sample(sample, tokenizer, style):
-    target_prompt = "\nAnswer: "
+    target_prompt = "\nAnswer:"
 
     question = sample["question"]
     answer_map = sample["mc1_targets"]["choices"]
