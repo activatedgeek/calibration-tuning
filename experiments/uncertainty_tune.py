@@ -79,7 +79,7 @@ def main(
         ).to(accelerator.local_process_index)
 
     with accelerator.main_process_first():
-        train_data, val_data, test_data = get_dataset(
+        train_data, _, _ = get_dataset(
             dataset,
             root=data_dir,
             tokenizer=tokenizer,
@@ -125,8 +125,8 @@ def main(
         train_dataset=tokenize_datasets(
             tokenizer, train_data, prompt_style=prompt_style
         )[0],
-        val_data=val_data,
-        test_data=test_data,
+        # val_data=val_data,
+        # test_data=test_data,
         tokenizer=tokenizer,
         callbacks=[
             WandbConfigUpdateCallback(
