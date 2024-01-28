@@ -58,7 +58,7 @@ def get_cb(
                 ]
             )
 
-            target = string.ascii_lowercase[sample["label"]] + tokenizer.eos_token
+            target = string.ascii_lowercase[sample["label"]]
         elif style == "oe":
             context = "\n".join(
                 [
@@ -68,7 +68,7 @@ def get_cb(
                 ]
             )
 
-            target = answer_map[sample["label"]] + tokenizer.eos_token
+            target = answer_map[sample["label"]]
         else:
             raise NotImplementedError
 
@@ -191,7 +191,7 @@ def get_multirc(
                 ]
             )
 
-            target = string.ascii_lowercase[sample["label"]] + tokenizer.eos_token
+            target = string.ascii_lowercase[sample["label"]]
         elif style == "oe":
             context = "\n".join(
                 [
@@ -203,7 +203,7 @@ def get_multirc(
                 ]
             )
 
-            target = answer_map[sample["label"]] + tokenizer.eos_token
+            target = answer_map[sample["label"]]
         else:
             raise NotImplementedError
 
@@ -324,7 +324,7 @@ def get_copa(
                 ]
             )
 
-            target = string.ascii_lowercase[sample["label"]] + tokenizer.eos_token
+            target = string.ascii_lowercase[sample["label"]]
         elif style == "oe":
             context = "\n".join(
                 [
@@ -336,7 +336,7 @@ def get_copa(
                 ]
             )
 
-            target = str(sample["label"] + 1) + tokenizer.eos_token
+            target = str(sample["label"] + 1)
         else:
             raise NotImplementedError
         return LMText(context=context, target_prompt=target_prompt, target=target)

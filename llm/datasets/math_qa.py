@@ -32,7 +32,7 @@ def __format_sample(sample, tokenizer, style):
             ]
         )
 
-        target = sample["correct"] + tokenizer.eos_token
+        target = sample["correct"]
     elif style == "oe":
         context = "\n".join(
             [
@@ -43,10 +43,7 @@ def __format_sample(sample, tokenizer, style):
             ]
         )
 
-        target = (
-            answer_map[string.ascii_lowercase.index(sample["correct"])]
-            + tokenizer.eos_token
-        )
+        target = answer_map[string.ascii_lowercase.index(sample["correct"])]
     else:
         raise NotImplementedError
 

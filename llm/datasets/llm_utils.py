@@ -277,7 +277,7 @@ def prepare_query(
                 tokenizer,
                 {
                     "context": f"{r}\n\nIs the proposed answer correct? ",
-                    "target": ("yes" if a else "no") + tokenizer.eos_token,
+                    "target": ("yes" if a else "no"),
                 },
                 prompt_style="choice",
             )
@@ -290,7 +290,7 @@ def prepare_query(
                 {
                     "context": f"{r}\n\nIs the proposed answer correct?\n\nChoices:\n(a): no\n(b): yes",
                     "target_prompt": "\nAnswer:",
-                    "target": ("b" if a else "a") + tokenizer.eos_token,
+                    "target": ("b" if a else "a"),
                 },
                 prompt_style="choice",
             )
@@ -303,7 +303,7 @@ def prepare_query(
                 {
                     "context": f"{r}\n\nIs the proposed answer correct?\n\nChoices:\n(i): no\n(ii): yes",
                     "target_prompt": "\nAnswer:",
-                    "target": ("ii" if a else "i") + tokenizer.eos_token,
+                    "target": ("ii" if a else "i"),
                 },
                 prompt_style="choice",
             )

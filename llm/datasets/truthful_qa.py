@@ -33,10 +33,9 @@ def __format_sample(sample, tokenizer, style):
             ]
         )
 
-        target = (
-            string.ascii_lowercase[np.array(sample["mc1_targets"]["labels"]).argmax()]
-            + tokenizer.eos_token
-        )
+        target = string.ascii_lowercase[
+            np.array(sample["mc1_targets"]["labels"]).argmax()
+        ]
     elif style == "oe":
         context = "\n".join(
             [
@@ -44,10 +43,7 @@ def __format_sample(sample, tokenizer, style):
             ]
         )
 
-        target = (
-            answer_map[np.array(sample["mc1_targets"]["labels"]).argmax()]
-            + tokenizer.eos_token
-        )
+        target = answer_map[np.array(sample["mc1_targets"]["labels"]).argmax()]
     else:
         raise NotImplementedError
 

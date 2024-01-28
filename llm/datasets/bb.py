@@ -153,10 +153,7 @@ def __format_sample(sample, tokenizer, style):
             ]
         )
 
-        target = (
-            string.ascii_lowercase[np.argmax(sample["multiple_choice_scores"])]
-            + tokenizer.eos_token
-        )
+        target = string.ascii_lowercase[np.argmax(sample["multiple_choice_scores"])]
     else:
         raise NotImplementedError
 

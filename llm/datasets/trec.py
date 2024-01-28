@@ -39,7 +39,7 @@ def __format_sample(sample, tokenizer, style):
             ]
         )
 
-        target = string.ascii_lowercase[sample["coarse_label"]] + tokenizer.eos_token
+        target = string.ascii_lowercase[sample["coarse_label"]]
     elif style == "oe":
         context = "\n".join(
             [
@@ -49,7 +49,7 @@ def __format_sample(sample, tokenizer, style):
             ]
         )
 
-        target = answer_map[sample["coarse_label"]] + tokenizer.eos_token
+        target = answer_map[sample["coarse_label"]]
     else:
         raise NotImplementedError
 

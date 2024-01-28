@@ -92,13 +92,13 @@ def __format_sample(sample, tokenizer, style):
             ]
         )
 
-        target = string.ascii_lowercase[sample["answer"]] + tokenizer.eos_token
+        target = string.ascii_lowercase[sample["answer"]]
     elif style == "oe":
         question = sample["question"]
 
         context = f"Question:\n{question}"
 
-        target = sample["choices"][sample["answer"]] + tokenizer.eos_token
+        target = sample["choices"][sample["answer"]]
     else:
         raise NotImplementedError
 
