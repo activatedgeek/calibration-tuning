@@ -27,96 +27,111 @@ EVALUATE_MODE_FN_MAP = {
 
 VERBAL_ELICITATION_MAP = {
     "1s1g": {
-        "prompt": "".join([
-            "Provide your best guess and the probability that it is correct (0.0 to 1.0) for ",
-            "the following question. Give ONLY the guess and probability, no other words or ",
-            "explanation. For example:\n\nGuess: <most likely guess, as short as possible; not ",
-            "a complete sentence, just the guess!>\nProbability: <the probability between 0.0 ",
-            "and 1.0 that your guess is correct, without any extra commentary whatsoever; just ",
-            "the probability!>\n\n",
-        ]),
+        "prompt": "".join(
+            [
+                "Provide your best guess and the probability that it is correct (0.0 to 1.0) for ",
+                "the following question. Give ONLY the guess and probability, no other words or ",
+                "explanation. For example:\n\nGuess: <most likely guess, as short as possible; not ",
+                "a complete sentence, just the guess!>\nProbability: <the probability between 0.0 ",
+                "and 1.0 that your guess is correct, without any extra commentary whatsoever; just ",
+                "the probability!>\n\n",
+            ]
+        ),
         "target_prompt": "\nGuess: ",
     },
     "1s2g": {
-        "prompt": "".join([
-            "Provide your 2 best guesses and the probability that each is correct (0.0 to ",
-            "1.0) for the following question. Give ONLY the guesses and probabilities, no other ",
-            "words or explanation. For example:\n\nG1: <first most likely guess, as short as ",
-            "possible; not a complete sentence, just the guess!>\n\nP1: <the probability between ",
-            "0.0 and 1.0 that G1 is correct, without any extra commentary whatsoever; just the ",
-            "probability!>\n\nG2: <second most likely guess, as short as possible; ",
-            "not a complete sentence, just the guess!>\n\nP2: <the probability between 0.0 ",
-            "and 1.0 that G2 is correct, without any extra commentary whatsoever; just the ",
-            "probability!>\n\n",
-        ]),
+        "prompt": "".join(
+            [
+                "Provide your 2 best guesses and the probability that each is correct (0.0 to ",
+                "1.0) for the following question. Give ONLY the guesses and probabilities, no other ",
+                "words or explanation. For example:\n\nG1: <first most likely guess, as short as ",
+                "possible; not a complete sentence, just the guess!>\n\nP1: <the probability between ",
+                "0.0 and 1.0 that G1 is correct, without any extra commentary whatsoever; just the ",
+                "probability!>\n\nG2: <second most likely guess, as short as possible; ",
+                "not a complete sentence, just the guess!>\n\nP2: <the probability between 0.0 ",
+                "and 1.0 that G2 is correct, without any extra commentary whatsoever; just the ",
+                "probability!>\n\n",
+            ]
+        ),
         "target_prompt": "\nG1: ",
     },
     "1s4g": {
-        "prompt": "".join([
-            "Provide your 4 best guesses and the probability that each is correct (0.0 to ",
-            "1.0) for the following question. Give ONLY the guesses and probabilities, no other ",
-            "words or explanation. For example:\n\nG1: <first most likely guess, as short as ",
-            "possible; not a complete sentence, just the guess!>\n\nP1: <the probability between ",
-            "0.0 and 1.0 that G1 is correct, without any extra commentary whatsoever; just the ",
-            "probability!>\n\nG2: <second most likely guess, as short as possible; ",
-            "not a complete sentence, just the guess!>\n\nP2: <the probability between 0.0 ",
-            "and 1.0 that G2 is correct, without any extra commentary whatsoever; just the ",
-            "probability!>\n\nG3: <third most likely guess, as short as possible; ",
-            "not a complete sentence, just the guess!>\n\nP3: <the probability between 0.0 ",
-            "and 1.0 that G3 is correct, without any extra commentary whatsoever; just the ",
-            "probability!>\n\nG4: <fourth most likely guess, as short as possible; ",
-            "not a complete sentence, just the guess!>\n\nP4: <the probability between 0.0 ",
-            "and 1.0 that G4 is correct, without any extra commentary whatsoever; just the ",
-            "probability!>\n\n",
-        ]),
+        "prompt": "".join(
+            [
+                "Provide your 4 best guesses and the probability that each is correct (0.0 to ",
+                "1.0) for the following question. Give ONLY the guesses and probabilities, no other ",
+                "words or explanation. For example:\n\nG1: <first most likely guess, as short as ",
+                "possible; not a complete sentence, just the guess!>\n\nP1: <the probability between ",
+                "0.0 and 1.0 that G1 is correct, without any extra commentary whatsoever; just the ",
+                "probability!>\n\nG2: <second most likely guess, as short as possible; ",
+                "not a complete sentence, just the guess!>\n\nP2: <the probability between 0.0 ",
+                "and 1.0 that G2 is correct, without any extra commentary whatsoever; just the ",
+                "probability!>\n\nG3: <third most likely guess, as short as possible; ",
+                "not a complete sentence, just the guess!>\n\nP3: <the probability between 0.0 ",
+                "and 1.0 that G3 is correct, without any extra commentary whatsoever; just the ",
+                "probability!>\n\nG4: <fourth most likely guess, as short as possible; ",
+                "not a complete sentence, just the guess!>\n\nP4: <the probability between 0.0 ",
+                "and 1.0 that G4 is correct, without any extra commentary whatsoever; just the ",
+                "probability!>\n\n",
+            ]
+        ),
         "target_prompt": "\nG1: ",
     },
     "2s1CoT": {
-        "prompt": "".join([
-            "Provide your best guess for the following question. Before giving your answer, ",
-            "provide a step-by-step explanation of your thought process. Then on a new line ",
-            "give the guess with no other words or explanation.\n\nFor example:\n\nExplanation: ",
-            "<one sentence step-by-step explanation of your thought process>\n\nGuess: ",
-            "<most likely guess, as short as possible; not a complete sentence, just the ",
-            "guess!>\n\n",
-        ]),
+        "prompt": "".join(
+            [
+                "Provide your best guess for the following question. Before giving your answer, ",
+                "provide a step-by-step explanation of your thought process. Then on a new line ",
+                "give the guess with no other words or explanation.\n\nFor example:\n\nExplanation: ",
+                "<one sentence step-by-step explanation of your thought process>\n\nGuess: ",
+                "<most likely guess, as short as possible; not a complete sentence, just the ",
+                "guess!>\n\n",
+            ]
+        ),
         "target_prompt": "\nGuess: ",
     },
     "2s1g": {
-        "prompt": "".join([
-            "Provide your best guess for the following question. Give ONLY the guess, no ",
-            "other words or explanation.\n\nFor example:\n\nGuess: <most likely guess, as ",
-            "short as possible; not a complete sentence, just the guess!>\n\n",
-        ]),
+        "prompt": "".join(
+            [
+                "Provide your best guess for the following question. Give ONLY the guess, no ",
+                "other words or explanation.\n\nFor example:\n\nGuess: <most likely guess, as ",
+                "short as possible; not a complete sentence, just the guess!>\n\n",
+            ]
+        ),
         "target_prompt": "\nGuess: ",
     },
     "2s2g": {
-        "prompt": "".join([
-            "Provide your 2 best guesses for the following question. Give ONLY the guesses, ",
-            "no other words or explanation. For example:\n\nG1: <first most likely guess, as ",
-            "short as possible; not a complete sentence, just the guess!>\n\nP1: <the probability ",
-            "between 0.0 and 1.0 that G1 is correct, without any extra commentary whatsoever; ",
-            "just the probability!>\n\nG2: <second most likely guess, as short as possible; ",
-            "not a complete sentence, just the guess!>\n\n",
-        ]),
+        "prompt": "".join(
+            [
+                "Provide your 2 best guesses for the following question. Give ONLY the guesses, ",
+                "no other words or explanation. For example:\n\nG1: <first most likely guess, as ",
+                "short as possible; not a complete sentence, just the guess!>\n\nP1: <the probability ",
+                "between 0.0 and 1.0 that G1 is correct, without any extra commentary whatsoever; ",
+                "just the probability!>\n\nG2: <second most likely guess, as short as possible; ",
+                "not a complete sentence, just the guess!>\n\n",
+            ]
+        ),
         "target_prompt": "\nG1: ",
     },
     "2s4g": {
-        "prompt": "".join([
-            "Provide your 4 best guesses for the following question. Give ONLY the guesses, ",
-            "no other words or explanation. For example:\n\nG1: <first most likely guess, as ",
-            "short as possible; not a complete sentence, just the guess!>\n\nP1: <the probability ",
-            "between 0.0 and 1.0 that G1 is correct, without any extra commentary whatsoever; ",
-            "just the probability!>\n\nG2: <second most likely guess, as short as possible; ",
-            "not a complete sentence, just the guess!>\n\nP2: <the probability between 0.0 ",
-            "and 1.0 that G2 is correct, without any extra commentary whatsoever; just the ",
-            "probability!>\n\nG3: <third most likely guess, as short as possible; ",
-            "not a complete sentence, just the guess!>\n\nG4: <fourth most likely guess, ",
-            "as short as possible; not a complete sentence, just the guess!>\n\n",
-        ]),
+        "prompt": "".join(
+            [
+                "Provide your 4 best guesses for the following question. Give ONLY the guesses, ",
+                "no other words or explanation. For example:\n\nG1: <first most likely guess, as ",
+                "short as possible; not a complete sentence, just the guess!>\n\nP1: <the probability ",
+                "between 0.0 and 1.0 that G1 is correct, without any extra commentary whatsoever; ",
+                "just the probability!>\n\nG2: <second most likely guess, as short as possible; ",
+                "not a complete sentence, just the guess!>\n\nP2: <the probability between 0.0 ",
+                "and 1.0 that G2 is correct, without any extra commentary whatsoever; just the ",
+                "probability!>\n\nG3: <third most likely guess, as short as possible; ",
+                "not a complete sentence, just the guess!>\n\nG4: <fourth most likely guess, ",
+                "as short as possible; not a complete sentence, just the guess!>\n\n",
+            ]
+        ),
         "target_prompt": "\nG1: ",
     },
 }
+
 
 def evaluate_dataset(
     accelerator,
@@ -188,7 +203,7 @@ def evaluate_dataset(
             if len(strategy) == 0:
                 strategy = "substring"
             comparison_strategies = [strategy]  # clip oe_
-            
+
             ve_style = evaluate_fn.split("_")[1]
             evaluate_fn = EVALUATE_MODE_FN_MAP["ve_oe"]
             evaluate_fn = partial(evaluate_fn, ve_style)
@@ -236,10 +251,7 @@ def evaluate_dataset(
                 batch_size=batch_size,
                 pin_memory=True,
                 accelerator=accelerator,
-                # turn list of dicts into dict of lists
-                collate_fn=lambda x: {k: [d[k] for d in x] for k in x[0].keys()},
             ),
-            prompt_style=prompt_style,
             comparison_strategies=comparison_strategies,
             output_row_path=os.path.join(log_dir, dataset, "train.csv")
             if log_dir is not None
@@ -262,9 +274,7 @@ def evaluate_dataset(
                 batch_size=batch_size,
                 pin_memory=True,
                 accelerator=accelerator,
-                collate_fn=lambda x: {k: [d[k] for d in x] for k in x[0].keys()},
             ),
-            prompt_style=prompt_style,
             comparison_strategies=comparison_strategies,
             output_row_path=os.path.join(log_dir, dataset, "val.csv")
             if log_dir is not None
@@ -287,9 +297,7 @@ def evaluate_dataset(
                 batch_size=batch_size,
                 pin_memory=True,
                 accelerator=accelerator,
-                collate_fn=lambda x: {k: [d[k] for d in x] for k in x[0].keys()},
             ),
-            prompt_style=prompt_style,
             comparison_strategies=comparison_strategies,
             output_row_path=os.path.join(log_dir, dataset, "test.csv")
             if log_dir is not None

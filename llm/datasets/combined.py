@@ -151,15 +151,16 @@ def all_20k_uniform(*args, max_n=20_000, **kwargs):
 
 @register_dataset
 def all_100_uniform(*args, max_n=100, **kwargs):
-    return all_200k_uniform(*args, max_n=max_n, **kwargs)
+    tr, *_ = all_200k_uniform(*args, max_n=max_n, **kwargs)
+    return tr, tr, None
 
 
 @register_dataset
-def all_20k_uniform_c(*args, seed=137, max_n=20_000, **kwargs):
+def all_20k_uniform_val(*args, seed=137, max_n=20_000, **kwargs):
     tr, _, _ = all_20k_uniform(*args, seed=seed, complement=True, **kwargs)
     with FixedSeed(seed):
         tr = tr.select(np.random.choice(range(len(tr)), max_n))
-    return tr, None, None
+    return None, tr, None
 
 
 @register_dataset
