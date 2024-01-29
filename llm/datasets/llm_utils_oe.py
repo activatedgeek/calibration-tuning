@@ -53,13 +53,22 @@ PROMPT_TWO_ANSWERS_EQUIVALENCY = (
 
 
 def evaluate_equivalency_with_oracle(
-    ground_truth, prediction, question, oracle_fn, oracle_kwargs
+    ground_truth, prediction, question, oracle_fn, oracle_kwargs, mode="answer-key"
 ):
-    prompt = (
-        PROMPT_ANSWER_KEY_EQUIVALENCY.replace("<ground-truth>", ground_truth)
-        .replace("<prediction>", prediction)
-        .replace("<question>", question)
-    )
+    if mode == "answer-key":
+        prompt = (
+            PROMPT_ANSWER_KEY_EQUIVALENCY.replace("<ground-truth>", ground_truth)
+            .replace("<prediction>", prediction)
+            .replace("<question>", question)
+        )
+    elif mode == "two-answers":
+        prompt = (
+            PROMPT_TWO_ANSWERS_EQUIVALENCY.replace("<prediction-a>", ground_truth)
+            .replace("<prediction-b>", prediction)
+            .replace("<question>", question)
+        )
+    else:
+        assert(False)
     sampled_response = oracle_fn(
         system_prompt=SYSTEM_PROMPT_ORACLE_EQUIVALENCY, prompt=prompt, **oracle_kwargs
     )
@@ -136,6 +145,7 @@ def grade_oe_preds(
     pred,
     questions,
     comparison_strategy="substring",
+    mode="answer-key",
 ):
     # calculate accuracy
     if comparison_strategy == "substring":
@@ -147,11 +157,25 @@ def grade_oe_preds(
             q,
             oracle_fn=openai_query,
             oracle_kwargs={"openai_model_name": comparison_strategy.split("_")[1]},
+            mode=mode,
         )
     else:
         raise ValueError(f"Invalid comparison strategy {comparison_strategy}")
     acc = [comparison_fn(t, p, q) for t, p, q in zip(true, pred, questions)]
     return acc
+
+
+def equivalency_grading(
+    inputs,
+    targets,
+    predictions,
+    strategy="substring",
+):
+    contexts = [str(LMText.from_(inp)) for inp in inputs]
+
+    query_labels = grade_oe_preds(targets, predictions, contexts, strategy, mode="two-answers")
+
+    return torch.Tensor(query_labels).long()
 
 
 def prepare_oe_uncertainty_query(
@@ -166,7 +190,7 @@ def prepare_oe_uncertainty_query(
 
     contexts = [str(LMText.from_(inp)) for inp in inputs]
 
-    query_labels = grade_oe_preds(targets, predictions, contexts, strategy)
+    query_labels = grade_oe_preds(targets, predictions, contexts, strategy, mode="answer-key")
 
     if format == "roman_choice":
         query_inputs = [
@@ -195,7 +219,7 @@ def prepare_oe_calibration_query(
     format="roman_choice",
     comparison_strategy="substring",
 ):
-    acc = grade_oe_preds(true, pred, questions, comparison_strategy)
+    acc = grade_oe_preds(true, pred, questions, comparison_strategy, mode="answer-key")
 
     if format == "bool":
         ## NOTE: Probably don't use, often seems to be biased towards a yes.
