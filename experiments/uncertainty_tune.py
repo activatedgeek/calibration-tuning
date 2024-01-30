@@ -122,8 +122,6 @@ def main(
             label_names=train_data.column_names,
         ),
         train_dataset=train_data,
-        # val_data=val_data,
-        # test_data=test_data,
         tokenizer=tokenizer,
         callbacks=[
             WandbConfigUpdateCallback(
