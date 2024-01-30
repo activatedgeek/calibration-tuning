@@ -73,7 +73,7 @@ def main(
         peft_dir=query_peft_dir or peft_dir,
         is_trainable=False,
         adapter_name="query",
-    ).to(accelerator.local_process_index)
+    )
 
     if scale_temp:
         prepare_model_for_temperature_scaling(

@@ -5,8 +5,7 @@ from transformers import Trainer
 from transformers.trainer import logger, TRAINING_ARGS_NAME
 from transformers.training_args import TrainingArguments
 
-from ..datasets.llm_utils import DataCollatorForSupervisedDataset
-from ..eval import evaluate_dataset
+from ..datasets import DictCollator, LabeledStringDataCollator
 from ..models.peft import save_temperature_scaled_model
 
 
@@ -15,44 +14,32 @@ class FineTuner(Trainer):
     class Args(TrainingArguments):
         scale_temp: bool = field(default=False)
 
-    def __init__(self, *args, tokenizer=None, val_data=None, test_data=None, **kwargs):
+    def __init__(self, *args, **kwargs):
         super().__init__(
             *args,
             **kwargs,
-            tokenizer=tokenizer,
-            data_collator=DataCollatorForSupervisedDataset(tokenizer),
+            data_collator=DictCollator(),
         )
 
-        self.val_data = val_data
-        self.test_data = test_data
+        self._collate_fn = LabeledStringDataCollator(self.tokenizer)
 
-    @torch.inference_mode()
+    def compute_loss(self, model, inputs, **kwargs):
+        inputs = [dict(zip(inputs.keys(), vals)) for vals in zip(*inputs.values())]
+        targets = [inp.pop("target") for inp in inputs]
+
+        loss_inputs = {
+            k: v.to(self.accelerator.device)
+            for k, v in self._collate_fn(
+                [{**inp, "target": t} for inp, t in zip(inputs, targets)]
+            ).items()
+        }
+
+        return super().compute_loss(model, loss_inputs, **kwargs)
+
+    ## Skip eval.
     def evaluate(self, *_, **__):
         # metrics = super().evaluate(eval_dataset, ignore_keys, metric_key_prefix)
         metrics = {}
-
-        val_metrics, test_metrics = evaluate_dataset(
-            self.accelerator,
-            self.model,
-            self.tokenizer,
-            None,
-            train_data=False,
-            seed=self.args.seed,
-            val_data=self.val_data,
-            test_data=self.test_data,
-            prompt_style="choice",
-        )
-
-        if val_metrics is not None:
-            val_metrics = {f"eval/{k}": v for k, v in val_metrics.items()}
-            self.log(val_metrics)
-            metrics.update(val_metrics)
-
-        if test_metrics is not None:
-            test_metrics = {f"test/{k}": v for k, v in test_metrics.items()}
-            self.log(test_metrics)
-            metrics.update(test_metrics)
-
         return metrics
 
     def _save(self, output_dir=None, state_dict=None):
