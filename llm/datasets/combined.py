@@ -128,7 +128,13 @@ def get_combined_dataset(
 
 @register_dataset
 def all_200k(
-    *args, max_n=200_000, max_val_n=None, prompt_style="choice", seed=137, complement=False, **kwargs
+    *args,
+    max_n=200_000,
+    max_val_n=None,
+    prompt_style="choice",
+    seed=137,
+    complement=False,
+    **kwargs,
 ):
     tr, vl, _ = get_combined_dataset(
         all_dataset_names=get_all_datasets_list("all:train", prompt_style=prompt_style),
@@ -152,7 +158,7 @@ def all_200k(
 
 
 @register_dataset
-def all_20k_uniform(*args, max_n=20_000, max_val_n=5_000, **kwargs):
+def all_20k_uniform(*args, max_n=20_000, max_val_n=2_000, **kwargs):
     return all_200k(*args, max_n=max_n, max_val_n=max_val_n, uniform=True, **kwargs)
 
 

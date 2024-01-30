@@ -5,11 +5,13 @@ from peft import PeftModel
 import pandas as pd
 import numpy as np
 from transformers import GenerationConfig
+from sklearn.metrics import roc_auc_score
 
 from llm.datasets import LabeledStringDataCollator
 from llm.datasets.llm_utils_oe import (
     prepare_oe_uncertainty_query,
     equivalency_grading,
+    sanitize_generations,
 )
 from llm.eval.third_party.calibration import calibration
 from llm.utils.generate_utils import generate_output
@@ -61,14 +63,7 @@ def evaluate_oe(
             clean_up_tokenization_spaces=False,
         )
 
-        cleaned_generations = []
-        for output_string in generations:
-            output_string = output_string.replace("\n\n","\n")
-            output_string = output_string.replace(":\n",":")
-            output_string = output_string.strip("\n").split("\n")[0]
-            cleaned_generations.append(output_string)
-
-        generations = cleaned_generations
+        generations = sanitize_generations(generations)
 
         if isinstance(model, PeftModel) and "query" in model.peft_config:
             model.set_adapter("query")
@@ -114,6 +109,9 @@ def evaluate_oe(
             q_pred,
             q_p[torch.arange(q_p.size(0)), q_pred],
         )
+        q_auroc = roc_auc_score(
+            q_labels.cpu(), q_p[torch.arange(q_p.size(0)), q_pred].cpu()
+        )
         ece, _ = calibration(
             q_labels,
             q_pred,
@@ -125,6 +123,7 @@ def evaluate_oe(
                 "N": q_labels.size(0),
                 f"{cs}_acc": acc.item(),
                 f"{cs}_unc_acc": q_acc.item(),
+                f"{cs}_unc_auroc": q_auroc,
                 f"{cs}_unc_ece": q_ece,
                 f"{cs}_ece": ece,
             }
@@ -198,14 +197,7 @@ def evaluate_oe_uncertainty_sampling(
                 clean_up_tokenization_spaces=False,
             )
 
-            cleaned_generations = []
-            for output_string in generations:
-                output_string = output_string.replace("\n\n","\n")
-                output_string = output_string.replace(":\n",":")
-                output_string = output_string.strip("\n").split("\n")[0]
-                cleaned_generations.append(output_string)
-
-            generations = cleaned_generations
+            generations = sanitize_generations(generations)
 
             # page 15 is original algorithm: https://arxiv.org/pdf/2302.09664.pdf
             # our modification is based on finding the likelihood under the sampling procedure of the greedy decoded answer's equivalence class
@@ -252,14 +244,7 @@ def evaluate_oe_uncertainty_sampling(
                     clean_up_tokenization_spaces=False,
                 )
 
-                cleaned_generations = []
-                for output_string in sampling_generations:
-                    output_string = output_string.replace("\n\n","\n")
-                    output_string = output_string.replace(":\n",":")
-                    output_string = output_string.strip("\n").split("\n")[0]
-                    cleaned_generations.append(output_string)
-
-                sampling_generations = cleaned_generations
+                sampling_generations = sanitize_generations(sampling_generations)
 
                 # gets the max for each of the generated token among all log softmax probs in the vocab
                 sampling_log_probs = np.max(

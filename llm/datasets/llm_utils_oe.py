@@ -213,3 +213,12 @@ def prepare_oe_uncertainty_query(
         torch.Tensor(query_labels).long(),
         query_token_vec,
     )
+
+
+def sanitize_generations(generations):
+    def clean(g):
+        g = g.replace("\n\n", "\n")
+        g = g.replace(":\n", ":")
+        g = g.strip("\n").split("\n")[0]
+
+    return list(map(clean, generations))
