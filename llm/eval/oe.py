@@ -13,7 +13,7 @@ from llm.datasets.llm_utils_oe import (
     equivalency_grading,
 )
 from llm.eval.third_party.calibration import calibration
-from llm.utils.generate_utils import generate_output
+# from llm.utils.generate_utils import generate_output
 from llm.random import FixedSeed
 
 @torch.inference_mode()
@@ -244,109 +244,111 @@ def evaluate_oe_uncertainty_sampling(
                         output_scores=True,
                     )
 
-                sampling_generations = tokenizer.batch_decode(
-                    sampling_generation_outputs["sequences"][
-                        :, generation_inputs.get("input_ids").size(-1) :
-                    ],
-                    skip_special_tokens=True,
-                    clean_up_tokenization_spaces=False,
-                )
-
-                cleaned_generations = []
-                for output_string in sampling_generations:
-                    output_string = output_string.replace("\n\n","\n")
-                    output_string = output_string.replace(":\n",":")
-                    output_string = output_string.strip("\n").split("\n")[0]
-                    cleaned_generations.append(output_string)
-
-                sampling_generations = cleaned_generations
-
-                # gets the max for each of the generated token among all log softmax probs in the vocab
-                sampling_log_probs = np.max(
-                    F.log_softmax(
-                        torch.stack(sampling_generation_outputs["scores"], dim=1),
-                        dim=-1,
+                    sampling_generations = tokenizer.batch_decode(
+                        sampling_generation_outputs["sequences"][
+                            :, generation_inputs.get("input_ids").size(-1) :
+                        ],
+                        skip_special_tokens=True,
+                        clean_up_tokenization_spaces=False,
                     )
-                    .detach()
-                    .cpu()
-                    .numpy(),
-                    axis=-1,
-                )
 
-                # stop early at eos or newline
-                eos_match_array = (
-                    sampling_generation_outputs["sequences"][
-                        :, generation_inputs.get("input_ids").size(-1) :
-                    ]
-                    .detach()
-                    .cpu()
-                    .numpy()
-                    == tokenizer.eos_token_id
-                )
+                    cleaned_generations = []
+                    for output_string in sampling_generations:
+                        output_string = output_string.replace("\n\n","\n")
+                        output_string = output_string.replace(":\n",":")
+                        output_string = output_string.strip("\n").split("\n")[0]
+                        cleaned_generations.append(output_string)
 
-                has_eos = np.any(eos_match_array, axis=-1)
+                    sampling_generations = cleaned_generations
 
-                # we want to get the index after the last valid index for each row
-                stop_index = np.where(
-                    has_eos,
-                    # If there are multiple maximal values in a reduced row then the indices of the first maximal value are returned.
-                    np.argmax(eos_match_array, axis=-1),
-                    sampling_log_probs.shape[-1],
-                )
-
-                # negative inf are now set to 0 to allow summing, then summed, then divided by stop_index, then exponentiated
-                # assumption: each sample produces nonzero text
-                sampling_likelihood = np.exp(
-                    np.sum(
-                        np.where(np.isinf(sampling_log_probs), 0, sampling_log_probs),
+                    # gets the max for each of the generated token among all log softmax probs in the vocab
+                    sampling_log_probs = np.max(
+                        F.log_softmax(
+                            torch.stack(sampling_generation_outputs["scores"], dim=1),
+                            dim=-1,
+                        )
+                        .detach()
+                        .cpu()
+                        .numpy(),
                         axis=-1,
                     )
-                    / stop_index
-                )
 
-                sampling_equivalency = (
-                    equivalency_grading(
-                        inputs,
-                        generations,
-                        sampling_generations,
-                        strategy=cs,
+                    # stop early at eos
+                    eos_match_array = (
+                        sampling_generation_outputs["sequences"][
+                            :, generation_inputs.get("input_ids").size(-1) :
+                        ]
+                        .detach()
+                        .cpu()
+                        .numpy()
+                        == tokenizer.eos_token_id
                     )
-                    .detach()
-                    .cpu()
-                    .numpy()
+
+                    has_eos = np.any(eos_match_array, axis=-1)
+
+                    # we want to get the index after the last valid index for each row
+                    stop_index = np.where(
+                        has_eos,
+                        # If there are multiple maximal values in a reduced row then the indices of the first maximal value are returned.
+                        np.argmax(eos_match_array, axis=-1),
+                        sampling_log_probs.shape[-1],
+                    )
+
+                    # negative inf are now set to 0 to allow summing, then summed, then divided by stop_index, then exponentiated
+                    # assumption: each sample produces nonzero text
+                    sampling_likelihood = np.exp(
+                        np.sum(
+                            np.where(np.isinf(sampling_log_probs), 0, sampling_log_probs),
+                            axis=-1,
+                        )
+                        / stop_index
+                    )
+
+                    sampling_equivalency = (
+                        equivalency_grading(
+                            inputs,
+                            generations,
+                            sampling_generations,
+                            strategy=cs,
+                        )
+                        .detach()
+                        .cpu()
+                        .numpy()
+                    )
+
+                    sampling_equivalencies.append(sampling_equivalency)
+                    sampling_likelihoods.append(sampling_likelihood)
+
+                sampling_equivalencies = np.stack(sampling_equivalencies, axis=-1)
+                sampling_likelihoods = np.stack(sampling_likelihoods, axis=-1)
+                normalized_sampling_likelihoods = sampling_likelihoods / np.sum(
+                    sampling_likelihoods, axis=-1, keepdims=True
                 )
 
-                sampling_equivalencies.append(sampling_equivalency)
-                sampling_likelihoods.append(sampling_likelihood)
+                import pdb; pdb.set_trace()
 
-            sampling_equivalencies = np.stack(sampling_equivalencies, axis=-1)
-            sampling_likelihoods = np.stack(sampling_likelihoods, axis=-1)
-            normalized_sampling_likelihoods = sampling_likelihoods / np.sum(
-                sampling_likelihoods, axis=-1, keepdims=True
-            )
-
-            summed_likelihood = np.sum(
-                np.where(
-                    np.expand_dims(sampling_equivalency, axis=-1),
-                    normalized_sampling_likelihoods,
-                    0,
-                ),
-                axis=-1,
-            )
-            sampling_count = (
-                np.sum(sampling_equivalencies, axis=-1)
-                / sampling_equivalencies.shape[-1]
-            )
-
-            [
-                l.append(v)
-                for l, v in zip(
-                    (cs_q_labels[cs], cs_us_likelihood[cs], cs_us_counting[cs]),
-                    accelerator.gather_for_metrics(
-                        (greedy_equivalency_labels, summed_likelihood, sampling_count)
+                summed_likelihood = np.sum(
+                    np.where(
+                        sampling_equivalencies,
+                        normalized_sampling_likelihoods,
+                        0,
                     ),
+                    axis=-1,
                 )
-            ]
+                sampling_count = np.sum(sampling_equivalencies, axis=-1) / sampling_equivalencies.shape[-1]
+                
+
+                [
+                    l.append(v)
+                    for l, v in zip(
+                        (cs_q_labels[cs], cs_us_likelihood[cs], cs_us_counting[cs]),
+                        accelerator.gather_for_metrics(
+                            (greedy_equivalency_labels, summed_likelihood, sampling_count)
+                        ),
+                    )
+                ]
+
+                import pdb; pdb.set_trace()
 
         metrics_dict = {}
         for cs in comparison_strategies:
@@ -360,15 +362,15 @@ def evaluate_oe_uncertainty_sampling(
             # q_acc = (q_pred == q_labels).float().mean(dim=0)
 
         ece_counting, _ = calibration(
-            np.ones_like(greedy_equivalency_labels),
+            np.ones_like(greedy_equivalency_labels.detach().cpu().numpy()),
             greedy_equivalency_labels,
             counting_p,
         )
 
         ece_likelihood, _ = calibration(
-            np.ones_like(greedy_equivalency_labels),
+            np.ones_like(greedy_equivalency_labels.detach().cpu().numpy()),
             greedy_equivalency_labels,
-            counting_p,
+            likelihood_p,
         )
 
         metrics_dict.update(

@@ -1,3 +1,4 @@
+import openai
 from openai import ChatCompletion
 from openai.error import RateLimitError, APIError, Timeout, ServiceUnavailableError
 import torch
@@ -13,6 +14,7 @@ from .llm_utils import (
 
 
 def openai_query(system_prompt, prompt, openai_model_name="gpt-4-1106-preview"):
+    # openai.api_requestor.TIMEOUT_SECS = 50
     sampled_response = None
     while sampled_response is None:
         try:
