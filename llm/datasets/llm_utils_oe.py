@@ -68,7 +68,7 @@ def evaluate_equivalency_with_oracle(
             .replace("<question>", question)
         )
     else:
-        assert(False)
+        raise NotImplementedError
     sampled_response = oracle_fn(
         system_prompt=SYSTEM_PROMPT_ORACLE_EQUIVALENCY, prompt=prompt, **oracle_kwargs
     )
@@ -173,7 +173,9 @@ def equivalency_grading(
 ):
     contexts = [str(LMText.from_(inp)) for inp in inputs]
 
-    query_labels = grade_oe_preds(targets, predictions, contexts, strategy, mode="two-answers")
+    query_labels = grade_oe_preds(
+        targets, predictions, contexts, strategy, mode="two-answers"
+    )
 
     return torch.Tensor(query_labels).long()
 
@@ -183,6 +185,7 @@ def prepare_oe_uncertainty_query(
     inputs,
     targets,
     predictions,
+    query_labels=None,
     strategy="substring",
     format="roman_choice",
 ):
@@ -190,7 +193,9 @@ def prepare_oe_uncertainty_query(
 
     contexts = [str(LMText.from_(inp)) for inp in inputs]
 
-    query_labels = grade_oe_preds(targets, predictions, contexts, strategy, mode="answer-key")
+    query_labels = query_labels or grade_oe_preds(
+        targets, predictions, contexts, strategy, mode="answer-key"
+    )
 
     if format == "roman_choice":
         query_inputs = [

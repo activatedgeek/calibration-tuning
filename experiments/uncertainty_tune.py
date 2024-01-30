@@ -2,7 +2,6 @@ import torch
 from accelerate import PartialState as AcceleratorState
 
 from llm.datasets import get_dataset
-from llm.datasets.llm_utils import tokenize_datasets
 from llm.models import get_model
 from llm.models.peft import get_lora_model, prepare_model_for_temperature_scaling
 from llm.logging import entrypoint
@@ -120,11 +119,9 @@ def main(
             report_to="wandb",
             dataloader_num_workers=4,
             scale_temp=scale_temp,
-            label_names=["output_ids", "query_label"],
+            label_names=train_data.column_names,
         ),
-        train_dataset=tokenize_datasets(
-            tokenizer, train_data, prompt_style=prompt_style
-        )[0],
+        train_dataset=train_data,
         # val_data=val_data,
         # test_data=test_data,
         tokenizer=tokenizer,

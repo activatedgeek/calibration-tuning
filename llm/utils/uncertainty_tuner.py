@@ -7,12 +7,8 @@ from transformers import Trainer
 from transformers.trainer import logger, TRAINING_ARGS_NAME
 from transformers.training_args import TrainingArguments
 
-from ..datasets.llm_utils import (
-    DataCollatorForSupervisedDataset,
-    extract_qa_exact,
-    prepare_query,
-    IGNORE_LABEL,
-)
+from ..datasets import IGNORE_LABEL, DictCollator, LabeledStringDataCollator
+from ..datasets.llm_utils_oe import prepare_oe_uncertainty_query
 from ..eval import evaluate_dataset
 from ..models.peft import save_temperature_scaled_model
 
@@ -33,47 +29,13 @@ class UncertaintyTuner(Trainer):
             *args,
             **kwargs,
             tokenizer=tokenizer,
-            data_collator=DataCollatorForSupervisedDataset(tokenizer),
+            data_collator=DictCollator(),
         )
+
+        self._collate_fn = LabeledStringDataCollator(tokenizer)
 
         self.val_data = val_data
         self.test_data = test_data
-
-    def compute_unc_loss(
-        self,
-        model,
-        inputs,
-        outputs,
-        offline_outputs=None,
-        offline_query_labels=None,
-    ):
-        query_inputs, query_token_vec = prepare_query(
-            self.tokenizer,
-            inputs,
-            outputs,
-            offline_outputs=offline_outputs,
-            offline_query_labels=offline_query_labels,
-            format=self.args.query_format,
-        )
-        query_inputs = self.data_collator(query_inputs)
-
-        query_outputs = model(**query_inputs, scale_temp=self.args.scale_temp)
-
-        _, unc_y, unc_logits = extract_qa_exact(
-            self.tokenizer, query_inputs, outputs=query_outputs
-        )
-        unc_y, unc_logits = (
-            (unc_y.unsqueeze(-1) == query_token_vec).long().argmax(dim=-1),
-            unc_logits[:, query_token_vec],
-        )
-
-        unc_loss = F.cross_entropy(
-            unc_logits,
-            unc_y.to(unc_logits.device),
-            label_smoothing=self.args.unc_label_smoothing,
-        )
-
-        return unc_loss
 
     def compute_kl_loss(self, model, inputs, outputs):
         with torch.inference_mode():
@@ -103,34 +65,73 @@ class UncertaintyTuner(Trainer):
 
         return loss
 
+    def compute_query_loss(self, model, inputs, targets, outputs):
+        if "query_label" in inputs[0]:
+            predictions = [inp.pop("output") for inp in inputs]
+            q_labels = [inp.pop("query_label") for inp in inputs]
+        else:
+            predictions = outputs.logits[:, -1, :].argmax(dim=-1)
+            ## TODO: handle query label construction for mcq.
+            raise NotImplementedError
+
+        q_inputs, q_labels, q_token_vec = prepare_oe_uncertainty_query(
+            self.tokenizer,
+            inputs,
+            targets,
+            predictions,
+            query_labels=q_labels,
+            format=self.args.query_format,
+        )
+
+        q_generation_inputs = {
+            k: v.to(self.accelerator.device)
+            for k, v in self._collate_fn(q_inputs).items()
+        }
+
+        q_generation_outputs = model(**q_generation_inputs)
+        q_logits = q_generation_outputs.logits[..., -1, q_token_vec]
+
+        q_loss = F.cross_entropy(
+            q_logits,
+            q_labels.to(q_logits.device),
+            label_smoothing=self.args.unc_label_smoothing,
+        )
+
+        return q_loss
+
     def compute_loss(self, model, inputs, return_outputs=False):
-        offline_outputs, offline_query_labels = [
-            inputs.pop(k, None) for k in ["output_ids", "query_label"]
-        ]
+        inputs = [dict(zip(inputs.keys(), vals)) for vals in zip(*inputs.values())]
+        targets = [inp.pop("target") for inp in inputs]
 
-        loss, outputs = super().compute_loss(model, inputs, return_outputs=True)
+        loss_inputs = {
+            k: v.to(self.accelerator.device)
+            for k, v in self._collate_fn(
+                [{**inp, "target": t} for inp, t in zip(inputs, targets)]
+            ).items()
+        }
+
+        loss, outputs = super().compute_loss(model, loss_inputs, return_outputs=True)
         if not self.args.use_lm_loss:
-            loss = torch.tensor(0.0).to(loss.device)
+            loss = torch.zeros_like(loss).detach()
 
-        unc_loss = self.compute_unc_loss(
+        q_loss = self.compute_query_loss(
             model,
             inputs,
+            targets,
             outputs,
-            offline_outputs=offline_outputs,
-            offline_query_labels=offline_query_labels,
         )
 
         kl_loss = (
             torch.tensor(0.0)
             if self.args.scale_temp
-            else self.compute_kl_loss(model, inputs, outputs)
+            else self.compute_kl_loss(model, loss_inputs, outputs)
         )
 
-        total_loss = loss + unc_loss + self.args.kl_decay * kl_loss
+        total_loss = loss + q_loss + self.args.kl_decay * kl_loss
 
         loss_metrics = {
             "lm_loss": loss.detach().item(),
-            "unc_loss": unc_loss.detach().item(),
+            "q_loss": q_loss.detach().item(),
             "kl_loss": kl_loss.detach().item(),
         }
 

@@ -9,24 +9,12 @@ IGNORE_LABEL = -100
 
 
 @dataclass
-class StringDataCollator:
-    tokenizer: transformers.PreTrainedTokenizer
-
-    def __call__(self, instances):
-        return self.tokenizer(
-            [str(LMText.from_(instance)) for instance in instances],
-            padding=True,
-            truncation=True,
-            max_length=self.tokenizer.model_max_length,
-            return_tensors="pt",
-        )
-
-
-@dataclass
 class DataCollatorForSupervisedDataset:
     tokenizer: transformers.PreTrainedTokenizer
 
     def __call__(self, instances):
+        raise ValueError("Does not use left padding, and will be erroneous.")
+
         input_ids = [torch.tensor(instance["input_ids"]) for instance in instances]
         input_ids = torch.nn.utils.rnn.pad_sequence(
             input_ids, batch_first=True, padding_value=self.tokenizer.pad_token_id
@@ -165,6 +153,8 @@ def extract_qa_exact(tokenizer, inputs, outputs=None):
     """
     Assumes all answers are 1 token and end immediately with EOS token.
     """
+    raise ValueError("This method should not be used.")
+
     labels = inputs.get("labels")[..., 1:]
 
     eos_idx = labels.eq(tokenizer.eos_token_id).nonzero()[
@@ -230,6 +220,8 @@ def prepare_query(
     offline_query_labels=None,
     format="roman_choice",
 ):
+    raise ValueError("This method must not be used anymore.")
+
     if offline_query_labels is None:
         eos_idx, y, logits = extract_qa_exact(tokenizer, inputs, outputs=outputs)
         y_hat = logits.argmax(dim=-1)

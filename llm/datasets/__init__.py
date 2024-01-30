@@ -2,6 +2,9 @@ from .registry import register_dataset, get_dataset, get_dataset_attrs, list_dat
 from .utils import IndexedDataset, LabelNoiseDataset, get_loader, get_num_workers
 from .combined import get_all_datasets_list
 
+from .llm_utils import IGNORE_LABEL
+from .data_collator import DictCollator, LabeledStringDataCollator
+
 
 __all__ = [
     "register_dataset",
@@ -13,6 +16,9 @@ __all__ = [
     "get_loader",
     "get_num_workers",
     "get_all_datasets_list",
+    "IGNORE_LABEL",
+    "DictCollator",
+    "LabeledStringDataCollator",
 ]
 
 

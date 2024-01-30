@@ -7,7 +7,7 @@ import numpy as np
 import random
 from transformers import GenerationConfig
 
-from llm.datasets.llm_utils import StringDataCollator
+from llm.datasets import LabeledStringDataCollator
 from llm.datasets.llm_utils_oe import (
     prepare_oe_uncertainty_query,
     equivalency_grading,
@@ -35,7 +35,7 @@ def evaluate_oe(
         do_sample=False,
     )
 
-    collate_fn = StringDataCollator(tokenizer)
+    collate_fn = LabeledStringDataCollator(tokenizer)
 
     cs_q_labels = {c: [] for c in comparison_strategies}
     cs_q_logits = {c: [] for c in comparison_strategies}
@@ -161,7 +161,7 @@ def evaluate_oe_uncertainty_sampling(
     )
 
     with FixedSeed(seed):
-        collate_fn = StringDataCollator(tokenizer)
+        collate_fn = LabeledStringDataCollator(tokenizer)
 
         cs_q_labels = {c: [] for c in comparison_strategies}
 
@@ -289,8 +289,8 @@ def evaluate_oe_uncertainty_sampling(
                     .numpy()
                 )
 
-                    sampling_equivalencies.append(sampling_equivalency)
-                    sampling_likelihoods.append(sampling_likelihood)
+                sampling_equivalencies.append(sampling_equivalency)
+                sampling_likelihoods.append(sampling_likelihood)
 
             sampling_equivalencies = np.stack(sampling_equivalencies, axis=-1)
             sampling_likelihoods = np.stack(sampling_likelihoods, axis=-1)
@@ -344,17 +344,16 @@ def evaluate_oe_uncertainty_sampling(
             counting_p,
         )
 
-            metrics_dict.update(
-                {
-                    "N": greedy_equivalency_labels.size(0),
-                    f"{cs}_acc": acc.item(),
-                    f"{cs}_ece_counting": ece_counting,
-                    f"{cs}_ece_likelihood": ece_likelihood,
-                }
-            )
+        metrics_dict.update(
+            {
+                "N": greedy_equivalency_labels.size(0),
+                f"{cs}_acc": acc.item(),
+                f"{cs}_ece_counting": ece_counting,
+                f"{cs}_ece_likelihood": ece_likelihood,
+            }
+        )
 
     return metrics_dict
-
 
 # # https://github.com/tonyzhaozh/few-shot-learning/blob/e04d8643be91c2cce63f33e07760ff75d5aa3ad0/run_extraction.py#L144C9-L144C9
 # # Using the hack of contextual calibration for generation tasks from the original paper.
