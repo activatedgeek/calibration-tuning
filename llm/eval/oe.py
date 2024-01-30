@@ -61,6 +61,15 @@ def evaluate_oe(
             clean_up_tokenization_spaces=False,
         )
 
+        cleaned_generations = []
+        for output_string in generations:
+            output_string = output_string.replace("\n\n","\n")
+            output_string = output_string.replace(":\n",":")
+            output_string = output_string.strip("\n").split("\n")[0]
+            cleaned_generations.append(output_string)
+
+        generations = cleaned_generations
+
         if isinstance(model, PeftModel) and "query" in model.peft_config:
             model.set_adapter("query")
 
@@ -190,6 +199,15 @@ def evaluate_oe_uncertainty_sampling(
                 clean_up_tokenization_spaces=False,
             )
 
+            cleaned_generations = []
+            for output_string in generations:
+                output_string = output_string.replace("\n\n","\n")
+                output_string = output_string.replace(":\n",":")
+                output_string = output_string.strip("\n").split("\n")[0]
+                cleaned_generations.append(output_string)
+
+            generations = cleaned_generations
+
             # page 15 is original algorithm: https://arxiv.org/pdf/2302.09664.pdf
             # our modification is based on finding the likelihood under the sampling procedure of the greedy decoded answer's equivalence class
             # form a cluster based on the equivalency with the greedy decode (but exclude the greedy decode)
@@ -233,6 +251,15 @@ def evaluate_oe_uncertainty_sampling(
                     skip_special_tokens=True,
                     clean_up_tokenization_spaces=False,
                 )
+
+                cleaned_generations = []
+                for output_string in sampling_generations:
+                    output_string = output_string.replace("\n\n","\n")
+                    output_string = output_string.replace(":\n",":")
+                    output_string = output_string.strip("\n").split("\n")[0]
+                    cleaned_generations.append(output_string)
+
+                sampling_generations = cleaned_generations
 
                 # gets the max for each of the generated token among all log softmax probs in the vocab
                 sampling_log_probs = np.max(
