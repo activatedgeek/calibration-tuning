@@ -27,6 +27,7 @@ def evaluate_oe(
     query_format="roman_choice",
     comparison_strategies=None,
     max_new_tokens=100,
+    log_dir=None,
     **_,
 ):
     generation_config = GenerationConfig(
@@ -128,6 +129,10 @@ def evaluate_oe(
                 f"{cs}_ece": ece,
             }
         )
+
+        if log_dir is not None and accelerator.is_main_process:
+            with open(f"{log_dir}/q.pt", "wb") as f:
+                torch.save({"labels": q_labels, "p": q_p}, f)
 
     return metrics_dict
 

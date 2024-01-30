@@ -220,5 +220,6 @@ def sanitize_generations(generations):
         g = g.replace("\n\n", "\n")
         g = g.replace(":\n", ":")
         g = g.strip("\n").split("\n")[0]
+        return g
 
     return list(map(clean, generations))
