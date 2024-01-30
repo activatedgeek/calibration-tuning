@@ -121,6 +121,10 @@ def main(
 
         accelerator.free_memory()
 
+    accelerator.wait_for_everyone()
+    if accelerator.is_main_process:
+        wandb.save(f"{log_dir}/metrics/*", base_path=log_dir)
+
 
 if __name__ == "__main__":
     import fire

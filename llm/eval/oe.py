@@ -150,6 +150,11 @@ def evaluate_oe(
     if log_dir is not None:
         os.makedirs(log_dir, exist_ok=True)
 
+        all_data["evals"] = {
+            k: {qk: torch.cat(qv, dim=0) for qk, qv in v.items()}
+            for k, v in all_data["evals"].items()
+        }
+
         pd.DataFrame(all_data["rows"]).to_csv(
             f"{log_dir}/rows_{accelerator.process_index}.csv", index=False
         )
