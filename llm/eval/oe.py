@@ -4,7 +4,6 @@ import torch.nn.functional as F
 from peft import PeftModel
 import pandas as pd
 import numpy as np
-import random
 from transformers import GenerationConfig
 
 from llm.datasets import LabeledStringDataCollator
@@ -15,6 +14,7 @@ from llm.datasets.llm_utils_oe import (
 from llm.eval.third_party.calibration import calibration
 from llm.utils.generate_utils import generate_output
 from llm.random import FixedSeed
+
 
 @torch.inference_mode()
 def evaluate_oe(
@@ -175,9 +175,8 @@ def evaluate_oe_uncertainty_sampling(
         cs_q_labels = {c: [] for c in comparison_strategies}
 
         cs_us_likelihood = {c: [] for c in comparison_strategies}
-        cs_us_counting   = {c: [] for c in comparison_strategies}
+        cs_us_counting = {c: [] for c in comparison_strategies}
 
-    
         for inputs in tqdm(loader):
             inputs = [dict(zip(inputs.keys(), vals)) for vals in zip(*inputs.values())]
             targets = [inp.pop("target") for inp in inputs]
@@ -230,13 +229,14 @@ def evaluate_oe_uncertainty_sampling(
                     strategy=cs,
                     format=query_format,
                 )
-                greedy_equivalency_labels = greedy_equivalency_labels.to(accelerator.device)
+                greedy_equivalency_labels = greedy_equivalency_labels.to(
+                    accelerator.device
+                )
                 # q_targets = [qi.pop("target") for qi in q_inputs]
 
                 sampling_equivalencies = []
                 sampling_likelihoods = []
                 for _ in range(k):
-
                     sampling_generation_outputs = model.generate(
                         **generation_inputs,
                         generation_config=generation_config_sampling,
@@ -381,6 +381,7 @@ def evaluate_oe_uncertainty_sampling(
         )
 
     return metrics_dict
+
 
 # # https://github.com/tonyzhaozh/few-shot-learning/blob/e04d8643be91c2cce63f33e07760ff75d5aa3ad0/run_extraction.py#L144C9-L144C9
 # # Using the hack of contextual calibration for generation tasks from the original paper.

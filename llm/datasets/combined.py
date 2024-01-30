@@ -128,7 +128,7 @@ def get_combined_dataset(
 
 @register_dataset
 def all_200k(
-    *args, max_n=200_000, prompt_style="choice", seed=137, complement=False, **kwargs
+    *args, max_n=200_000, max_val_n=None, prompt_style="choice", seed=137, complement=False, **kwargs
 ):
     tr, vl, _ = get_combined_dataset(
         all_dataset_names=get_all_datasets_list("all:train", prompt_style=prompt_style),
@@ -141,9 +141,10 @@ def all_200k(
     )
 
     with FixedSeed(seed):
+        max_val_n = max_val_n or max_n
         vl = vl.select(
             np.random.choice(
-                range(min(len(vl), max_n)), min(len(vl), max_n), replace=False
+                range(min(len(vl), max_val_n)), min(len(vl), max_val_n), replace=False
             )
         )
 
@@ -151,18 +152,13 @@ def all_200k(
 
 
 @register_dataset
-def all_200k_uniform(*args, max_n=200_000, **kwargs):
-    return all_200k(*args, max_n=max_n, uniform=True, **kwargs)
-
-
-@register_dataset
-def all_20k_uniform(*args, max_n=20_000, **kwargs):
-    return all_200k_uniform(*args, max_n=max_n, **kwargs)
+def all_20k_uniform(*args, max_n=20_000, max_val_n=5_000, **kwargs):
+    return all_200k(*args, max_n=max_n, max_val_n=max_val_n, uniform=True, **kwargs)
 
 
 @register_dataset
 def all_100_uniform(*args, max_n=100, **kwargs):
-    return all_200k_uniform(*args, max_n=max_n, **kwargs)
+    return all_20k_uniform(*args, max_n=max_n, **kwargs)
 
 
 @register_dataset
