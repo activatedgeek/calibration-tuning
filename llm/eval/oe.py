@@ -1,3 +1,5 @@
+import logging
+import os
 from tqdm.auto import tqdm
 import torch
 import torch.nn.functional as F
@@ -43,6 +45,11 @@ def evaluate_oe(
     cs_q_labels = {c: [] for c in comparison_strategies}
     cs_q_logits = {c: [] for c in comparison_strategies}
 
+    all_data = {
+        "rows": [],
+        "evals": {c: {"q_labels": [], "q_logits": []} for c in comparison_strategies},
+    }
+
     for inputs in tqdm(loader):
         inputs = [dict(zip(inputs.keys(), vals)) for vals in zip(*inputs.values())]
         targets = [inp.pop("target") for inp in inputs]
@@ -66,6 +73,13 @@ def evaluate_oe(
 
         generations = sanitize_generations(generations)
 
+        all_data["rows"].extend(
+            [
+                {**inp, "target": tgt, "output": out}
+                for inp, tgt, out in zip(inputs, targets, generations)
+            ]
+        )
+
         if isinstance(model, PeftModel) and "query" in model.peft_config:
             model.set_adapter("query")
 
@@ -87,6 +101,9 @@ def evaluate_oe(
 
             q_generation_outputs = model(**q_generation_inputs)
             q_logits = q_generation_outputs.logits[..., -1, :]
+
+            all_data["evals"][cs]["q_labels"].append(q_labels.detach())
+            all_data["evals"][cs]["q_logits"].append(q_logits.detach())
 
             [
                 l.append(v)
@@ -130,9 +147,18 @@ def evaluate_oe(
             }
         )
 
-        if log_dir is not None and accelerator.is_main_process:
-            with open(f"{log_dir}/q.pt", "wb") as f:
-                torch.save({"labels": q_labels, "p": q_p}, f)
+    if log_dir is not None:
+        os.makedirs(log_dir, exist_ok=True)
+
+        pd.DataFrame(all_data["rows"]).to_csv(
+            f"{log_dir}/rows_{accelerator.process_index}.csv", index=False
+        )
+        with open(f"{log_dir}/q_{accelerator.process_index}.pt", "wb") as f:
+            torch.save(all_data["evals"], f)
+
+        logging.debug(
+            f"Data saved to '{log_dir}' from process {accelerator.process_index}."
+        )
 
     return metrics_dict
 

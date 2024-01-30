@@ -249,7 +249,7 @@ def evaluate_dataset(
                 accelerator=accelerator,
             ),
             comparison_strategies=comparison_strategies,
-            log_dir=log_dir,
+            log_dir=f"{log_dir}/metrics/train",
         )
         train_metrics["split"] = "train"
 
@@ -270,7 +270,7 @@ def evaluate_dataset(
                 accelerator=accelerator,
             ),
             comparison_strategies=comparison_strategies,
-            log_dir=log_dir,
+            log_dir=f"{log_dir}/metrics/validation",
         )
         val_metrics["split"] = "validation"
 
@@ -291,7 +291,7 @@ def evaluate_dataset(
                 accelerator=accelerator,
             ),
             comparison_strategies=comparison_strategies,
-            log_dir=log_dir,
+            log_dir=f"{log_dir}/metrics/test",
         )
         test_metrics["split"] = "test"
 
