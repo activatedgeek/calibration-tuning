@@ -128,7 +128,9 @@ def evaluate_oe(
             q_p[torch.arange(q_p.size(0)), q_pred],
         )
         q_auroc = roc_auc_score(
-            q_labels.cpu(), q_p[torch.arange(q_p.size(0)), q_pred].cpu()
+            q_labels.cpu(),
+            q_p[torch.arange(q_p.size(0)), q_pred].cpu(),
+            labels=np.array([0, 1]),
         )
         ece, _ = calibration(
             q_labels,
