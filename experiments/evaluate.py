@@ -4,9 +4,7 @@ import wandb
 import pandas as pd
 import torch
 from accelerate import Accelerator
-import sys
-sys.path.append('/workspace/llm-calibration')
-print(sys.path)
+
 from llm.logging import entrypoint, Timer
 from llm.datasets import get_all_datasets_list
 from llm.models import get_model

@@ -229,10 +229,6 @@ def sub_200k_c(*args, max_n=800_000, prompt_style="choice", **kwargs):
     all_dataset_names = get_all_datasets_list("all:train", prompt_style=prompt_style)
     all_dataset_names = all_dataset_names[len(all_dataset_names) // 2 :]
 
-    # all_dataset_names = all_dataset_names[3:]
-    # print(all_dataset_names)
-    # print(1/0)
-
     tr, _, _ = get_combined_dataset(
         all_dataset_names=all_dataset_names,
         *args,
