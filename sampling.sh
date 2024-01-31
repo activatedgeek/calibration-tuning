@@ -1,5 +1,6 @@
 #!/bin/bash
 args=("$@")
+echo "Using subset set ${args[0]}, logging to ${args[1]}"
 if ((${args[0]} == "1")); then
 s=(
     "abstract_algebra"
@@ -68,5 +69,5 @@ fi
 for n in ${s[@]}; 
 do
     echo $n
-    ./autotorchrun experiments/evaluate.py --model_name=llama2_13b_chat --dataset=mmlu:$n --mode=us_oe_fuzzy_gpt-3.5-turbo-1106 --prompt_style=oe --batch_size=16
+    ./autotorchrun experiments/evaluate.py --model_name=llama2_13b_chat --dataset=mmlu:$n --mode=us_oe_fuzzy_gpt-3.5-turbo-1106 --prompt_style=oe --batch_size=16 --log_dir=${args[1]}
 done
