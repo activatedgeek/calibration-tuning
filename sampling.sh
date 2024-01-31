@@ -69,5 +69,5 @@ fi
 for n in ${s[@]}; 
 do
     echo $n
-    ./autotorchrun experiments/evaluate.py --model_name=llama2_13b_chat --dataset=mmlu:$n --mode=us_oe_fuzzy_gpt-3.5-turbo-1106 --prompt_style=oe --batch_size=16 --log_dir=${args[1]}
+    WANDB_MODE=online ./autotorchrun experiments/evaluate.py --model_name=llama2_13b_chat --dataset=mmlu:$n --mode=us_oe_fuzzy_gpt-3.5-turbo-1106 --prompt_style=oe --batch_size=16 --log_dir=${args[1]}
 done
