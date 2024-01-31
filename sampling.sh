@@ -3,23 +3,23 @@ args=("$@")
 echo "Using subset set ${args[0]}, logging to ${args[1]}"
 if ((${args[0]} == "1")); then
 s=(
-    "abstract_algebra"
-    "anatomy"
-    "astronomy"
-    "business_ethics"
-    "clinical_knowledge"
-    "college_biology"
-    "college_chemistry"
-    "college_computer_science"
-    "college_mathematics"
-    "college_medicine"
-    "college_physics"
-    "computer_security"
-    "conceptual_physics"
-    "econometrics"
-    "electrical_engineering"
-    "elementary_mathematics"
-    "formal_logic"
+    # "abstract_algebra"
+    # "anatomy"
+    # "astronomy"
+    # "business_ethics"
+    # "clinical_knowledge"
+    # "college_biology"
+    # "college_chemistry"
+    # "college_computer_science"
+    # "college_mathematics"
+    # "college_medicine"
+    # "college_physics"
+    # "computer_security"
+    # "conceptual_physics"
+    # "econometrics"
+    # "electrical_engineering"
+    # "elementary_mathematics"
+    # "formal_logic"
     "global_facts"
     "high_school_biology"
     "high_school_chemistry"
@@ -69,5 +69,5 @@ fi
 for n in ${s[@]}; 
 do
     echo $n
-    WANDB_MODE=online ./autotorchrun experiments/evaluate.py --model_name=llama2_13b_chat --dataset=mmlu:$n --mode=us_oe_fuzzy_gpt-3.5-turbo-1106 --prompt_style=oe --batch_size=16 --log_dir=${args[1]}
+    WANDB_MODE=online ./autotorchrun experiments/evaluate.py --model_name=llama2_13b_chat --dataset=mmlu:$n --mode=us_oe_fuzzy_gpt-3.5-turbo-1106 --prompt_style=oe --batch_size=16 --log_dir=${args[1]}/$n
 done
