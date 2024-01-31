@@ -1,3 +1,5 @@
+from concurrent.futures import ThreadPoolExecutor
+import openai
 from openai import ChatCompletion
 from openai.error import RateLimitError, APIError, Timeout, ServiceUnavailableError
 import torch
@@ -12,6 +14,7 @@ from .llm_utils import (
 
 
 def openai_query(system_prompt, prompt, openai_model_name="gpt-4-1106-preview"):
+    # openai.api_requestor.TIMEOUT_SECS = 50
     sampled_response = None
     while sampled_response is None:
         try:
@@ -145,6 +148,7 @@ def grade_oe_preds(
     questions,
     comparison_strategy="substring",
     mode="answer-key",
+    max_threads=50
 ):
     # calculate accuracy
     if comparison_strategy == "substring":
@@ -160,8 +164,21 @@ def grade_oe_preds(
         )
     else:
         raise ValueError(f"Invalid comparison strategy {comparison_strategy}")
-    acc = [comparison_fn(t, p, q) for t, p, q in zip(true, pred, questions)]
+    with ThreadPoolExecutor(min(max_threads, len(true))) as p:
+        acc = list(
+            p.map(comparison_fn, true, pred, questions) 
+        )
     return acc
+
+
+def newline_strip(
+    input_string
+):
+    output_string = input_string
+    output_string = output_string.replace("\n\n","\n")
+    output_string = output_string.replace(":\n",":")
+    output_string = output_string.strip("\n").split("\n")[0]
+    return output_string
 
 
 def equivalency_grading(

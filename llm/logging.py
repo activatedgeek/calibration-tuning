@@ -192,7 +192,7 @@ def entrypoint(main):
     def _main(log_dir=None, **kwargs):
         with accelerator.main_process_first():
             log_dir, finish_logging = set_logging(log_dir=log_dir)
-            kwargs = {**kwargs, **maybe_load_wandb_kwargs(log_dir)}
+            kwargs = {**maybe_load_wandb_kwargs(log_dir), **kwargs}
 
         if accelerator.is_main_process:
             logging.info(f"Working with {accelerator.num_processes} process(es).")
@@ -206,7 +206,7 @@ def entrypoint(main):
             if accelerator.is_main_process:
                 wandb.agent(
                     os.environ.get(WANDB_SWEEP_ID_NAME),
-                    function=lambda **agent_kwargs: _main(**kwargs, **agent_kwargs),
+                    function=lambda **agent_kwargs: _main(**agent_kwargs, **kwargs),
                     count=1,
                 )
             else:

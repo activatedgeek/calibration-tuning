@@ -11,7 +11,7 @@ from .oe import (
     evaluate_oe,
     # evaluate_contextual_calibration_oe,
     evaluate_oe_uncertainty_sampling,
-    evaluate_verbal_elicitation_oe,
+    # evaluate_verbal_elicitation_oe,
 )
 
 EVALUATE_MODE_FN_MAP = {
@@ -21,7 +21,7 @@ EVALUATE_MODE_FN_MAP = {
     "oe": evaluate_oe,
     "us_oe": evaluate_oe_uncertainty_sampling,
     # "cc_oe": evaluate_contextual_calibration_oe,
-    "ve_oe": evaluate_verbal_elicitation_oe,
+    # "ve_oe": evaluate_verbal_elicitation_oe,
 }
 
 VERBAL_ELICITATION_MAP = {
@@ -249,7 +249,7 @@ def evaluate_dataset(
                 accelerator=accelerator,
             ),
             comparison_strategies=comparison_strategies,
-            log_dir=log_dir,
+            log_dir=f"{log_dir}/metrics/train",
         )
         train_metrics["split"] = "train"
 
@@ -270,7 +270,7 @@ def evaluate_dataset(
                 accelerator=accelerator,
             ),
             comparison_strategies=comparison_strategies,
-            log_dir=log_dir,
+            log_dir=f"{log_dir}/metrics/validation",
         )
         val_metrics["split"] = "validation"
 
@@ -291,7 +291,7 @@ def evaluate_dataset(
                 accelerator=accelerator,
             ),
             comparison_strategies=comparison_strategies,
-            log_dir=log_dir,
+            log_dir=f"{log_dir}/metrics/test",
         )
         test_metrics["split"] = "test"
 

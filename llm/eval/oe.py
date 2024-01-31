@@ -1,3 +1,5 @@
+import logging
+import os
 from tqdm.auto import tqdm
 import torch
 import torch.nn.functional as F
@@ -14,7 +16,8 @@ from llm.datasets.llm_utils_oe import (
     sanitize_generations,
 )
 from llm.eval.third_party.calibration import calibration
-from llm.utils.generate_utils import generate_output
+
+# from llm.utils.generate_utils import generate_output
 from llm.random import FixedSeed
 
 
@@ -43,6 +46,11 @@ def evaluate_oe(
     cs_q_labels = {c: [] for c in comparison_strategies}
     cs_q_logits = {c: [] for c in comparison_strategies}
 
+    all_data = {
+        "rows": [],
+        "evals": {c: {"q_labels": [], "q_logits": []} for c in comparison_strategies},
+    }
+
     for inputs in tqdm(loader):
         inputs = [dict(zip(inputs.keys(), vals)) for vals in zip(*inputs.values())]
         targets = [inp.pop("target") for inp in inputs]
@@ -66,6 +74,13 @@ def evaluate_oe(
 
         generations = sanitize_generations(generations)
 
+        all_data["rows"].extend(
+            [
+                {**inp, "target": tgt, "output": out}
+                for inp, tgt, out in zip(inputs, targets, generations)
+            ]
+        )
+
         if isinstance(model, PeftModel) and "query" in model.peft_config:
             model.set_adapter("query")
 
@@ -87,6 +102,9 @@ def evaluate_oe(
 
             q_generation_outputs = model(**q_generation_inputs)
             q_logits = q_generation_outputs.logits[..., -1, :]
+
+            all_data["evals"][cs]["q_labels"].append(q_labels.detach())
+            all_data["evals"][cs]["q_logits"].append(q_logits.detach())
 
             [
                 l.append(v)
@@ -110,9 +128,17 @@ def evaluate_oe(
             q_pred,
             q_p[torch.arange(q_p.size(0)), q_pred],
         )
-        q_auroc = roc_auc_score(
-            q_labels.cpu(), q_p[torch.arange(q_p.size(0)), q_pred].cpu()
-        )
+
+        try:
+            q_auroc = roc_auc_score(
+                q_labels.cpu(),
+                q_p[torch.arange(q_p.size(0)), q_pred].cpu(),
+                labels=np.array([0, 1]),
+            )
+        except ValueError:
+            logging.warning(f"AUROC calculation failed.")
+            q_auroc = float("nan")
+        
         ece, _ = calibration(
             q_labels,
             q_pred,
@@ -130,9 +156,23 @@ def evaluate_oe(
             }
         )
 
-        if log_dir is not None and accelerator.is_main_process:
-            with open(f"{log_dir}/q.pt", "wb") as f:
-                torch.save({"labels": q_labels, "p": q_p}, f)
+    if log_dir is not None:
+        os.makedirs(log_dir, exist_ok=True)
+
+        all_data["evals"] = {
+            k: {qk: torch.cat(qv, dim=0) for qk, qv in v.items()}
+            for k, v in all_data["evals"].items()
+        }
+
+        pd.DataFrame(all_data["rows"]).to_csv(
+            f"{log_dir}/rows_{accelerator.process_index}.csv", index=False
+        )
+        with open(f"{log_dir}/q_{accelerator.process_index}.pt", "wb") as f:
+            torch.save(all_data["evals"], f)
+
+        logging.debug(
+            f"Data saved to '{log_dir}' from process {accelerator.process_index}."
+        )
 
     return metrics_dict
 
@@ -147,10 +187,10 @@ def evaluate_oe_uncertainty_sampling(
     query_format="roman_choice",
     comparison_strategies=None,
     max_new_tokens=30,
-    # output_row_path=None,
     top_p=0.95,
     k=10,
     seed=1,
+    log_dir=None,
     **_,
 ):
     assert prompt_style == "oe"
@@ -180,6 +220,19 @@ def evaluate_oe_uncertainty_sampling(
 
         cs_us_likelihood = {c: [] for c in comparison_strategies}
         cs_us_counting = {c: [] for c in comparison_strategies}
+
+        all_data = {
+            "rows": [],
+            "evals": {
+                c: {
+                    "q_labels": [],
+                    "summed_likelihood": [],
+                    "sampling_count": [],
+                    "sampling_equivalencies": [],
+                }
+                for c in comparison_strategies
+            },
+        }
 
         for inputs in tqdm(loader):
             inputs = [dict(zip(inputs.keys(), vals)) for vals in zip(*inputs.values())]
@@ -231,8 +284,8 @@ def evaluate_oe_uncertainty_sampling(
                 )
                 # q_targets = [qi.pop("target") for qi in q_inputs]
 
-                sampling_equivalencies = []
                 sampling_likelihoods = []
+                sampling_generations_list = []
                 for _ in range(k):
                     sampling_generation_outputs = model.generate(
                         **generation_inputs,
@@ -241,102 +294,131 @@ def evaluate_oe_uncertainty_sampling(
                         output_scores=True,
                     )
 
-                sampling_generations = tokenizer.batch_decode(
-                    sampling_generation_outputs["sequences"][
-                        :, generation_inputs.get("input_ids").size(-1) :
-                    ],
-                    skip_special_tokens=True,
-                    clean_up_tokenization_spaces=False,
-                )
-
-                sampling_generations = sanitize_generations(sampling_generations)
-
-                # gets the max for each of the generated token among all log softmax probs in the vocab
-                sampling_log_probs = np.max(
-                    F.log_softmax(
-                        torch.stack(sampling_generation_outputs["scores"], dim=1),
-                        dim=-1,
+                    sampling_generations = tokenizer.batch_decode(
+                        sampling_generation_outputs["sequences"][
+                            :, generation_inputs.get("input_ids").size(-1) :
+                        ],
+                        skip_special_tokens=True,
+                        clean_up_tokenization_spaces=False,
                     )
-                    .detach()
-                    .cpu()
-                    .numpy(),
-                    axis=-1,
-                )
 
-                # stop early at eos or newline
-                eos_match_array = (
-                    sampling_generation_outputs["sequences"][
-                        :, generation_inputs.get("input_ids").size(-1) :
-                    ]
-                    .detach()
-                    .cpu()
-                    .numpy()
-                    == tokenizer.eos_token_id
-                )
+                    sampling_generations = sanitize_generations(sampling_generations)
 
-                has_eos = np.any(eos_match_array, axis=-1)
-
-                # we want to get the index after the last valid index for each row
-                stop_index = np.where(
-                    has_eos,
-                    # If there are multiple maximal values in a reduced row then the indices of the first maximal value are returned.
-                    np.argmax(eos_match_array, axis=-1),
-                    sampling_log_probs.shape[-1],
-                )
-
-                # negative inf are now set to 0 to allow summing, then summed, then divided by stop_index, then exponentiated
-                # assumption: each sample produces nonzero text
-                sampling_likelihood = np.exp(
-                    np.sum(
-                        np.where(np.isinf(sampling_log_probs), 0, sampling_log_probs),
+                    # gets the max for each of the generated token among all log softmax probs in the vocab
+                    sampling_log_probs = np.max(
+                        F.log_softmax(
+                            torch.stack(sampling_generation_outputs["scores"], dim=1),
+                            dim=-1,
+                        )
+                        .detach()
+                        .cpu()
+                        .numpy(),
                         axis=-1,
                     )
-                    / stop_index
-                )
 
-                sampling_equivalency = (
+                    # stop early at eos
+                    eos_match_array = (
+                        sampling_generation_outputs["sequences"][
+                            :, generation_inputs.get("input_ids").size(-1) :
+                        ]
+                        .detach()
+                        .cpu()
+                        .numpy()
+                        == tokenizer.eos_token_id
+                    )
+
+                    has_eos = np.any(eos_match_array, axis=-1)
+
+                    # we want to get the index after the last valid index for each row
+                    stop_index = np.where(
+                        has_eos,
+                        # If there are multiple maximal values in a reduced row then the indices of the first maximal value are returned.
+                        np.argmax(eos_match_array, axis=-1),
+                        sampling_log_probs.shape[-1],
+                    )
+
+                    # negative inf are now set to 0 to allow summing, then summed, then divided by stop_index, then exponentiated
+                    # assumption: each sample produces nonzero text
+                    sampling_likelihood = np.exp(
+                        np.sum(
+                            np.where(
+                                np.isinf(sampling_log_probs), 0, sampling_log_probs
+                            ),
+                            axis=-1,
+                        )
+                        / stop_index
+                    )
+
+                    sampling_likelihoods.append(sampling_likelihood)
+                    sampling_generations_list.append(sampling_generations)
+
+                sampling_equivalencies = np.reshape(
                     equivalency_grading(
-                        inputs,
-                        generations,
-                        sampling_generations,
+                        inputs * k,
+                        generations * k,
+                        sum(sampling_generations_list, []),
                         strategy=cs,
                     )
                     .detach()
                     .cpu()
-                    .numpy()
+                    .numpy(),
+                    (-1, k),
                 )
 
-                sampling_equivalencies.append(sampling_equivalency)
-                sampling_likelihoods.append(sampling_likelihood)
+                sampling_likelihoods = np.stack(sampling_likelihoods, axis=-1)
+                normalized_sampling_likelihoods = sampling_likelihoods / np.sum(
+                    sampling_likelihoods, axis=-1, keepdims=True
+                )
 
-            sampling_equivalencies = np.stack(sampling_equivalencies, axis=-1)
-            sampling_likelihoods = np.stack(sampling_likelihoods, axis=-1)
-            normalized_sampling_likelihoods = sampling_likelihoods / np.sum(
-                sampling_likelihoods, axis=-1, keepdims=True
-            )
-
-            summed_likelihood = np.sum(
-                np.where(
-                    np.expand_dims(sampling_equivalency, axis=-1),
-                    normalized_sampling_likelihoods,
-                    0,
-                ),
-                axis=-1,
-            )
-            sampling_count = (
-                np.sum(sampling_equivalencies, axis=-1)
-                / sampling_equivalencies.shape[-1]
-            )
-
-            [
-                l.append(v)
-                for l, v in zip(
-                    (cs_q_labels[cs], cs_us_likelihood[cs], cs_us_counting[cs]),
-                    accelerator.gather_for_metrics(
-                        (greedy_equivalency_labels, summed_likelihood, sampling_count)
+                summed_likelihood = np.sum(
+                    np.where(
+                        sampling_equivalencies,
+                        normalized_sampling_likelihoods,
+                        0,
                     ),
+                    axis=-1,
                 )
-            ]
+                sampling_count = (
+                    np.sum(sampling_equivalencies, axis=-1)
+                    / sampling_equivalencies.shape[-1]
+                )
+
+                all_data["rows"].extend(
+                    [
+                        {
+                            **inp,
+                            "target": tgt,
+                            "output": out,
+                            "samples": sps,
+                        }
+                        for inp, tgt, out, sps in zip(
+                            inputs, targets, generations, sampling_generations_list
+                        )
+                    ]
+                )
+
+                all_data["evals"][cs]["q_labels"].append(
+                    greedy_equivalency_labels.detach().cpu().numpy()
+                )
+                all_data["evals"][cs]["summed_likelihood"].append(summed_likelihood)
+                all_data["evals"][cs]["sampling_count"].append(sampling_count)
+                all_data["evals"][cs]["sampling_equivalencies"].append(
+                    sampling_equivalencies
+                )
+
+                [
+                    l.append(v)
+                    for l, v in zip(
+                        (cs_q_labels[cs], cs_us_likelihood[cs], cs_us_counting[cs]),
+                        accelerator.gather_for_metrics(
+                            (
+                                greedy_equivalency_labels,
+                                summed_likelihood,
+                                sampling_count,
+                            )
+                        ),
+                    )
+                ]
 
         metrics_dict = {}
         for cs in comparison_strategies:
@@ -350,15 +432,15 @@ def evaluate_oe_uncertainty_sampling(
             # q_acc = (q_pred == q_labels).float().mean(dim=0)
 
         ece_counting, _ = calibration(
-            np.ones_like(greedy_equivalency_labels),
+            np.ones_like(greedy_equivalency_labels.detach().cpu().numpy()),
             greedy_equivalency_labels,
             counting_p,
         )
 
         ece_likelihood, _ = calibration(
-            np.ones_like(greedy_equivalency_labels),
+            np.ones_like(greedy_equivalency_labels.detach().cpu().numpy()),
             greedy_equivalency_labels,
-            counting_p,
+            likelihood_p,
         )
 
         metrics_dict.update(
@@ -368,6 +450,27 @@ def evaluate_oe_uncertainty_sampling(
                 f"{cs}_ece_counting": ece_counting,
                 f"{cs}_ece_likelihood": ece_likelihood,
             }
+        )
+
+    if log_dir is not None:
+        os.makedirs(log_dir, exist_ok=True)
+        os.makedirs(os.path.join(log_dir, "sampling"), exist_ok=True)
+
+        all_data["evals"] = {
+            k: {qk: np.concatenate(qv, axis=0) for qk, qv in v.items()}
+            for k, v in all_data["evals"].items()
+        }
+
+        pd.DataFrame(all_data["rows"]).to_csv(
+            f"{log_dir}/rows_{accelerator.process_index}.csv", index=False
+        )
+        with open(
+            os.path.join(log_dir, "sampling", "q_{accelerator.process_index}.pt"), "wb"
+        ) as f:
+            torch.save(all_data["evals"], f)
+
+        logging.debug(
+            f"Data saved to {os.path.join(log_dir, 'sampling')} from process {accelerator.process_index}."
         )
 
     return metrics_dict
@@ -725,169 +828,169 @@ def parse_verbal_elicitation_oe(
     return output, y, logits
 
 
-@torch.inference_mode()
-def evaluate_verbal_elicitation_oe(
-    ve_style,
-    accelerator,
-    model,
-    tokenizer,
-    loader,
-    prompt_style="oe",
-    comparison_strategies=None,
-    max_new_tokens=30,
-    output_row_path=None,
-    **_,
-):
-    assert prompt_style == "oe"
-    assert (not comparison_strategies is None) and len(comparison_strategies) > 0
+# @torch.inference_mode()
+# def evaluate_verbal_elicitation_oe(
+#     ve_style,
+#     accelerator,
+#     model,
+#     tokenizer,
+#     loader,
+#     prompt_style="oe",
+#     comparison_strategies=None,
+#     max_new_tokens=30,
+#     output_row_path=None,
+#     **_,
+# ):
+#     assert prompt_style == "oe"
+#     assert (not comparison_strategies is None) and len(comparison_strategies) > 0
 
-    device = accelerator.device
+#     device = accelerator.device
 
-    stages, guess_style = ve_style.split("s")
-    stages = int(stages)
-    num_guesses = int(guess_style[0])
-    max_new_tokens = max(30 * num_guesses, max_new_tokens)
+#     stages, guess_style = ve_style.split("s")
+#     stages = int(stages)
+#     num_guesses = int(guess_style[0])
+#     max_new_tokens = max(30 * num_guesses, max_new_tokens)
 
-    generation_config = GenerationConfig(
-        pad_token_id=tokenizer.pad_token_id,
-        bos_token_id=tokenizer.bos_token_id,
-        eos_token_id=tokenizer.eos_token_id,
-        max_new_tokens=max_new_tokens,
-    )
+#     generation_config = GenerationConfig(
+#         pad_token_id=tokenizer.pad_token_id,
+#         bos_token_id=tokenizer.bos_token_id,
+#         eos_token_id=tokenizer.eos_token_id,
+#         max_new_tokens=max_new_tokens,
+#     )
 
-    all_unc_y, all_unc_logits = {c: [] for c in comparison_strategies}, {
-        c: [] for c in comparison_strategies
-    }
-    all_acc = {c: [] for c in comparison_strategies}
-    all_oe_target_strings, all_output_strings, all_question_strings = [], [], []
+#     all_unc_y, all_unc_logits = {c: [] for c in comparison_strategies}, {
+#         c: [] for c in comparison_strategies
+#     }
+#     all_acc = {c: [] for c in comparison_strategies}
+#     all_oe_target_strings, all_output_strings, all_question_strings = [], [], []
 
-    output_generator = generate_output(
-        accelerator,
-        model,
-        tokenizer,
-        loader,
-        prompt_style=prompt_style,
-        generation_config=generation_config,
-    )
+#     output_generator = generate_output(
+#         accelerator,
+#         model,
+#         tokenizer,
+#         loader,
+#         prompt_style=prompt_style,
+#         generation_config=generation_config,
+#     )
 
-    # i = 0
-    # for example in output_generator:
-    #     from pprint import pprint
-    #     pprint(example)
+#     # i = 0
+#     # for example in output_generator:
+#     #     from pprint import pprint
+#     #     pprint(example)
 
-    #     parse_verbal_elicitation_oe(
-    #         example["output"], ve_style, stage=1
-    #     )
-    #     # print("\n")
-    #     i += 1
-    #     if i > 10:
-    #         break
+#     #     parse_verbal_elicitation_oe(
+#     #         example["output"], ve_style, stage=1
+#     #     )
+#     #     # print("\n")
+#     #     i += 1
+#     #     if i > 10:
+#     #         break
 
-    # print(1/0)
+#     # print(1/0)
 
-    for example in output_generator:
-        output, raw_input, target = (
-            example["output"],
-            example["raw_input"],
-            example["target"],
-        )
+#     for example in output_generator:
+#         output, raw_input, target = (
+#             example["output"],
+#             example["raw_input"],
+#             example["target"],
+#         )
 
-        output, unc_y, unc_logits = parse_verbal_elicitation_oe(
-            output, ve_style, stage=1
-        )
+#         output, unc_y, unc_logits = parse_verbal_elicitation_oe(
+#             output, ve_style, stage=1
+#         )
 
-        unc_y = unc_y.to(device)
-        unc_logits = unc_logits.to(device)
+#         unc_y = unc_y.to(device)
+#         unc_logits = unc_logits.to(device)
 
-        input_question_string = example["context"]
-        oe_target_strings = [target]
-        output_strings = [output]
-        question_strings = [input_question_string]
+#         input_question_string = example["context"]
+#         oe_target_strings = [target]
+#         output_strings = [output]
+#         question_strings = [input_question_string]
 
-        for c in comparison_strategies:
-            acc = torch.tensor(
-                grade_oe_preds(
-                    oe_target_strings,
-                    output_strings,
-                    question_strings,
-                    comparison_strategy=c,
-                )
-            ).to(device)
+#         for c in comparison_strategies:
+#             acc = torch.tensor(
+#                 grade_oe_preds(
+#                     oe_target_strings,
+#                     output_strings,
+#                     question_strings,
+#                     comparison_strategy=c,
+#                 )
+#             ).to(device)
 
-            [
-                l.append(v)
-                for l, v in zip(
-                    (all_unc_y[c], all_unc_logits[c], all_acc[c]),
-                    (unc_y, unc_logits, acc),
-                )
-            ]
+#             [
+#                 l.append(v)
+#                 for l, v in zip(
+#                     (all_unc_y[c], all_unc_logits[c], all_acc[c]),
+#                     (unc_y, unc_logits, acc),
+#                 )
+#             ]
 
-        [
-            l.append(v)
-            for l, v in zip(
-                (all_oe_target_strings, all_output_strings, all_question_strings),
-                (oe_target_strings, output_strings, question_strings),
-            )
-        ]
+#         [
+#             l.append(v)
+#             for l, v in zip(
+#                 (all_oe_target_strings, all_output_strings, all_question_strings),
+#                 (oe_target_strings, output_strings, question_strings),
+#             )
+#         ]
 
-    all_oe_target_strings, all_output_strings, all_question_strings = (
-        sum(all_oe_target_strings, []),
-        sum(all_output_strings, []),
-        sum(all_question_strings, []),
-    )
+#     all_oe_target_strings, all_output_strings, all_question_strings = (
+#         sum(all_oe_target_strings, []),
+#         sum(all_output_strings, []),
+#         sum(all_question_strings, []),
+#     )
 
-    return_dict = {}
-    # note if using multiple gpus/processes, these string lists will be incomplete.
-    dump = {
-        "oe_target_strings": all_oe_target_strings,
-        "output_strings": all_output_strings,
-        "question_strings": all_question_strings,
-    }
+#     return_dict = {}
+#     # note if using multiple gpus/processes, these string lists will be incomplete.
+#     dump = {
+#         "oe_target_strings": all_oe_target_strings,
+#         "output_strings": all_output_strings,
+#         "question_strings": all_question_strings,
+#     }
 
-    for c in comparison_strategies:
-        all_unc_y_c, all_unc_p, all_acc_c = [
-            torch.cat(l, dim=0) for l in (all_unc_y[c], all_unc_logits[c], all_acc[c])
-        ]
+#     for c in comparison_strategies:
+#         all_unc_y_c, all_unc_p, all_acc_c = [
+#             torch.cat(l, dim=0) for l in (all_unc_y[c], all_unc_logits[c], all_acc[c])
+#         ]
 
-        acc = all_acc_c.float().mean()
+#         acc = all_acc_c.float().mean()
 
-        all_unc_y_c = (
-            (all_unc_y_c.unsqueeze(-1) == torch.arange(2).to(device))
-            .long()
-            .argmax(dim=-1)
-        )
-        all_unc_y_hat = all_unc_p.argmax(dim=-1)
-        unc_acc = (all_unc_y_c == all_unc_y_hat).float().mean()
-        unc_ece, _ = calibration(
-            all_unc_y_c,
-            all_unc_y_hat,
-            all_unc_p[torch.arange(all_unc_p.size(0)), all_unc_y_hat],
-        )
+#         all_unc_y_c = (
+#             (all_unc_y_c.unsqueeze(-1) == torch.arange(2).to(device))
+#             .long()
+#             .argmax(dim=-1)
+#         )
+#         all_unc_y_hat = all_unc_p.argmax(dim=-1)
+#         unc_acc = (all_unc_y_c == all_unc_y_hat).float().mean()
+#         unc_ece, _ = calibration(
+#             all_unc_y_c,
+#             all_unc_y_hat,
+#             all_unc_p[torch.arange(all_unc_p.size(0)), all_unc_y_hat],
+#         )
 
-        return_dict.update(
-            {
-                f"{c}_acc": acc.item(),
-                f"{c}_unc_acc": unc_acc.item(),
-                f"{c}_unc_ece": unc_ece,
-                "N": all_unc_p.size(0),
-            }
-        )
+#         return_dict.update(
+#             {
+#                 f"{c}_acc": acc.item(),
+#                 f"{c}_unc_acc": unc_acc.item(),
+#                 f"{c}_unc_ece": unc_ece,
+#                 "N": all_unc_p.size(0),
+#             }
+#         )
 
-        dump.update(
-            {
-                f"{c}_acc": all_acc_c.cpu().numpy(),
-                f"{c}_all_unc_y": all_unc_y_c.cpu().numpy(),
-                f"{c}_all_unc_y_hat": all_unc_y_hat.cpu().numpy(),
-                f"{c}_unc_acc": unc_acc.item(),
-                f"{c}_unc_ece": unc_ece,
-            }
-        )
+#         dump.update(
+#             {
+#                 f"{c}_acc": all_acc_c.cpu().numpy(),
+#                 f"{c}_all_unc_y": all_unc_y_c.cpu().numpy(),
+#                 f"{c}_all_unc_y_hat": all_unc_y_hat.cpu().numpy(),
+#                 f"{c}_unc_acc": unc_acc.item(),
+#                 f"{c}_unc_ece": unc_ece,
+#             }
+#         )
 
-    if accelerator.num_processes == 1 and output_row_path is not None:
-        # create parent dir if it doesn't exist
-        import os
+#     if accelerator.num_processes == 1 and output_row_path is not None:
+#         # create parent dir if it doesn't exist
+#         import os
 
-        os.makedirs(os.path.dirname(output_row_path), exist_ok=True)
-        pd.DataFrame(dump).to_csv(output_row_path, escapechar="\\")
+#         os.makedirs(os.path.dirname(output_row_path), exist_ok=True)
+#         pd.DataFrame(dump).to_csv(output_row_path, escapechar="\\")
 
-    return return_dict
+#     return return_dict
