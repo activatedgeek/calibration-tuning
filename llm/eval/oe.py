@@ -16,6 +16,7 @@ from llm.datasets.llm_utils_oe import (
     sanitize_generations,
 )
 from llm.eval.third_party.calibration import calibration
+
 # from llm.utils.generate_utils import generate_output
 from llm.random import FixedSeed
 
@@ -127,9 +128,17 @@ def evaluate_oe(
             q_pred,
             q_p[torch.arange(q_p.size(0)), q_pred],
         )
-        q_auroc = roc_auc_score(
-            q_labels.cpu(), q_p[torch.arange(q_p.size(0)), q_pred].cpu()
-        )
+
+        try:
+            q_auroc = roc_auc_score(
+                q_labels.cpu(),
+                q_p[torch.arange(q_p.size(0)), q_pred].cpu(),
+                labels=np.array([0, 1]),
+            )
+        except ValueError:
+            logging.warning(f"AUROC calculation failed.")
+            q_auroc = float("nan")
+        
         ece, _ = calibration(
             q_labels,
             q_pred,
@@ -215,7 +224,12 @@ def evaluate_oe_uncertainty_sampling(
         all_data = {
             "rows": [],
             "evals": {
-                c: {"q_labels": [], "summed_likelihood": [], "sampling_count": [], "sampling_equivalencies": []} 
+                c: {
+                    "q_labels": [],
+                    "summed_likelihood": [],
+                    "sampling_count": [],
+                    "sampling_equivalencies": [],
+                }
                 for c in comparison_strategies
             },
         }
@@ -327,7 +341,9 @@ def evaluate_oe_uncertainty_sampling(
                     # assumption: each sample produces nonzero text
                     sampling_likelihood = np.exp(
                         np.sum(
-                            np.where(np.isinf(sampling_log_probs), 0, sampling_log_probs),
+                            np.where(
+                                np.isinf(sampling_log_probs), 0, sampling_log_probs
+                            ),
                             axis=-1,
                         )
                         / stop_index
@@ -336,19 +352,17 @@ def evaluate_oe_uncertainty_sampling(
                     sampling_likelihoods.append(sampling_likelihood)
                     sampling_generations_list.append(sampling_generations)
 
-                sampling_equivalencies = (
-                    np.reshape(
-                        equivalency_grading(
-                            inputs*k,
-                            generations*k,
-                            sum(sampling_generations_list, []),
-                            strategy=cs,
-                        )
-                        .detach()
-                        .cpu()
-                        .numpy(),
-                        (-1, k)
+                sampling_equivalencies = np.reshape(
+                    equivalency_grading(
+                        inputs * k,
+                        generations * k,
+                        sum(sampling_generations_list, []),
+                        strategy=cs,
                     )
+                    .detach()
+                    .cpu()
+                    .numpy(),
+                    (-1, k),
                 )
 
                 sampling_likelihoods = np.stack(sampling_likelihoods, axis=-1)
@@ -364,8 +378,11 @@ def evaluate_oe_uncertainty_sampling(
                     ),
                     axis=-1,
                 )
-                sampling_count = np.sum(sampling_equivalencies, axis=-1) / sampling_equivalencies.shape[-1]
-                
+                sampling_count = (
+                    np.sum(sampling_equivalencies, axis=-1)
+                    / sampling_equivalencies.shape[-1]
+                )
+
                 all_data["rows"].extend(
                     [
                         {
@@ -374,21 +391,31 @@ def evaluate_oe_uncertainty_sampling(
                             "output": out,
                             "samples": sps,
                         }
-                        for inp, tgt, out, sps in zip(inputs, targets, generations, sampling_generations_list)
+                        for inp, tgt, out, sps in zip(
+                            inputs, targets, generations, sampling_generations_list
+                        )
                     ]
                 )
 
-                all_data["evals"][cs]["q_labels"].append(greedy_equivalency_labels.detach().cpu().numpy())
+                all_data["evals"][cs]["q_labels"].append(
+                    greedy_equivalency_labels.detach().cpu().numpy()
+                )
                 all_data["evals"][cs]["summed_likelihood"].append(summed_likelihood)
                 all_data["evals"][cs]["sampling_count"].append(sampling_count)
-                all_data["evals"][cs]["sampling_equivalencies"].append(sampling_equivalencies)
+                all_data["evals"][cs]["sampling_equivalencies"].append(
+                    sampling_equivalencies
+                )
 
                 [
                     l.append(v)
                     for l, v in zip(
                         (cs_q_labels[cs], cs_us_likelihood[cs], cs_us_counting[cs]),
                         accelerator.gather_for_metrics(
-                            (greedy_equivalency_labels, summed_likelihood, sampling_count)
+                            (
+                                greedy_equivalency_labels,
+                                summed_likelihood,
+                                sampling_count,
+                            )
                         ),
                     )
                 ]
