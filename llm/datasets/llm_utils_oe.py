@@ -8,7 +8,6 @@ import time
 
 from .llm_utils import (
     IGNORE_LABEL,
-    tokenize_for_causal_lm,
     get_token_vec,
     LMText,
 )
@@ -233,56 +232,11 @@ def prepare_oe_uncertainty_query(
     )
 
 
-def prepare_oe_calibration_query(
-    tokenizer,
-    true,
-    pred,
-    questions,
-    format="roman_choice",
-    comparison_strategy="substring",
-):
-    acc = grade_oe_preds(true, pred, questions, comparison_strategy, mode="answer-key")
+def sanitize_generations(generations):
+    def clean(g):
+        g = g.replace("\n\n", "\n")
+        g = g.replace(":\n", ":")
+        g = g.strip("\n").split("\n")[0]
+        return g
 
-    if format == "bool":
-        ## NOTE: Probably don't use, often seems to be biased towards a yes.
-        query_inputs = [
-            tokenize_for_causal_lm(
-                tokenizer,
-                {
-                    "context": f"{r}\n\nIs the proposed answer correct? ",
-                    "target": ("yes" if a else "no"),
-                },
-                prompt_style="choice",
-            )
-            for r, a in zip(pred, acc)
-        ]
-    elif format == "alpha_choice":
-        query_inputs = [
-            tokenize_for_causal_lm(
-                tokenizer,
-                {
-                    "context": f"{r}\n\nIs the proposed answer correct?\n\nChoices:\n(a): no\n(b): yes",
-                    "target_prompt": "\nAnswer:",
-                    "target": ("b" if a else "a"),
-                },
-                prompt_style="choice",
-            )
-            for r, a in zip(pred, acc)
-        ]
-    elif format == "roman_choice":
-        query_inputs = [
-            tokenize_for_causal_lm(
-                tokenizer,
-                {
-                    "context": f"{r}\n\nIs the proposed answer correct?\n\nChoices:\n(i): no\n(ii): yes",
-                    "target_prompt": "\nAnswer:",
-                    "target": ("ii" if a else "i"),
-                },
-                prompt_style="choice",
-            )
-            for r, a in zip(pred, acc)
-        ]
-    else:
-        raise NotImplementedError
-
-    return query_inputs, torch.Tensor([1 if a else 0 for a in acc])
+    return list(map(clean, generations))

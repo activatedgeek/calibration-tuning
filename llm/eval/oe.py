@@ -1,21 +1,24 @@
+import logging
+import os
 from tqdm.auto import tqdm
 import torch
 import torch.nn.functional as F
 from peft import PeftModel
 import pandas as pd
 import numpy as np
-import random
 from transformers import GenerationConfig
+from sklearn.metrics import roc_auc_score
 
 from llm.datasets import LabeledStringDataCollator
 from llm.datasets.llm_utils_oe import (
     prepare_oe_uncertainty_query,
     equivalency_grading,
-    newline_strip
+    sanitize_generations,
 )
 from llm.eval.third_party.calibration import calibration
 # from llm.utils.generate_utils import generate_output
 from llm.random import FixedSeed
+
 
 @torch.inference_mode()
 def evaluate_oe(
@@ -26,6 +29,7 @@ def evaluate_oe(
     query_format="roman_choice",
     comparison_strategies=None,
     max_new_tokens=100,
+    log_dir=None,
     **_,
 ):
     generation_config = GenerationConfig(
@@ -40,6 +44,11 @@ def evaluate_oe(
 
     cs_q_labels = {c: [] for c in comparison_strategies}
     cs_q_logits = {c: [] for c in comparison_strategies}
+
+    all_data = {
+        "rows": [],
+        "evals": {c: {"q_labels": [], "q_logits": []} for c in comparison_strategies},
+    }
 
     for inputs in tqdm(loader):
         inputs = [dict(zip(inputs.keys(), vals)) for vals in zip(*inputs.values())]
@@ -62,7 +71,14 @@ def evaluate_oe(
             clean_up_tokenization_spaces=False,
         )
 
-        generations = [newline_strip(s) for s in generations]
+        generations = sanitize_generations(generations)
+
+        all_data["rows"].extend(
+            [
+                {**inp, "target": tgt, "output": out}
+                for inp, tgt, out in zip(inputs, targets, generations)
+            ]
+        )
 
         if isinstance(model, PeftModel) and "query" in model.peft_config:
             model.set_adapter("query")
@@ -86,6 +102,9 @@ def evaluate_oe(
             q_generation_outputs = model(**q_generation_inputs)
             q_logits = q_generation_outputs.logits[..., -1, :]
 
+            all_data["evals"][cs]["q_labels"].append(q_labels.detach())
+            all_data["evals"][cs]["q_logits"].append(q_logits.detach())
+
             [
                 l.append(v)
                 for l, v in zip(
@@ -108,6 +127,9 @@ def evaluate_oe(
             q_pred,
             q_p[torch.arange(q_p.size(0)), q_pred],
         )
+        q_auroc = roc_auc_score(
+            q_labels.cpu(), q_p[torch.arange(q_p.size(0)), q_pred].cpu()
+        )
         ece, _ = calibration(
             q_labels,
             q_pred,
@@ -119,9 +141,28 @@ def evaluate_oe(
                 "N": q_labels.size(0),
                 f"{cs}_acc": acc.item(),
                 f"{cs}_unc_acc": q_acc.item(),
+                f"{cs}_unc_auroc": q_auroc,
                 f"{cs}_unc_ece": q_ece,
                 f"{cs}_ece": ece,
             }
+        )
+
+    if log_dir is not None:
+        os.makedirs(log_dir, exist_ok=True)
+
+        all_data["evals"] = {
+            k: {qk: torch.cat(qv, dim=0) for qk, qv in v.items()}
+            for k, v in all_data["evals"].items()
+        }
+
+        pd.DataFrame(all_data["rows"]).to_csv(
+            f"{log_dir}/rows_{accelerator.process_index}.csv", index=False
+        )
+        with open(f"{log_dir}/q_{accelerator.process_index}.pt", "wb") as f:
+            torch.save(all_data["evals"], f)
+
+        logging.debug(
+            f"Data saved to '{log_dir}' from process {accelerator.process_index}."
         )
 
     return metrics_dict
@@ -169,9 +210,8 @@ def evaluate_oe_uncertainty_sampling(
         cs_q_labels = {c: [] for c in comparison_strategies}
 
         cs_us_likelihood = {c: [] for c in comparison_strategies}
-        cs_us_counting   = {c: [] for c in comparison_strategies}
+        cs_us_counting = {c: [] for c in comparison_strategies}
 
-    
         for inputs in tqdm(loader):
             inputs = [dict(zip(inputs.keys(), vals)) for vals in zip(*inputs.values())]
             targets = [inp.pop("target") for inp in inputs]
@@ -193,7 +233,7 @@ def evaluate_oe_uncertainty_sampling(
                 clean_up_tokenization_spaces=False,
             )
 
-            generations = [newline_strip(s) for s in generations]
+            generations = sanitize_generations(generations)
 
             # page 15 is original algorithm: https://arxiv.org/pdf/2302.09664.pdf
             # our modification is based on finding the likelihood under the sampling procedure of the greedy decoded answer's equivalence class
@@ -217,13 +257,14 @@ def evaluate_oe_uncertainty_sampling(
                     strategy=cs,
                     format=query_format,
                 )
-                greedy_equivalency_labels = greedy_equivalency_labels.to(accelerator.device)
+                greedy_equivalency_labels = greedy_equivalency_labels.to(
+                    accelerator.device
+                )
                 # q_targets = [qi.pop("target") for qi in q_inputs]
 
                 sampling_likelihoods = []
                 sampling_generations_list = []
                 for _ in range(k):
-
                     sampling_generation_outputs = model.generate(
                         **generation_inputs,
                         generation_config=generation_config_sampling,
@@ -239,7 +280,7 @@ def evaluate_oe_uncertainty_sampling(
                         clean_up_tokenization_spaces=False,
                     )
 
-                    sampling_generations = [newline_strip(s) for s in sampling_generations]
+                sampling_generations = sanitize_generations(sampling_generations)
 
                     # gets the max for each of the generated token among all log softmax probs in the vocab
                     sampling_log_probs = np.max(
@@ -361,6 +402,7 @@ def evaluate_oe_uncertainty_sampling(
         )
 
     return metrics_dict
+
 
 # # https://github.com/tonyzhaozh/few-shot-learning/blob/e04d8643be91c2cce63f33e07760ff75d5aa3ad0/run_extraction.py#L144C9-L144C9
 # # Using the hack of contextual calibration for generation tasks from the original paper.

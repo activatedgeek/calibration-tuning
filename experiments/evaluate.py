@@ -73,7 +73,7 @@ def main(
         peft_dir=query_peft_dir or peft_dir,
         is_trainable=False,
         adapter_name="query",
-    ).to(accelerator.local_process_index)
+    )
 
     if scale_temp:
         prepare_model_for_temperature_scaling(
@@ -122,8 +122,8 @@ def main(
         accelerator.free_memory()
 
     accelerator.wait_for_everyone()
-    if accelerator.process_index == 0:
-        pd.DataFrame(all_metrics).to_csv(f"{log_dir}/metrics.csv", index=False)
+    if accelerator.is_main_process:
+        wandb.save(f"{log_dir}/metrics/*", base_path=log_dir)
 
 
 if __name__ == "__main__":

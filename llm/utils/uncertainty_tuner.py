@@ -9,7 +9,6 @@ from transformers.training_args import TrainingArguments
 
 from ..datasets import IGNORE_LABEL, DictCollator, LabeledStringDataCollator
 from ..datasets.llm_utils_oe import prepare_oe_uncertainty_query
-from ..eval import evaluate_dataset
 from ..models.peft import save_temperature_scaled_model
 
 
@@ -24,18 +23,14 @@ class UncertaintyTuner(Trainer):
         kl_decay: float = field(default=0.0)
         scale_temp: bool = field(default=False)
 
-    def __init__(self, *args, tokenizer=None, val_data=None, test_data=None, **kwargs):
+    def __init__(self, *args, **kwargs):
         super().__init__(
             *args,
             **kwargs,
-            tokenizer=tokenizer,
             data_collator=DictCollator(),
         )
 
-        self._collate_fn = LabeledStringDataCollator(tokenizer)
-
-        self.val_data = val_data
-        self.test_data = test_data
+        self._collate_fn = LabeledStringDataCollator(self.tokenizer)
 
     def compute_kl_loss(self, model, inputs, outputs):
         with torch.inference_mode():
@@ -127,8 +122,6 @@ class UncertaintyTuner(Trainer):
             else self.compute_kl_loss(model, loss_inputs, outputs)
         )
 
-        total_loss = loss + q_loss + self.args.kl_decay * kl_loss
-
         loss_metrics = {
             "lm_loss": loss.detach().item(),
             "q_loss": q_loss.detach().item(),
@@ -138,35 +131,14 @@ class UncertaintyTuner(Trainer):
         if (self.state.global_step + 1) % self.args.logging_steps == 0:
             self.log(loss_metrics)
 
+        total_loss = loss + q_loss + self.args.kl_decay * kl_loss
+
         return (total_loss, outputs) if return_outputs else total_loss
 
-    @torch.inference_mode()
+    ## Skip eval.
     def evaluate(self, *_, **__):
         # metrics = super().evaluate(eval_dataset, ignore_keys, metric_key_prefix)
         metrics = {}
-
-        val_metrics, test_metrics = evaluate_dataset(
-            self.accelerator,
-            self.model,
-            self.tokenizer,
-            None,
-            train_data=False,
-            seed=self.args.seed,
-            val_data=self.val_data,
-            test_data=self.test_data,
-            prompt_style="choice",
-        )
-
-        if val_metrics is not None:
-            val_metrics = {f"eval/{k}": v for k, v in val_metrics.items()}
-            self.log(val_metrics)
-            metrics.update(val_metrics)
-
-        if test_metrics is not None:
-            test_metrics = {f"test/{k}": v for k, v in test_metrics.items()}
-            self.log(test_metrics)
-            metrics.update(test_metrics)
-
         return metrics
 
     def _save(self, output_dir=None, state_dict=None):

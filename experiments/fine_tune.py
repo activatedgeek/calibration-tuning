@@ -2,7 +2,6 @@ import torch
 from accelerate import PartialState as AcceleratorState
 
 from llm.datasets import get_dataset
-from llm.datasets.llm_utils import tokenize_datasets
 from llm.models import get_model
 from llm.models.peft import get_lora_model, prepare_model_for_temperature_scaling
 from llm.logging import entrypoint
@@ -69,7 +68,7 @@ def main(
         prepare_model_for_temperature_scaling(model, is_trainable=True)
 
     with accelerator.main_process_first():
-        train_data, val_data, test_data = get_dataset(
+        train_data, _, _ = get_dataset(
             dataset,
             root=data_dir,
             tokenizer=tokenizer,
@@ -84,8 +83,8 @@ def main(
         args=FineTuner.Args(
             seed=seed,
             fsdp=False,
-            fp16=False,
-            bf16=False,
+            fp16=not torch.cuda.is_bf16_supported() and not model.is_loaded_in_8bit,
+            bf16=torch.cuda.is_bf16_supported() and not model.is_loaded_in_8bit,
             gradient_checkpointing=False,
             ddp_find_unused_parameters=False,
             max_steps=max_steps,
@@ -106,12 +105,9 @@ def main(
             report_to="wandb",
             dataloader_num_workers=4,
             scale_temp=scale_temp,
+            label_names=train_data.column_names,
         ),
-        train_dataset=tokenize_datasets(
-            tokenizer, train_data, prompt_style=prompt_style
-        )[0],
-        val_data=val_data,
-        test_data=test_data,
+        train_dataset=train_data,
         tokenizer=tokenizer,
         callbacks=[
             WandbConfigUpdateCallback(

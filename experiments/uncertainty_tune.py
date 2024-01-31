@@ -75,7 +75,7 @@ def main(
             peft_dir=peft_dir,
             is_trainable=False,
             adapter_name="_ref",
-        ).to(accelerator.local_process_index)
+        )
 
     with accelerator.main_process_first():
         train_data, _, _ = get_dataset(
@@ -93,8 +93,8 @@ def main(
         args=UncertaintyTuner.Args(
             seed=seed,
             fsdp=False,
-            fp16=False,
-            bf16=False,
+            fp16=not torch.cuda.is_bf16_supported() and not model.is_loaded_in_8bit,
+            bf16=torch.cuda.is_bf16_supported() and not model.is_loaded_in_8bit,
             gradient_checkpointing=False,
             ddp_find_unused_parameters=False,
             max_steps=max_steps,
@@ -122,8 +122,6 @@ def main(
             label_names=train_data.column_names,
         ),
         train_dataset=train_data,
-        # val_data=val_data,
-        # test_data=test_data,
         tokenizer=tokenizer,
         callbacks=[
             WandbConfigUpdateCallback(

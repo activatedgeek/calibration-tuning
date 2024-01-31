@@ -1,5 +1,4 @@
 import logging
-import os
 from functools import partial
 
 from ..datasets import get_dataset, get_loader
@@ -250,9 +249,7 @@ def evaluate_dataset(
                 accelerator=accelerator,
             ),
             comparison_strategies=comparison_strategies,
-            output_row_path=os.path.join(log_dir, dataset, "train.csv")
-            if log_dir is not None
-            else None,
+            log_dir=f"{log_dir}/metrics/train",
         )
         train_metrics["split"] = "train"
 
@@ -273,9 +270,7 @@ def evaluate_dataset(
                 accelerator=accelerator,
             ),
             comparison_strategies=comparison_strategies,
-            output_row_path=os.path.join(log_dir, dataset, "val.csv")
-            if log_dir is not None
-            else None,
+            log_dir=f"{log_dir}/metrics/validation",
         )
         val_metrics["split"] = "validation"
 
@@ -296,9 +291,7 @@ def evaluate_dataset(
                 accelerator=accelerator,
             ),
             comparison_strategies=comparison_strategies,
-            output_row_path=os.path.join(log_dir, dataset, "test.csv")
-            if log_dir is not None
-            else None,
+            log_dir=f"{log_dir}/metrics/test",
         )
         test_metrics["split"] = "test"
 

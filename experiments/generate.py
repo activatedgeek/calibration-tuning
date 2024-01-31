@@ -7,12 +7,11 @@ from tqdm.auto import tqdm
 from transformers import GenerationConfig
 
 from llm.datasets import get_dataset, get_loader
-from llm.datasets.llm_utils import LMText
 from llm.models import get_model
 from llm.models.peft import get_lora_model
 from llm.logging import entrypoint
 
-from llm.datasets.llm_utils_oe import prepare_oe_calibration_query
+from llm.datasets.llm_utils_oe import prepare_oe_uncertainty_query
 
 from llm.utils.generate_utils import generate_output
 
@@ -82,7 +81,7 @@ def generate_outputs_main(
     model.eval()
 
     with accelerator.main_process_first():
-        train_data, _, _ = get_dataset(
+        data_splits = get_dataset(
             dataset,
             root=data_dir,
             tokenizer=tokenizer,
@@ -91,6 +90,8 @@ def generate_outputs_main(
             use_cache=use_dataset_cache,
             prompt_style=prompt_style,
         )
+        data_splits = list(filter(lambda x: x is not None, data_splits))
+        data_split_names = ["train", "validation", "test"][: len(data_splits)]
 
     generation_config = GenerationConfig(
         pad_token_id=tokenizer.pad_token_id,
@@ -99,7 +100,7 @@ def generate_outputs_main(
         max_new_tokens=max_new_tokens,
     )
 
-    for data, split in zip([train_data], ["train"]):
+    for data, split in zip(data_splits, data_split_names):
         loader = get_loader(
             data,
             batch_size=batch_size,
@@ -132,48 +133,25 @@ def generate_query_label(
     tokenizer,
     loader,
     query_format="roman_choice",
-    comparison_strategy="substring",
+    strategy="substring",
 ):
     for inputs in tqdm(loader):
-        inputs_list = []
-        for i in range(len(inputs[next(iter(inputs))])):
-            new_dict = {key: value[i] for key, value in inputs.items()}
-            inputs_list.append(new_dict)
+        inputs = [dict(zip(inputs.keys(), vals)) for vals in zip(*inputs.values())]
+        targets = [inp.pop("target") for inp in inputs]
+        outputs = [inp.pop("output") for inp in inputs]
 
-        question_strings = []
-        for x in inputs_list:
-            x.pop("target")
-            question_strings.append(str(LMText.from_(x)))
-
-        output_strings = inputs["output"]
-        oe_target_strings = inputs["target"]
-        # Find the rightmost occurrence of the eos token.
-        for i, x in enumerate(oe_target_strings):
-            index = x.rfind(tokenizer.eos_token)
-            if index != -1:
-                # Everything before the substring + everything after the substring
-                oe_target_strings[i] = x[:index]
-
-        _, acc = prepare_oe_calibration_query(
+        _, query_labels, _ = prepare_oe_uncertainty_query(
             tokenizer,
-            oe_target_strings,
-            output_strings,
-            question_strings,
+            inputs,
+            targets,
+            outputs,
             format=query_format,
-            comparison_strategy=comparison_strategy,
+            strategy=strategy,
         )
 
         outputs = [
-            LMText(**{**dict(zip(inputs.keys(), vals)), "target": ""})
-            for vals in zip(*inputs.values())
-        ]
-        outputs = [
-            {
-                **s.to_pydict(),
-                "target": inputs["target"][i],
-                "query_label": int(t.item()),
-            }
-            for i, (s, t) in enumerate(zip(outputs, acc))
+            {**inp, "target": tgt, "output": out, "query_label": int(ql.item())}
+            for inp, tgt, out, ql in zip(inputs, targets, outputs, query_labels)
         ]
 
         yield from outputs
@@ -217,7 +195,7 @@ def generate_labels_main(
     )
 
     with accelerator.main_process_first():
-        train_data, _, _ = get_dataset(
+        data_splits = get_dataset(
             dataset,
             root=data_dir,
             tokenizer=tokenizer,
@@ -225,8 +203,10 @@ def generate_labels_main(
             num_workers=num_workers,
             use_cache=use_dataset_cache,
         )
+        data_splits = list(filter(lambda x: x is not None, data_splits))
+        data_split_names = ["train", "validation", "test"][: len(data_splits)]
 
-    for data, split in zip([train_data], ["train"]):
+    for data, split in zip(data_splits, data_split_names):
         loader = get_loader(
             data,
             batch_size=batch_size,
@@ -238,7 +218,7 @@ def generate_labels_main(
             accelerator,
             tokenizer,
             loader,
-            comparison_strategy=strategy,
+            strategy=strategy,
         )
 
         csv_path = f"{log_dir}/labels/{split}"

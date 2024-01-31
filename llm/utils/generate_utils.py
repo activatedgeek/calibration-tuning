@@ -3,7 +3,7 @@ import torch.nn.functional as F
 from tqdm.auto import tqdm
 from peft import PeftModel
 
-from llm.datasets.llm_utils import StringDataCollator
+from llm.datasets import LabeledStringDataCollator
 
 
 def generate_output(
@@ -15,7 +15,7 @@ def generate_output(
     generation_config_sampling=None,
     n_samples=0,
 ):
-    collate_fn = StringDataCollator(tokenizer)
+    collate_fn = LabeledStringDataCollator(tokenizer)
 
     for inputs in tqdm(loader):
         inputs = [dict(zip(inputs.keys(), vals)) for vals in zip(*inputs.values())]
