@@ -123,7 +123,7 @@ def main(
 
     accelerator.wait_for_everyone()
     if accelerator.is_main_process:
-        wandb.save(f"/metrics/*", base_path=log_dir)
+        wandb.save(f"{log_dir}/metrics/*", base_path=log_dir)
 
 
 if __name__ == "__main__":
