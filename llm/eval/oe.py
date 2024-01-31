@@ -437,7 +437,7 @@ def evaluate_oe_uncertainty_sampling(
         pd.DataFrame(all_data["rows"]).to_csv(
             f"{log_dir}/rows_{accelerator.process_index}.csv", index=False
         )
-        with open(os.path.join(log_dir, "sampling", "q_{accelerator.process_index}.pt"), "wb") as f:
+        with open(os.path.join(log_dir, "sampling", f"q_{accelerator.process_index}.pt"), "wb") as f:
             torch.save(all_data["evals"], f)
 
         logging.debug(
