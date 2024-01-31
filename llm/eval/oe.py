@@ -178,10 +178,10 @@ def evaluate_oe_uncertainty_sampling(
     query_format="roman_choice",
     comparison_strategies=None,
     max_new_tokens=30,
-    # output_row_path=None,
     top_p=0.95,
     k=10,
     seed=1,
+    log_dir=None,
     **_,
 ):
     assert prompt_style == "oe"
@@ -211,6 +211,14 @@ def evaluate_oe_uncertainty_sampling(
 
         cs_us_likelihood = {c: [] for c in comparison_strategies}
         cs_us_counting = {c: [] for c in comparison_strategies}
+
+        all_data = {
+            "rows": [],
+            "evals": {
+                c: {"q_labels": [], "summed_likelihood": [], "sampling_count": [], "sampling_equivalencies": []} 
+                for c in comparison_strategies
+            },
+        }
 
         for inputs in tqdm(loader):
             inputs = [dict(zip(inputs.keys(), vals)) for vals in zip(*inputs.values())]
@@ -280,7 +288,7 @@ def evaluate_oe_uncertainty_sampling(
                         clean_up_tokenization_spaces=False,
                     )
 
-                sampling_generations = sanitize_generations(sampling_generations)
+                    sampling_generations = sanitize_generations(sampling_generations)
 
                     # gets the max for each of the generated token among all log softmax probs in the vocab
                     sampling_log_probs = np.max(
@@ -326,14 +334,14 @@ def evaluate_oe_uncertainty_sampling(
                     )
 
                     sampling_likelihoods.append(sampling_likelihood)
-                    sampling_generations_list += sampling_generations
+                    sampling_generations_list.append(sampling_generations)
 
                 sampling_equivalencies = (
                     np.reshape(
                         equivalency_grading(
                             inputs*k,
                             generations*k,
-                            sampling_generations_list,
+                            sum(sampling_generations_list, []),
                             strategy=cs,
                         )
                         .detach()
@@ -358,6 +366,22 @@ def evaluate_oe_uncertainty_sampling(
                 )
                 sampling_count = np.sum(sampling_equivalencies, axis=-1) / sampling_equivalencies.shape[-1]
                 
+                all_data["rows"].extend(
+                    [
+                        {
+                            **inp,
+                            "target": tgt,
+                            "output": out,
+                            "samples": sps,
+                        }
+                        for inp, tgt, out, sps in zip(inputs, targets, generations, sampling_generations_list)
+                    ]
+                )
+
+                all_data["evals"][cs]["q_labels"].append(greedy_equivalency_labels.detach().cpu().numpy())
+                all_data["evals"][cs]["summed_likelihood"].append(summed_likelihood)
+                all_data["evals"][cs]["sampling_count"].append(sampling_count)
+                all_data["evals"][cs]["sampling_equivalencies"].append(sampling_equivalencies)
 
                 [
                     l.append(v)
@@ -399,6 +423,25 @@ def evaluate_oe_uncertainty_sampling(
                 f"{cs}_ece_counting": ece_counting,
                 f"{cs}_ece_likelihood": ece_likelihood,
             }
+        )
+
+    if log_dir is not None:
+        os.makedirs(log_dir, exist_ok=True)
+        os.makedirs(os.path.join(log_dir, "sampling"), exist_ok=True)
+
+        all_data["evals"] = {
+            k: {qk: np.concatenate(qv, axis=0) for qk, qv in v.items()}
+            for k, v in all_data["evals"].items()
+        }
+
+        pd.DataFrame(all_data["rows"]).to_csv(
+            f"{log_dir}/rows_{accelerator.process_index}.csv", index=False
+        )
+        with open(os.path.join(log_dir, "sampling", "q_{accelerator.process_index}.pt"), "wb") as f:
+            torch.save(all_data["evals"], f)
+
+        logging.debug(
+            f"Data saved to {os.path.join(log_dir, 'sampling')} from process {accelerator.process_index}."
         )
 
     return metrics_dict
@@ -756,169 +799,169 @@ def parse_verbal_elicitation_oe(
     return output, y, logits
 
 
-@torch.inference_mode()
-def evaluate_verbal_elicitation_oe(
-    ve_style,
-    accelerator,
-    model,
-    tokenizer,
-    loader,
-    prompt_style="oe",
-    comparison_strategies=None,
-    max_new_tokens=30,
-    output_row_path=None,
-    **_,
-):
-    assert prompt_style == "oe"
-    assert (not comparison_strategies is None) and len(comparison_strategies) > 0
+# @torch.inference_mode()
+# def evaluate_verbal_elicitation_oe(
+#     ve_style,
+#     accelerator,
+#     model,
+#     tokenizer,
+#     loader,
+#     prompt_style="oe",
+#     comparison_strategies=None,
+#     max_new_tokens=30,
+#     output_row_path=None,
+#     **_,
+# ):
+#     assert prompt_style == "oe"
+#     assert (not comparison_strategies is None) and len(comparison_strategies) > 0
 
-    device = accelerator.device
+#     device = accelerator.device
 
-    stages, guess_style = ve_style.split("s")
-    stages = int(stages)
-    num_guesses = int(guess_style[0])
-    max_new_tokens = max(30 * num_guesses, max_new_tokens)
+#     stages, guess_style = ve_style.split("s")
+#     stages = int(stages)
+#     num_guesses = int(guess_style[0])
+#     max_new_tokens = max(30 * num_guesses, max_new_tokens)
 
-    generation_config = GenerationConfig(
-        pad_token_id=tokenizer.pad_token_id,
-        bos_token_id=tokenizer.bos_token_id,
-        eos_token_id=tokenizer.eos_token_id,
-        max_new_tokens=max_new_tokens,
-    )
+#     generation_config = GenerationConfig(
+#         pad_token_id=tokenizer.pad_token_id,
+#         bos_token_id=tokenizer.bos_token_id,
+#         eos_token_id=tokenizer.eos_token_id,
+#         max_new_tokens=max_new_tokens,
+#     )
 
-    all_unc_y, all_unc_logits = {c: [] for c in comparison_strategies}, {
-        c: [] for c in comparison_strategies
-    }
-    all_acc = {c: [] for c in comparison_strategies}
-    all_oe_target_strings, all_output_strings, all_question_strings = [], [], []
+#     all_unc_y, all_unc_logits = {c: [] for c in comparison_strategies}, {
+#         c: [] for c in comparison_strategies
+#     }
+#     all_acc = {c: [] for c in comparison_strategies}
+#     all_oe_target_strings, all_output_strings, all_question_strings = [], [], []
 
-    output_generator = generate_output(
-        accelerator,
-        model,
-        tokenizer,
-        loader,
-        prompt_style=prompt_style,
-        generation_config=generation_config,
-    )
+#     output_generator = generate_output(
+#         accelerator,
+#         model,
+#         tokenizer,
+#         loader,
+#         prompt_style=prompt_style,
+#         generation_config=generation_config,
+#     )
 
-    # i = 0
-    # for example in output_generator:
-    #     from pprint import pprint
-    #     pprint(example)
+#     # i = 0
+#     # for example in output_generator:
+#     #     from pprint import pprint
+#     #     pprint(example)
 
-    #     parse_verbal_elicitation_oe(
-    #         example["output"], ve_style, stage=1
-    #     )
-    #     # print("\n")
-    #     i += 1
-    #     if i > 10:
-    #         break
+#     #     parse_verbal_elicitation_oe(
+#     #         example["output"], ve_style, stage=1
+#     #     )
+#     #     # print("\n")
+#     #     i += 1
+#     #     if i > 10:
+#     #         break
 
-    # print(1/0)
+#     # print(1/0)
 
-    for example in output_generator:
-        output, raw_input, target = (
-            example["output"],
-            example["raw_input"],
-            example["target"],
-        )
+#     for example in output_generator:
+#         output, raw_input, target = (
+#             example["output"],
+#             example["raw_input"],
+#             example["target"],
+#         )
 
-        output, unc_y, unc_logits = parse_verbal_elicitation_oe(
-            output, ve_style, stage=1
-        )
+#         output, unc_y, unc_logits = parse_verbal_elicitation_oe(
+#             output, ve_style, stage=1
+#         )
 
-        unc_y = unc_y.to(device)
-        unc_logits = unc_logits.to(device)
+#         unc_y = unc_y.to(device)
+#         unc_logits = unc_logits.to(device)
 
-        input_question_string = example["context"]
-        oe_target_strings = [target]
-        output_strings = [output]
-        question_strings = [input_question_string]
+#         input_question_string = example["context"]
+#         oe_target_strings = [target]
+#         output_strings = [output]
+#         question_strings = [input_question_string]
 
-        for c in comparison_strategies:
-            acc = torch.tensor(
-                grade_oe_preds(
-                    oe_target_strings,
-                    output_strings,
-                    question_strings,
-                    comparison_strategy=c,
-                )
-            ).to(device)
+#         for c in comparison_strategies:
+#             acc = torch.tensor(
+#                 grade_oe_preds(
+#                     oe_target_strings,
+#                     output_strings,
+#                     question_strings,
+#                     comparison_strategy=c,
+#                 )
+#             ).to(device)
 
-            [
-                l.append(v)
-                for l, v in zip(
-                    (all_unc_y[c], all_unc_logits[c], all_acc[c]),
-                    (unc_y, unc_logits, acc),
-                )
-            ]
+#             [
+#                 l.append(v)
+#                 for l, v in zip(
+#                     (all_unc_y[c], all_unc_logits[c], all_acc[c]),
+#                     (unc_y, unc_logits, acc),
+#                 )
+#             ]
 
-        [
-            l.append(v)
-            for l, v in zip(
-                (all_oe_target_strings, all_output_strings, all_question_strings),
-                (oe_target_strings, output_strings, question_strings),
-            )
-        ]
+#         [
+#             l.append(v)
+#             for l, v in zip(
+#                 (all_oe_target_strings, all_output_strings, all_question_strings),
+#                 (oe_target_strings, output_strings, question_strings),
+#             )
+#         ]
 
-    all_oe_target_strings, all_output_strings, all_question_strings = (
-        sum(all_oe_target_strings, []),
-        sum(all_output_strings, []),
-        sum(all_question_strings, []),
-    )
+#     all_oe_target_strings, all_output_strings, all_question_strings = (
+#         sum(all_oe_target_strings, []),
+#         sum(all_output_strings, []),
+#         sum(all_question_strings, []),
+#     )
 
-    return_dict = {}
-    # note if using multiple gpus/processes, these string lists will be incomplete.
-    dump = {
-        "oe_target_strings": all_oe_target_strings,
-        "output_strings": all_output_strings,
-        "question_strings": all_question_strings,
-    }
+#     return_dict = {}
+#     # note if using multiple gpus/processes, these string lists will be incomplete.
+#     dump = {
+#         "oe_target_strings": all_oe_target_strings,
+#         "output_strings": all_output_strings,
+#         "question_strings": all_question_strings,
+#     }
 
-    for c in comparison_strategies:
-        all_unc_y_c, all_unc_p, all_acc_c = [
-            torch.cat(l, dim=0) for l in (all_unc_y[c], all_unc_logits[c], all_acc[c])
-        ]
+#     for c in comparison_strategies:
+#         all_unc_y_c, all_unc_p, all_acc_c = [
+#             torch.cat(l, dim=0) for l in (all_unc_y[c], all_unc_logits[c], all_acc[c])
+#         ]
 
-        acc = all_acc_c.float().mean()
+#         acc = all_acc_c.float().mean()
 
-        all_unc_y_c = (
-            (all_unc_y_c.unsqueeze(-1) == torch.arange(2).to(device))
-            .long()
-            .argmax(dim=-1)
-        )
-        all_unc_y_hat = all_unc_p.argmax(dim=-1)
-        unc_acc = (all_unc_y_c == all_unc_y_hat).float().mean()
-        unc_ece, _ = calibration(
-            all_unc_y_c,
-            all_unc_y_hat,
-            all_unc_p[torch.arange(all_unc_p.size(0)), all_unc_y_hat],
-        )
+#         all_unc_y_c = (
+#             (all_unc_y_c.unsqueeze(-1) == torch.arange(2).to(device))
+#             .long()
+#             .argmax(dim=-1)
+#         )
+#         all_unc_y_hat = all_unc_p.argmax(dim=-1)
+#         unc_acc = (all_unc_y_c == all_unc_y_hat).float().mean()
+#         unc_ece, _ = calibration(
+#             all_unc_y_c,
+#             all_unc_y_hat,
+#             all_unc_p[torch.arange(all_unc_p.size(0)), all_unc_y_hat],
+#         )
 
-        return_dict.update(
-            {
-                f"{c}_acc": acc.item(),
-                f"{c}_unc_acc": unc_acc.item(),
-                f"{c}_unc_ece": unc_ece,
-                "N": all_unc_p.size(0),
-            }
-        )
+#         return_dict.update(
+#             {
+#                 f"{c}_acc": acc.item(),
+#                 f"{c}_unc_acc": unc_acc.item(),
+#                 f"{c}_unc_ece": unc_ece,
+#                 "N": all_unc_p.size(0),
+#             }
+#         )
 
-        dump.update(
-            {
-                f"{c}_acc": all_acc_c.cpu().numpy(),
-                f"{c}_all_unc_y": all_unc_y_c.cpu().numpy(),
-                f"{c}_all_unc_y_hat": all_unc_y_hat.cpu().numpy(),
-                f"{c}_unc_acc": unc_acc.item(),
-                f"{c}_unc_ece": unc_ece,
-            }
-        )
+#         dump.update(
+#             {
+#                 f"{c}_acc": all_acc_c.cpu().numpy(),
+#                 f"{c}_all_unc_y": all_unc_y_c.cpu().numpy(),
+#                 f"{c}_all_unc_y_hat": all_unc_y_hat.cpu().numpy(),
+#                 f"{c}_unc_acc": unc_acc.item(),
+#                 f"{c}_unc_ece": unc_ece,
+#             }
+#         )
 
-    if accelerator.num_processes == 1 and output_row_path is not None:
-        # create parent dir if it doesn't exist
-        import os
+#     if accelerator.num_processes == 1 and output_row_path is not None:
+#         # create parent dir if it doesn't exist
+#         import os
 
-        os.makedirs(os.path.dirname(output_row_path), exist_ok=True)
-        pd.DataFrame(dump).to_csv(output_row_path, escapechar="\\")
+#         os.makedirs(os.path.dirname(output_row_path), exist_ok=True)
+#         pd.DataFrame(dump).to_csv(output_row_path, escapechar="\\")
 
-    return return_dict
+#     return return_dict
