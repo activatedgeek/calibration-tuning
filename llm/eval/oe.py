@@ -11,6 +11,7 @@ from llm.datasets import LabeledStringDataCollator
 from llm.datasets.llm_utils_oe import (
     prepare_oe_uncertainty_query,
     equivalency_grading,
+    newline_strip
 )
 from llm.eval.third_party.calibration import calibration
 # from llm.utils.generate_utils import generate_output
@@ -61,14 +62,7 @@ def evaluate_oe(
             clean_up_tokenization_spaces=False,
         )
 
-        cleaned_generations = []
-        for output_string in generations:
-            output_string = output_string.replace("\n\n","\n")
-            output_string = output_string.replace(":\n",":")
-            output_string = output_string.strip("\n").split("\n")[0]
-            cleaned_generations.append(output_string)
-
-        generations = cleaned_generations
+        generations = [newline_strip(s) for s in generations]
 
         if isinstance(model, PeftModel) and "query" in model.peft_config:
             model.set_adapter("query")
@@ -199,14 +193,7 @@ def evaluate_oe_uncertainty_sampling(
                 clean_up_tokenization_spaces=False,
             )
 
-            cleaned_generations = []
-            for output_string in generations:
-                output_string = output_string.replace("\n\n","\n")
-                output_string = output_string.replace(":\n",":")
-                output_string = output_string.strip("\n").split("\n")[0]
-                cleaned_generations.append(output_string)
-
-            generations = cleaned_generations
+            generations = [newline_strip(s) for s in generations]
 
             # page 15 is original algorithm: https://arxiv.org/pdf/2302.09664.pdf
             # our modification is based on finding the likelihood under the sampling procedure of the greedy decoded answer's equivalence class
@@ -233,8 +220,8 @@ def evaluate_oe_uncertainty_sampling(
                 greedy_equivalency_labels = greedy_equivalency_labels.to(accelerator.device)
                 # q_targets = [qi.pop("target") for qi in q_inputs]
 
-                sampling_equivalencies = []
                 sampling_likelihoods = []
+                sampling_generations_list = []
                 for _ in range(k):
 
                     sampling_generation_outputs = model.generate(
@@ -252,14 +239,7 @@ def evaluate_oe_uncertainty_sampling(
                         clean_up_tokenization_spaces=False,
                     )
 
-                    cleaned_generations = []
-                    for output_string in sampling_generations:
-                        output_string = output_string.replace("\n\n","\n")
-                        output_string = output_string.replace(":\n",":")
-                        output_string = output_string.strip("\n").split("\n")[0]
-                        cleaned_generations.append(output_string)
-
-                    sampling_generations = cleaned_generations
+                    sampling_generations = [newline_strip(s) for s in sampling_generations]
 
                     # gets the max for each of the generated token among all log softmax probs in the vocab
                     sampling_log_probs = np.max(
@@ -304,28 +284,28 @@ def evaluate_oe_uncertainty_sampling(
                         / stop_index
                     )
 
-                    sampling_equivalency = (
+                    sampling_likelihoods.append(sampling_likelihood)
+                    sampling_generations_list += sampling_generations
+
+                sampling_equivalencies = (
+                    np.reshape(
                         equivalency_grading(
-                            inputs,
-                            generations,
-                            sampling_generations,
+                            inputs*k,
+                            generations*k,
+                            sampling_generations_list,
                             strategy=cs,
                         )
                         .detach()
                         .cpu()
-                        .numpy()
+                        .numpy(),
+                        (-1, k)
                     )
+                )
 
-                    sampling_equivalencies.append(sampling_equivalency)
-                    sampling_likelihoods.append(sampling_likelihood)
-
-                sampling_equivalencies = np.stack(sampling_equivalencies, axis=-1)
                 sampling_likelihoods = np.stack(sampling_likelihoods, axis=-1)
                 normalized_sampling_likelihoods = sampling_likelihoods / np.sum(
                     sampling_likelihoods, axis=-1, keepdims=True
                 )
-
-                import pdb; pdb.set_trace()
 
                 summed_likelihood = np.sum(
                     np.where(
@@ -347,8 +327,6 @@ def evaluate_oe_uncertainty_sampling(
                         ),
                     )
                 ]
-
-                import pdb; pdb.set_trace()
 
         metrics_dict = {}
         for cs in comparison_strategies:
