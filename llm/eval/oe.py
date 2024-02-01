@@ -94,7 +94,6 @@ def evaluate_oe(
                 format=query_format,
             )
             q_labels = q_labels.to(accelerator.device)
-            # q_targets = [qi.pop("target") for qi in q_inputs]
 
             q_generation_inputs = {
                 k: v.to(accelerator.device) for k, v in collate_fn(q_inputs).items()
@@ -133,12 +132,11 @@ def evaluate_oe(
             q_auroc = roc_auc_score(
                 q_labels.cpu(),
                 q_p[torch.arange(q_p.size(0)), q_pred].cpu(),
-                labels=np.array([0, 1]),
             )
         except ValueError:
             logging.warning(f"AUROC calculation failed.")
             q_auroc = float("nan")
-        
+
         ece, _ = calibration(
             q_labels,
             q_pred,
@@ -464,7 +462,9 @@ def evaluate_oe_uncertainty_sampling(
         pd.DataFrame(all_data["rows"]).to_csv(
             f"{log_dir}/rows_{accelerator.process_index}.csv", index=False
         )
-        with open(os.path.join(log_dir, "sampling", f"q_{accelerator.process_index}.pt"), "wb") as f:
+        with open(
+            os.path.join(log_dir, "sampling", f"q_{accelerator.process_index}.pt"), "wb"
+        ) as f:
             torch.save(all_data["evals"], f)
 
         logging.debug(
