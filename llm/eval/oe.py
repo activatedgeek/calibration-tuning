@@ -9,9 +9,8 @@ import numpy as np
 from transformers import GenerationConfig
 from sklearn.metrics import roc_auc_score
 
-from llm.datasets import LabeledStringDataCollator
+from ..datasets import LabeledStringDataCollator, prepare_uncertainty_query
 from llm.datasets.llm_utils_oe import (
-    prepare_oe_uncertainty_query,
     equivalency_grading,
     sanitize_generations,
 )
@@ -85,7 +84,7 @@ def evaluate_oe(
             model.set_adapter("query")
 
         for cs in comparison_strategies:
-            q_inputs, q_labels, q_token_vec = prepare_oe_uncertainty_query(
+            q_inputs, q_labels, q_token_vec = prepare_uncertainty_query(
                 tokenizer,
                 inputs,
                 targets,
@@ -269,7 +268,7 @@ def evaluate_oe_uncertainty_sampling(
             # custom clustering procedure differs from paper; we are using modern LLMs for equivalency, not the NLI classifier used in the paper.
             # full prompting strategy is in llm/datasets/llm_utils_oe.py
             for cs in comparison_strategies:
-                _, greedy_equivalency_labels, _ = prepare_oe_uncertainty_query(
+                _, greedy_equivalency_labels, _ = prepare_uncertainty_query(
                     tokenizer,
                     inputs,
                     targets,

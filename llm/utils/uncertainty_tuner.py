@@ -7,8 +7,12 @@ from transformers import Trainer
 from transformers.trainer import logger, TRAINING_ARGS_NAME
 from transformers.training_args import TrainingArguments
 
-from ..datasets import IGNORE_LABEL, DictCollator, LabeledStringDataCollator
-from ..datasets.llm_utils_oe import prepare_oe_uncertainty_query
+from ..datasets import (
+    IGNORE_LABEL,
+    DictCollator,
+    LabeledStringDataCollator,
+    prepare_uncertainty_query,
+)
 from ..models.peft import save_temperature_scaled_model
 
 
@@ -69,7 +73,7 @@ class UncertaintyTuner(Trainer):
             ## TODO: handle query label construction for mcq.
             raise NotImplementedError
 
-        q_inputs, q_labels, q_token_vec = prepare_oe_uncertainty_query(
+        q_inputs, q_labels, q_token_vec = prepare_uncertainty_query(
             self.tokenizer,
             inputs,
             targets,

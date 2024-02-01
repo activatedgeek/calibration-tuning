@@ -11,7 +11,7 @@ from llm.models import get_model
 from llm.models.peft import get_lora_model
 from llm.logging import entrypoint
 
-from llm.datasets.llm_utils_oe import prepare_oe_uncertainty_query
+from llm.datasets import prepare_uncertainty_query
 
 from llm.utils.generate_utils import generate_output
 
@@ -140,7 +140,7 @@ def generate_query_label(
         targets = [inp.pop("target") for inp in inputs]
         outputs = [inp.pop("output") for inp in inputs]
 
-        _, query_labels, _ = prepare_oe_uncertainty_query(
+        _, query_labels, _ = prepare_uncertainty_query(
             tokenizer,
             inputs,
             targets,

@@ -2,7 +2,8 @@ from .registry import register_dataset, get_dataset, get_dataset_attrs, list_dat
 from .utils import IndexedDataset, LabelNoiseDataset, get_loader, get_num_workers
 from .combined import get_all_datasets_list
 
-from .llm_utils import IGNORE_LABEL
+from .llm_utils import IGNORE_LABEL, get_token_vec, LMText
+from .llm_utils_oe import prepare_uncertainty_query
 from .data_collator import DictCollator, LabeledStringDataCollator
 
 
@@ -19,6 +20,9 @@ __all__ = [
     "IGNORE_LABEL",
     "DictCollator",
     "LabeledStringDataCollator",
+    "get_token_vec",
+    "LMText",
+    "prepare_uncertainty_query",
 ]
 
 
