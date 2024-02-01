@@ -26,6 +26,7 @@ def evaluate_via_eos(
 ):
     collate_fn = LabeledStringDataCollator(tokenizer)
 
+    all_labels, all_logits = [], []
     all_q_labels, all_q_logits = [], []
 
     for inputs in tqdm(loader):
@@ -42,8 +43,13 @@ def evaluate_via_eos(
         generation_outputs = model(**generation_inputs)
         logits = generation_outputs.logits[:, -1, :]
 
+        labels = torch.tensor(tokenizer(targets).get("input_ids"))[:, 1].to(
+            accelerator.device
+        )
+        preds = logits.argmax(dim=-1)
+
         generations = tokenizer.batch_decode(
-            logits.argmax(dim=-1),
+            preds,
             skip_special_tokens=True,
             clean_up_tokenization_spaces=False,
         )
@@ -72,15 +78,25 @@ def evaluate_via_eos(
         [
             l.append(v)
             for l, v in zip(
-                (all_q_labels, all_q_logits),
-                accelerator.gather_for_metrics((q_labels, q_logits)),
+                (all_labels, all_logits, all_q_labels, all_q_logits),
+                accelerator.gather_for_metrics((labels, logits, q_labels, q_logits)),
             )
         ]
 
+    all_labels = torch.cat(all_labels, dim=0)
+    all_p = torch.cat(all_logits, dim=0).softmax(dim=-1)
     all_q_labels = torch.cat(all_q_labels, dim=0)
     all_q_p = torch.cat(all_q_logits, dim=0)[:, q_token_vec].softmax(dim=-1)
 
-    acc = all_q_labels.float().mean(dim=0)
+    all_pred = all_p.argmax(dim=-1)
+    acc = (all_pred == all_labels).float().mean(dim=0)
+
+    logits_ece, _ = calibration(
+        all_labels,
+        all_pred,
+        all_p[torch.arange(all_p.size(0)), all_pred],
+    )
+
     all_q_pred = all_q_p.argmax(dim=-1)
     q_acc = (all_q_pred == all_q_labels).float().mean(dim=0)
 
@@ -99,19 +115,13 @@ def evaluate_via_eos(
         logging.warning(f"AUROC calculation failed.")
         q_auroc = float("nan")
 
-    ece, _ = calibration(
-        all_q_labels,
-        all_q_pred,
-        all_q_p[torch.arange(all_q_p.size(0)), 1],  ## corresponds to "yes"
-    )
-
     return {
         "N": all_q_labels.size(0),
-        f"acc": acc.item(),
-        f"unc_acc": q_acc.item(),
-        f"unc_auroc": q_auroc,
-        f"unc_ece": q_ece,
-        f"ece": ece,
+        "logits_ece": logits_ece,
+        "acc": acc.item(),
+        "unc_acc": q_acc.item(),
+        "unc_auroc": q_auroc,
+        "unc_ece": q_ece,
     }
 
 
