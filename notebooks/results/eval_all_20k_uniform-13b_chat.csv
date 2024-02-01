@@ -1,0 +1,3 @@
+N,acc,unc_acc,unc_auroc,unc_ece,split,seed,model_name,query_peft_dir,prompt_style,mode,log_dir,int8,dataset,ts
+2000,0.7435000538825989,0.8365000486373901,0.782752011913517,0.0421182975769042,validation,137,llama2_13b_chat,/workspace/models/llm-calibration/Llama2-13b_chat-oe/Llama2-13b_chat-all_20k_offline-ct-r02l7ki1,oe,oe_fuzzy_gpt-3.5-turbo-1106,/workspace/logs/deeplearn/llm-calibration/2024-02-01T20-18-10,False,all_20k_uniform,3918.880558860488
+2000,0.7460000514984131,0.6565000414848328,0.6761896782841822,0.0932806276679039,validation,137,llama2_13b_chat,,oe,oe_fuzzy_gpt-3.5-turbo-1106,/workspace/logs/deeplearn/llm-calibration/2024-02-01T20-17-41,False,all_20k_uniform,3356.9550915956497
