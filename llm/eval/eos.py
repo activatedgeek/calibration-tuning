@@ -226,57 +226,55 @@ def evaluate_candidate_via_eos(
     model,
     tokenizer,
     loader,
-    prompt_style="choice",
     **_,
 ):
-    """
-    Assumes all answers are 1 token and end immediately with EOS token.
-    """
+    collate_fn = LabeledStringDataCollator(tokenizer)
 
-    assert prompt_style == "choice"
+    cand_token_vec = get_token_vec(tokenizer, format="mcq").to(accelerator.device)
 
-    device = accelerator.device
-    collate_fn = DataCollatorForSupervisedDataset(tokenizer)
+    all_labels, all_logits = [], []
 
-    if isinstance(model, PeftModel):
-        model.set_adapter("default")
+    for inputs in tqdm(loader):
+        inputs = [dict(zip(inputs.keys(), vals)) for vals in zip(*inputs.values())]
+        targets = [inp.pop("target") for inp in inputs]
 
-    all_y, all_logits = [], []
+        generation_inputs = {
+            k: v.to(accelerator.device) for k, v in collate_fn(inputs).items()
+        }
 
-    for inputs in tqdm(loader, leave=False):
-        inputs = prepare_batch(tokenizer, inputs)
-        inputs = collate_fn(inputs)
+        if isinstance(model, PeftModel):
+            model.set_adapter("default")
 
-        inputs = {k: v.to(device) for k, v in inputs.items()}
-        outputs = model(**inputs)
+        generation_outputs = model(**generation_inputs)
+        logits = generation_outputs.logits[:, -1, cand_token_vec]
 
-        _, y, logits = extract_qa_exact(tokenizer, inputs, outputs=outputs)
-
-        qa_token_vec = get_token_vec(tokenizer, format="mcq").to(y.device)
-        y, logits = (
-            (y.unsqueeze(-1) == qa_token_vec).long().argmax(dim=-1),
-            logits[:, qa_token_vec],
+        cand_labels = torch.tensor(tokenizer(targets).get("input_ids"))[:, 1].to(
+            accelerator.device
         )
+        labels = (cand_labels.unsqueeze(-1) == cand_token_vec).long().argmax(dim=-1)
 
         [
             l.append(v)
             for l, v in zip(
-                (all_y, all_logits),
-                accelerator.gather_for_metrics((y, logits)),
+                (all_labels, all_logits),
+                accelerator.gather_for_metrics((labels, logits)),
             )
         ]
 
-    all_y, all_logits = [torch.cat(l, dim=0) for l in (all_y, all_logits)]
+    all_labels = torch.cat(all_labels, dim=0)
+    all_p = torch.cat(all_logits, dim=0).softmax(dim=-1)
 
-    all_p = all_logits.softmax(dim=-1)
-    all_y_hat = all_p.argmax(dim=-1)
-    acc = (all_y == all_y_hat).float().mean()
+    all_pred = all_p.argmax(dim=-1)
+    acc = (all_pred == all_labels).float().mean(dim=0)
+
     logits_ece, _ = calibration(
-        all_y, all_y_hat, all_p[torch.arange(all_p.size(0)), all_y_hat]
+        all_labels,
+        all_pred,
+        all_p[torch.arange(all_p.size(0)), all_pred],
     )
 
     return {
-        "N": all_y.size(0),
+        "N": all_labels.size(0),
         "acc": acc.item(),
         "logits_ece": logits_ece,
     }
