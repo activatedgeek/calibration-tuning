@@ -18,7 +18,6 @@ def __setup():
     for n in [
         "llama2",
         "mistral",
-        "openhermes",
     ]:
         import_module(f".{n}", __name__)
 
