@@ -4,8 +4,8 @@ from time import perf_counter
 import logging.config
 import os
 import wandb
-import torch.distributed as dist
-from accelerate import PartialState as AcceleratorState
+
+from .accelerate import Accelerator, AcceleratorState
 
 
 class Timer:
@@ -75,10 +75,10 @@ def setup_log_dir(log_dir=None):
             log_dir = Path(log_dir)
 
         log_dir.mkdir(parents=True)
+    else:
+        log_dir = None
 
-    __sync_log_dir = [None for _ in range(accelerator.num_processes)]
-    dist.all_gather_object(__sync_log_dir, log_dir)
-    log_dir = __sync_log_dir[0]
+    log_dir = accelerator.sync_object(log_dir)
 
     return str(log_dir.resolve())
 
@@ -123,9 +123,11 @@ def setup_logging(log_dir=None, metrics_extra_key="metrics"):
         },
         "loggers": {
             "": {
-                "handlers": ["stdout", "wandb_file"]
-                if accelerator.is_main_process
-                else ["null"],
+                "handlers": (
+                    ["stdout", "wandb_file"]
+                    if accelerator.is_main_process
+                    else ["null"]
+                ),
                 "level": os.environ.get("LOGLEVEL", "INFO"),
             },
         },
@@ -178,9 +180,7 @@ def setup_wandb(log_dir):
             **{k: v for k, v in run.config.items() if v is not None},
         }
 
-    __sync_wandb_kwargs = [None for _ in range(accelerator.num_processes)]
-    dist.all_gather_object(__sync_wandb_kwargs, wandb_kwargs)
-    wandb_kwargs = __sync_wandb_kwargs[0]
+    wandb_kwargs = accelerator.sync_object(wandb_kwargs)
 
     return wandb_kwargs
 
@@ -196,10 +196,11 @@ def entrypoint(main):
         return main(**kwargs)
 
     def _wrapped_entrypoint(**kwargs):
-        accelerator = AcceleratorState()
+        accelerator = Accelerator()
 
         if "WANDB_SWEEP_ID" in os.environ:
             if accelerator.is_main_process:
+                os.environ["WANDB_DIR"] = "/tmp"
                 wandb.agent(
                     os.environ.get("WANDB_SWEEP_ID"),
                     project=os.environ.get("WANDB_PROJECT", Path().cwd().name),

@@ -1,6 +1,6 @@
 import torch
-from accelerate import PartialState as AcceleratorState
 
+from llm.accelerate import AcceleratorState
 from llm.datasets import get_dataset
 from llm.models import get_model
 from llm.models.peft import get_lora_model, prepare_model_for_temperature_scaling

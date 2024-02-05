@@ -2,10 +2,10 @@ import os
 import wandb
 import pandas as pd
 import torch
-from accelerate import Accelerator
 from tqdm.auto import tqdm
 from transformers import GenerationConfig
 
+from llm.accelerate import Accelerator
 from llm.datasets import get_dataset, get_loader
 from llm.models import get_model
 from llm.models.peft import get_lora_model
@@ -108,6 +108,7 @@ def generate_outputs_main(
             accelerator=accelerator,
         )
 
+        ## FIXME: Incorrect multi-node behavior (use torch.all_gather_object).
         output_generator = generate_output(
             accelerator,
             model,
