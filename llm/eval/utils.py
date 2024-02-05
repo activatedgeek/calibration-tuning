@@ -1,6 +1,7 @@
 import logging
 from functools import partial
 
+from ..logging import Timer
 from ..datasets import get_dataset, get_loader
 from .eos import (
     evaluate_contextual_calibration_via_eos,
@@ -156,7 +157,7 @@ def evaluate_dataset(
             ## NOTE: Conditional to avoid overriding default kshot specification in dataset definition.
             if eval_kshot is not None:
                 _extra_args["eval_kshot"] = eval_kshot
-            _train_data, val_data, test_data = get_dataset(
+            data_splits = get_dataset(
                 dataset,
                 root=data_dir,
                 tokenizer=tokenizer,
@@ -166,10 +167,19 @@ def evaluate_dataset(
                 prompt_style=prompt_style,
                 **_extra_args,
             )
-            train_data = _train_data if train_data else None
     else:
         if (val_data is not None) and (test_data is not None):
             logging.warning(f"Missing val_data or test_data.")
+
+        data_splits = (train_data, val_data, test_data)
+
+    if train_data == False:
+        data_splits = (None, *data_splits[1:])
+    data_splits = [
+        (s, ds)
+        for s, ds in zip(["train", "validation", "test"], data_splits)
+        if ds is not None
+    ]
 
     if "ve" in evaluate_fn:
         style = evaluate_fn.split("_")[1]
@@ -235,68 +245,29 @@ def evaluate_dataset(
             evaluate_fn = EVALUATE_MODE_FN_MAP[evaluate_fn]
             comparison_strategies = None
 
-    train_metrics = None
+    all_metrics = []
 
-    if train_data:
-        train_metrics = evaluate_fn(
-            accelerator,
-            model,
-            tokenizer,
-            get_loader(
-                train_data,
-                batch_size=batch_size,
-                pin_memory=True,
-                accelerator=accelerator,
-            ),
-            comparison_strategies=comparison_strategies,
-            log_dir=f"{log_dir}/metrics/train",
-        )
-        train_metrics["split"] = "train"
+    for split_name, data in data_splits:
+        with Timer() as train_timer:
+            metrics = evaluate_fn(
+                accelerator,
+                model,
+                tokenizer,
+                get_loader(
+                    data,
+                    batch_size=batch_size,
+                    pin_memory=True,
+                    accelerator=accelerator,
+                ),
+                comparison_strategies=comparison_strategies,
+                log_dir=f"{log_dir}/metrics/{split_name}",
+            )
+        metrics["dataset"] = dataset
+        metrics["split"] = split_name
+        metrics["ts"] = train_timer.elapsed
 
-        logging.debug(train_metrics)
-    else:
-        logging.debug(f"Skipping train data for {dataset}")
+        logging.debug(metrics)
 
-    val_metrics = None
-    if val_data:
-        val_metrics = evaluate_fn(
-            accelerator,
-            model,
-            tokenizer,
-            get_loader(
-                val_data,
-                batch_size=batch_size,
-                pin_memory=True,
-                accelerator=accelerator,
-            ),
-            comparison_strategies=comparison_strategies,
-            log_dir=f"{log_dir}/metrics/validation",
-        )
-        val_metrics["split"] = "validation"
+        all_metrics.append(metrics)
 
-        logging.debug(val_metrics)
-    else:
-        logging.debug(f"Skipping validation data for {dataset}")
-
-    test_metrics = None
-    if test_data:
-        test_metrics = evaluate_fn(
-            accelerator,
-            model,
-            tokenizer,
-            get_loader(
-                test_data,
-                batch_size=batch_size,
-                pin_memory=True,
-                accelerator=accelerator,
-            ),
-            comparison_strategies=comparison_strategies,
-            log_dir=f"{log_dir}/metrics/test",
-        )
-        test_metrics["split"] = "test"
-
-        logging.debug(test_metrics)
-    else:
-        logging.debug(f"Skipping test data for {dataset}")
-
-    return val_metrics, test_metrics
+    return all_metrics

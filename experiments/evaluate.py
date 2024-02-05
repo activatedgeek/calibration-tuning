@@ -5,7 +5,7 @@ import pandas as pd
 import torch
 
 from llm.accelerate import Accelerator
-from llm.logging import entrypoint, Timer
+from llm.logging import entrypoint
 from llm.datasets import get_all_datasets_list
 from llm.models import get_model
 from llm.models.peft import get_lora_model, prepare_model_for_temperature_scaling
@@ -90,30 +90,23 @@ def main(
 
     all_metrics = []
     for dataset in tqdm(all_datasets):
-        with Timer() as t:
-            val_metrics, test_metrics = evaluate_dataset(
-                accelerator,
-                model,
-                tokenizer,
-                dataset,
-                train_data=False,
-                seed=seed,
-                batch_size=batch_size,
-                data_dir=data_dir,
-                eval_kshot=eval_kshot,
-                use_cache=use_dataset_cache,
-                prompt_style=prompt_style,
-                log_dir=log_dir,
-                evaluate_fn=mode,
-            )
-
-        dataset_metrics = list(
-            map(
-                lambda m: {**m, **config, "dataset": dataset, "ts": t.elapsed},
-                list(filter(lambda m: m is not None, [val_metrics, test_metrics])),
-            )
+        metrics = evaluate_dataset(
+            accelerator,
+            model,
+            tokenizer,
+            dataset,
+            train_data=False,
+            seed=seed,
+            batch_size=batch_size,
+            data_dir=data_dir,
+            eval_kshot=eval_kshot,
+            use_cache=use_dataset_cache,
+            prompt_style=prompt_style,
+            log_dir=log_dir,
+            evaluate_fn=mode,
         )
-        all_metrics += dataset_metrics
+
+        all_metrics += metrics
         logging.info(
             {"metrics": wandb.Table(dataframe=pd.DataFrame(all_metrics))},
             extra=dict(metrics=True),

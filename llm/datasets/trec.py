@@ -106,7 +106,11 @@ def get_trec(
 ):
     from datasets import load_dataset
 
-    dataset = load_dataset("trec", cache_dir=os.environ.get("HF_DATASETS_CACHE", root))
+    dataset = load_dataset(
+        "trec",
+        cache_dir=os.environ.get("HF_DATASETS_CACHE", root),
+        trust_remote_code=True,
+    )
     if not use_cache:
         dataset.cleanup_cache_files()
 

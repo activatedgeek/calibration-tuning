@@ -1,3 +1,4 @@
+import pandas as pd
 import torch
 import torch.nn.functional as F
 from tqdm.auto import tqdm
@@ -14,8 +15,11 @@ def generate_output(
     generation_config=None,
     generation_config_sampling=None,
     n_samples=0,
+    log_dir=None,
 ):
     collate_fn = LabeledStringDataCollator(tokenizer)
+
+    all_outputs = []
 
     for inputs in tqdm(loader):
         inputs = [dict(zip(inputs.keys(), vals)) for vals in zip(*inputs.values())]
@@ -52,7 +56,7 @@ def generate_output(
                     **generation_inputs,
                     generation_config=generation_config_sampling,
                     return_dict_in_generate=True,
-                    output_scores=True
+                    output_scores=True,
                 )
                 for _ in range(n_samples)
             ]
@@ -72,4 +76,11 @@ def generate_output(
                 for o, so in zip(outputs, sampled_outputs)
             ]
 
-        yield from outputs
+        all_outputs.extend(outputs)
+
+    if log_dir is not None:
+        df = pd.DataFrame(all_outputs)
+        ## NOTE: Avoid spec errors when loading for labeling.
+        df["query_label"] = -1
+
+        df.to_csv(f"{log_dir}/rows_{accelerator.process_index}.csv", index=False)

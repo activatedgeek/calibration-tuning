@@ -90,8 +90,11 @@ def generate_outputs_main(
             use_cache=use_dataset_cache,
             prompt_style=prompt_style,
         )
-        data_splits = list(filter(lambda x: x is not None, data_splits))
-        data_split_names = ["train", "validation", "test"][: len(data_splits)]
+        data_splits = [
+            (s, ds)
+            for s, ds in zip(["train", "validation", "test"], data_splits)
+            if ds is not None
+        ]
 
     generation_config = GenerationConfig(
         pad_token_id=tokenizer.pad_token_id,
@@ -100,7 +103,7 @@ def generate_outputs_main(
         max_new_tokens=max_new_tokens,
     )
 
-    for data, split in zip(data_splits, data_split_names):
+    for split_name, data in data_splits:
         loader = get_loader(
             data,
             batch_size=batch_size,
@@ -108,25 +111,18 @@ def generate_outputs_main(
             accelerator=accelerator,
         )
 
-        ## FIXME: Incorrect multi-node behavior (use torch.all_gather_object).
-        output_generator = generate_output(
+        with accelerator.main_process_first():
+            if accelerator.is_main_process:
+                os.makedirs(f"{log_dir}/outputs/{split_name}")
+
+        generate_output(
             accelerator,
             model,
             tokenizer,
             loader,
             generation_config=generation_config,
+            log_dir=f"{log_dir}/outputs/{split_name}",
         )
-
-        csv_path = f"{log_dir}/outputs/{split}"
-        with accelerator.main_process_first():
-            if accelerator.is_main_process:
-                os.makedirs(csv_path)
-
-        df = pd.DataFrame(output_generator)
-        ## NOTE: Avoid spec errors when loading for labeling.
-        df["query_label"] = -1
-
-        df.to_csv(f"{csv_path}/{accelerator.process_index}.csv", index=False)
 
 
 def generate_query_label(
