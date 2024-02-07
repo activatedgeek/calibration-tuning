@@ -110,6 +110,8 @@ def train_test_split(dataset, test_size=0.2, seed=None):
 
 def get_num_workers(num_workers=4):
     num_gpus_per_host = torch.cuda.device_count()
+    if num_gpus_per_host == 0:
+        return num_workers
     return (num_workers + num_gpus_per_host - 1) // num_gpus_per_host
 
 

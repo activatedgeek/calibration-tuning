@@ -22,6 +22,9 @@ class Accelerator(__HFAccelerator):
     """
 
     def sync_object(self, obj):
+        if self.num_processes == 1:
+            return obj
+
         __sync_obj = [None for _ in range(self.num_processes)]
         torchdist.all_gather_object(__sync_obj, obj)
         obj = __sync_obj[0]
@@ -30,6 +33,9 @@ class Accelerator(__HFAccelerator):
 
 class AcceleratorState(__HFAcceleratorState):
     def sync_object(self, obj):
+        if self.num_processes == 1:
+            return obj
+
         __sync_obj = [None for _ in range(self.num_processes)]
         torchdist.all_gather_object(__sync_obj, obj)
         obj = __sync_obj[0]
