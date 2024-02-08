@@ -13,7 +13,7 @@ from ..datasets import (
 )
 
 
-class UncertaintyTuner(Trainer):
+class CalibrationTuner(Trainer):
     @dataclass
     class Args(TrainingArguments):
         use_lm_loss: bool = field(default=False)

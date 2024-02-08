@@ -6,8 +6,7 @@ from llm.accelerate import AcceleratorState
 from llm.models import get_model
 from llm.models.peft import get_lora_model, get_temperature_scaled_model
 from llm.datasets import get_dataset
-from llm.utils.trainer import WandbConfigUpdateCallback
-from llm.utils.uncertainty_tuner import UncertaintyTuner
+from llm.trainer import WandbConfigUpdateCallback, CalibrationTuner
 
 
 def main(
@@ -95,9 +94,9 @@ def main(
             prompt_style=prompt_style,
         )
 
-    trainer = UncertaintyTuner(
+    trainer = CalibrationTuner(
         model=model,
-        args=UncertaintyTuner.Args(
+        args=CalibrationTuner.Args(
             seed=seed,
             fsdp=False,
             fp16=not torch.cuda.is_bf16_supported() and not model.is_loaded_in_8bit,

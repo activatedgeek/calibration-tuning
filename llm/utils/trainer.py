@@ -1,54 +1,10 @@
 import tqdm
 from dataclasses import dataclass, field
 import torch
-from transformers import Trainer, TrainingArguments, TrainerCallback
+from transformers import Trainer, TrainingArguments
 from transformers.training_args import TrainingArguments
-from transformers.trainer_utils import PREFIX_CHECKPOINT_DIR, get_last_checkpoint
 
 from ..datasets.llm_utils import DataCollatorForSupervisedDataset
-
-
-__all__ = [
-    "WandbConfigUpdateCallback",
-    "TrainingArguments",
-]
-
-
-def get_last_checkpoint_path(path):
-    if PREFIX_CHECKPOINT_DIR not in path:
-        path = get_last_checkpoint(path)
-
-    assert path is not None, f"No checkpoint found in '{path}'."
-
-    return path
-
-
-class WandbConfigUpdateCallback(TrainerCallback):
-    def __init__(self, **config):
-        self._config = config
-
-    def on_train_begin(self, _args, state, _control, **_):
-        if state.is_world_process_zero:
-            import wandb
-
-            wandb.config.update(self._config, allow_val_change=True)
-
-            del self._config
-
-
-class SchedulerInitCallback(TrainerCallback):
-    def __init__(self, scheduler):
-        super().__init__()
-
-        self.scheduler = scheduler
-
-    def on_train_begin(self, args, state, _control, **_):
-        self.scheduler.setup(
-            init_value=args.unc_decay,
-            T_max=int(args.unc_decay_ratio * args.max_steps),
-            last_epoch=state.global_step,
-            eta_min=0.0 if args.loss_mode == "reg" else args.unc_decay,
-        )
 
 
 @dataclass
@@ -97,9 +53,9 @@ class ClassificationTrainer(Trainer):
             torch.arange(output_ids.size(0)), eos_idx - 1
         ]
 
-        response_ids[
-            torch.arange(input_ids.size(0)), eos_idx + 1
-        ] = self.tokenizer.pad_token_id
+        response_ids[torch.arange(input_ids.size(0)), eos_idx + 1] = (
+            self.tokenizer.pad_token_id
+        )
 
         labels = torch.tensor(targets, device=targets.device).long()
 

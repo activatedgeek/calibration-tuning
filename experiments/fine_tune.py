@@ -6,8 +6,7 @@ from llm.accelerate import AcceleratorState
 from llm.models import get_model
 from llm.models.peft import get_lora_model, get_temperature_scaled_model
 from llm.datasets import get_dataset
-from llm.utils.trainer import WandbConfigUpdateCallback
-from llm.utils.fine_tuner import FineTuner
+from llm.trainer import WandbConfigUpdateCallback, FineTuner
 
 
 def main(
