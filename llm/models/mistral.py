@@ -2,7 +2,7 @@ import os
 from transformers import AutoTokenizer, AutoModelForCausalLM
 
 from .registry import register_model
-from .llm_utils import get_special_tokens
+from .llm_utils import get_special_tokens, resize_token_embeddings
 
 
 __all__ = ["create_tokenizer", "create_model"]
@@ -27,8 +27,8 @@ def create_tokenizer(
 
 
 def create_model(
-    model_dir=None,
     model_id=None,
+    model_dir=None,
     cache_dir=None,
     tokenizer=None,
     **kwargs,
@@ -39,23 +39,7 @@ def create_model(
         **kwargs,
     )
 
-    extra_token_count = len(tokenizer) - model.get_input_embeddings().weight.data.size(
-        0
-    )
-    if extra_token_count:
-        model.resize_token_embeddings(len(tokenizer))
-
-        input_embeddings = model.get_input_embeddings().weight.data
-
-        input_embeddings[-extra_token_count:] = input_embeddings[
-            :-extra_token_count
-        ].mean(dim=0, keepdim=True)
-
-        output_embeddings = model.get_output_embeddings().weight.data
-
-        output_embeddings[-extra_token_count:] = output_embeddings[
-            :-extra_token_count
-        ].mean(dim=0, keepdim=True)
+    resize_token_embeddings(tokenizer, model)
 
     return model
 

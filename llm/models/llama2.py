@@ -10,11 +10,9 @@ from peft import PeftModel
 from transformers import LlamaTokenizer, LlamaForCausalLM, LlamaPreTrainedModel
 from transformers.modeling_outputs import SequenceClassifierOutputWithPast
 from transformers.utils import WEIGHTS_NAME
-from peft import prepare_model_for_kbit_training
 
 from .registry import register_model
-from .llm_utils import get_special_tokens
-from .peft.temperature_scaling import TemperatureScaledLlamaForCausalLM
+from .llm_utils import get_special_tokens, resize_token_embeddings
 
 
 __all__ = ["create_tokenizer", "create_model"]
@@ -189,57 +187,31 @@ def create_model(
     size=None,
     model_dir=None,
     cache_dir=None,
-    causal_lm=True,
     tokenizer=None,
-    load_in_8bit=False,
     base_model=None,
+    causal_lm=True,
     **kwargs,
 ):
     if causal_lm:
-        model = TemperatureScaledLlamaForCausalLM.from_pretrained(
+        model = LlamaForCausalLM.from_pretrained(
             model_dir or f"meta-llama/Llama-2-{size}-hf",
             cache_dir=os.environ.get("MODELDIR", cache_dir),
-            load_in_8bit=load_in_8bit,
             **kwargs,
         )
     else:
         if model_dir is None:
-            model = LlamaForSequenceClassificationFFNN(
-                base_model, load_in_8bit=load_in_8bit, **kwargs
-            )
+            model = LlamaForSequenceClassificationFFNN(base_model, **kwargs)
         else:
             model = LlamaForSequenceClassificationFFNN.from_pretrained(
                 base_model,
                 model_dir,
                 cache_dir=os.environ.get("MODELDIR", cache_dir),
-                load_in_8bit=load_in_8bit,
                 **kwargs,
             )
 
         return model
 
-    extra_token_count = len(tokenizer) - model.get_input_embeddings().weight.data.size(
-        0
-    )
-    if extra_token_count:
-        model.resize_token_embeddings(len(tokenizer))
-
-        input_embeddings = model.get_input_embeddings().weight.data
-
-        input_embeddings[-extra_token_count:] = input_embeddings[
-            :-extra_token_count
-        ].mean(dim=0, keepdim=True)
-
-        if causal_lm:
-            output_embeddings = model.get_output_embeddings().weight.data
-
-            output_embeddings[-extra_token_count:] = output_embeddings[
-                :-extra_token_count
-            ].mean(dim=0, keepdim=True)
-
-    ## NOTE: probably needs to be more general.
-    if load_in_8bit:
-        model = prepare_model_for_kbit_training(model)
+    resize_token_embeddings(tokenizer, model, causal_lm=causal_lm)
 
     return model
 

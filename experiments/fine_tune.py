@@ -1,10 +1,11 @@
 import torch
+from peft import prepare_model_for_kbit_training
 
-from llm.accelerate import AcceleratorState
-from llm.datasets import get_dataset
-from llm.models import get_model
-from llm.models.peft import get_lora_model, prepare_model_for_temperature_scaling
 from llm.logging import entrypoint
+from llm.accelerate import AcceleratorState
+from llm.models import get_model
+from llm.models.peft import get_lora_model, get_temperature_scaled_model
+from llm.datasets import get_dataset
 from llm.utils.trainer import WandbConfigUpdateCallback
 from llm.utils.fine_tuner import FineTuner
 
@@ -15,7 +16,7 @@ def main(
     dataset=None,
     data_dir=None,
     prompt_style="choice",
-    num_workers=8,
+    num_workers=4,
     batch_size=1,
     grad_acc=1,
     model_name=None,
@@ -51,8 +52,8 @@ def main(
         use_cache=False,
         tokenizer=tokenizer,
         load_in_8bit=int8,
-        temp_scaling=scale_temp,
     )
+    model = prepare_model_for_kbit_training(model, use_gradient_checkpointing=False)
 
     model = get_lora_model(
         model,
@@ -60,12 +61,14 @@ def main(
         lora_rank=lora_rank,
         lora_alpha=lora_alpha,
         lora_dropout=lora_dropout,
-        is_trainable=True,
+        is_trainable=not scale_temp,
         adapter_name="default",
     )
 
     if scale_temp:
-        prepare_model_for_temperature_scaling(model, is_trainable=True)
+        model = get_temperature_scaled_model(
+            model, peft_dir=peft_dir, is_trainable=True
+        )
 
     with accelerator.main_process_first():
         train_data, _, _ = get_dataset(
@@ -103,8 +106,7 @@ def main(
             gradient_accumulation_steps=grad_acc,
             output_dir=log_dir,
             report_to="wandb",
-            dataloader_num_workers=4,
-            scale_temp=scale_temp,
+            dataloader_num_workers=num_workers,
             label_names=train_data.column_names,
         ),
         train_dataset=train_data,
@@ -120,6 +122,7 @@ def main(
                 lora_alpha=lora_alpha,
                 lora_dropout=lora_dropout,
                 prompt_style=prompt_style,
+                scale_temp=scale_temp,
             ),
         ],
     )
