@@ -3,9 +3,7 @@ from dataclasses import dataclass, field
 import torch
 import torch.nn.functional as F
 from torch.distributions import Categorical, kl_divergence
-from transformers import Trainer
-from transformers.trainer import logger, TRAINING_ARGS_NAME
-from transformers.training_args import TrainingArguments
+from transformers.trainer import Trainer, logger, TRAINING_ARGS_NAME, TrainingArguments
 
 from ..datasets import (
     IGNORE_LABEL,
@@ -13,7 +11,6 @@ from ..datasets import (
     LabeledStringDataCollator,
     prepare_uncertainty_query,
 )
-from ..models.peft import save_temperature_scaled_model
 
 
 class UncertaintyTuner(Trainer):
@@ -25,7 +22,6 @@ class UncertaintyTuner(Trainer):
         unc_label_smoothing: float = field(default=0.0)
         kl_type: str = field(default="jsd")
         kl_decay: float = field(default=0.0)
-        scale_temp: bool = field(default=False)
 
     def __init__(self, *args, **kwargs):
         super().__init__(
@@ -69,9 +65,12 @@ class UncertaintyTuner(Trainer):
             predictions = [inp.pop("output") for inp in inputs]
             q_labels = [inp.pop("query_label") for inp in inputs]
         else:
-            predictions = outputs.logits[:, -1, :].argmax(dim=-1)
-            ## TODO: handle query label construction for mcq.
-            raise NotImplementedError
+            predictions = self.tokenizer.batch_decode(
+                outputs.logits[:, -1, :].argmax(dim=-1),
+                skip_special_tokens=True,
+                clean_up_tokenization_spaces=False,
+            )
+            q_labels = None
 
         q_inputs, q_labels, q_token_vec = prepare_uncertainty_query(
             self.tokenizer,
@@ -120,11 +119,7 @@ class UncertaintyTuner(Trainer):
             outputs,
         )
 
-        kl_loss = (
-            torch.tensor(0.0)
-            if self.args.scale_temp
-            else self.compute_kl_loss(model, loss_inputs, outputs)
-        )
+        kl_loss = self.compute_kl_loss(model, loss_inputs, outputs)
 
         loss_metrics = {
             "lm_loss": loss.detach().item(),
@@ -150,15 +145,20 @@ class UncertaintyTuner(Trainer):
         os.makedirs(output_dir, exist_ok=True)
         logger.info(f"Saving model checkpoint to {output_dir}")
 
+        ## NOTE: Fix for name hierarchy due to multiple adapters.
+        if state_dict is None:
+            state_dict = self.model.state_dict()
+            state_dict.update(
+                {".".join(k.split(".")[2:]): v for k, v in state_dict.items()}
+            )
+
         self.model.save_pretrained(
             output_dir,
             state_dict=state_dict,
             safe_serialization=self.args.save_safetensors,
             selected_adapters=["default"],
+            save_embedding_layers=False,
         )
-
-        if self.args.scale_temp:
-            save_temperature_scaled_model(self.model, output_dir)
 
         if self.tokenizer is not None:
             self.tokenizer.save_pretrained(output_dir)
