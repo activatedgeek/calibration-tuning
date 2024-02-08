@@ -1,5 +1,5 @@
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import torch
 from transformers.trainer import Trainer, logger, TRAINING_ARGS_NAME, TrainingArguments
 
@@ -7,8 +7,11 @@ from ..datasets import DictCollator, LabeledStringDataCollator
 
 
 class FineTuner(Trainer):
+    TEMPERATURE_WEIGHTS_NAME = "temperature_head.bin"
+
     @dataclass
-    class Args(TrainingArguments): ...
+    class Args(TrainingArguments):
+        scale_temp: bool = field(default=False)
 
     def __init__(self, *args, **kwargs):
         super().__init__(
@@ -55,3 +58,9 @@ class FineTuner(Trainer):
             self.tokenizer.save_pretrained(output_dir)
 
         torch.save(self.args, os.path.join(output_dir, TRAINING_ARGS_NAME))
+
+        if self.args.scale_temp:
+            torch.save(
+                self.accelerator.unwrap_model(self.model).temperature_head.state_dict(),
+                os.path.join(output_dir, self.TEMPERATURE_WEIGHTS_NAME),
+            )

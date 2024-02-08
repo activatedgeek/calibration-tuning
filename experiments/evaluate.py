@@ -8,7 +8,7 @@ from llm.accelerate import Accelerator
 from llm.logging import entrypoint
 from llm.datasets import get_all_datasets_list
 from llm.models import get_model
-from llm.models.peft import get_lora_model, prepare_model_for_temperature_scaling
+from llm.models.peft import get_lora_model
 from llm.eval import evaluate_dataset
 
 
@@ -74,11 +74,6 @@ def main(
         is_trainable=False,
         adapter_name="query",
     )
-
-    if scale_temp:
-        prepare_model_for_temperature_scaling(
-            model, peft_dir=query_peft_dir or peft_dir
-        )
 
     model.eval()
 

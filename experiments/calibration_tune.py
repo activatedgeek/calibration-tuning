@@ -4,7 +4,7 @@ from peft import prepare_model_for_kbit_training
 from llm.logging import entrypoint
 from llm.accelerate import AcceleratorState
 from llm.models import get_model
-from llm.models.peft import get_lora_model, get_temperature_scaled_model
+from llm.models.peft import get_lora_model, add_temperature_scale_module
 from llm.datasets import get_dataset
 from llm.trainer import WandbConfigUpdateCallback, CalibrationTuner
 
@@ -14,13 +14,14 @@ def main(
     log_dir=None,
     dataset=None,
     data_dir=None,
-    prompt_style="choice",
+    prompt_style=None,
     num_workers=4,
     batch_size=1,
     grad_acc=1,
     model_name=None,
     model_dir=None,
     peft_dir=None,
+    ref_peft_dir=None,
     lora_rank=8,
     lora_alpha=32,
     lora_dropout=0.1,
@@ -70,7 +71,7 @@ def main(
 
     model = get_lora_model(
         model,
-        peft_dir=peft_dir,
+        peft_dir=ref_peft_dir or peft_dir,
         lora_rank=lora_rank,
         lora_alpha=lora_alpha,
         lora_dropout=lora_dropout,
@@ -79,8 +80,12 @@ def main(
     )
 
     if scale_temp:
-        model = get_temperature_scaled_model(
-            model, peft_dir=peft_dir, is_trainable=True
+        model = add_temperature_scale_module(
+            model,
+            peft_dir=peft_dir,
+            is_trainable=True,
+            register_hook=False,
+            target_module_name="query_temperature_head",
         )
 
     with accelerator.main_process_first():
@@ -122,6 +127,7 @@ def main(
             dataloader_num_workers=num_workers,
             label_names=train_data.column_names,
             ## Custom.
+            scale_temp=scale_temp,
             kl_type=kl_type,
             kl_decay=kl_decay,
             use_lm_loss=use_lm_loss,
@@ -140,7 +146,6 @@ def main(
                 lora_alpha=lora_alpha,
                 lora_dropout=lora_dropout,
                 prompt_style=prompt_style,
-                scale_temp=scale_temp,
             ),
         ],
     )

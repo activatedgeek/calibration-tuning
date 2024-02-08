@@ -3,7 +3,12 @@ from dataclasses import dataclass, field
 import torch
 import torch.nn.functional as F
 from torch.distributions import Categorical, kl_divergence
-from transformers.trainer import Trainer, logger, TRAINING_ARGS_NAME, TrainingArguments
+from transformers.trainer import (
+    logger,
+    TRAINING_ARGS_NAME,
+    Trainer,
+    TrainingArguments,
+)
 
 from ..datasets import (
     IGNORE_LABEL,
@@ -14,6 +19,8 @@ from ..datasets import (
 
 
 class CalibrationTuner(Trainer):
+    TEMPERATURE_WEIGHTS_NAME = "query_temperature_head.bin"
+
     @dataclass
     class Args(TrainingArguments):
         use_lm_loss: bool = field(default=False)
@@ -22,6 +29,7 @@ class CalibrationTuner(Trainer):
         unc_label_smoothing: float = field(default=0.0)
         kl_type: str = field(default="jsd")
         kl_decay: float = field(default=0.0)
+        scale_temp: bool = field(default=False)
 
     def __init__(self, *args, **kwargs):
         super().__init__(
@@ -31,6 +39,14 @@ class CalibrationTuner(Trainer):
         )
 
         self._collate_fn = LabeledStringDataCollator(self.tokenizer)
+
+    def _wrap_model(self, model):
+        if self.args.scale_temp:
+            self.query_temperature_head = self.accelerator.prepare(
+                self.model.query_temperature_head
+            )
+
+        return super()._wrap_model(model)
 
     def compute_kl_loss(self, model, inputs, outputs):
         with torch.inference_mode():
@@ -89,6 +105,9 @@ class CalibrationTuner(Trainer):
         q_generation_outputs = model(**q_generation_inputs)
         q_logits = q_generation_outputs.logits[..., -1, q_token_vec]
 
+        if self.args.scale_temp:
+            q_logits = self.query_temperature_head(q_logits)
+
         q_loss = F.cross_entropy(
             q_logits,
             q_labels.to(q_logits.device),
@@ -141,16 +160,16 @@ class CalibrationTuner(Trainer):
         return metrics
 
     def _save(self, output_dir=None, state_dict=None):
-        output_dir = output_dir if output_dir is not None else self.args.output_dir
-        os.makedirs(output_dir, exist_ok=True)
-        logger.info(f"Saving model checkpoint to {output_dir}")
-
         ## NOTE: Fix for name hierarchy due to multiple adapters.
         if state_dict is None:
             state_dict = self.model.state_dict()
             state_dict.update(
                 {".".join(k.split(".")[2:]): v for k, v in state_dict.items()}
             )
+
+        output_dir = output_dir if output_dir is not None else self.args.output_dir
+        os.makedirs(output_dir, exist_ok=True)
+        logger.info(f"Saving model checkpoint to {output_dir}")
 
         self.model.save_pretrained(
             output_dir,
@@ -164,3 +183,9 @@ class CalibrationTuner(Trainer):
             self.tokenizer.save_pretrained(output_dir)
 
         torch.save(self.args, os.path.join(output_dir, TRAINING_ARGS_NAME))
+
+        if self.args.scale_temp:
+            torch.save(
+                self.accelerator.unwrap_model(self.query_temperature_head).state_dict(),
+                os.path.join(output_dir, self.TEMPERATURE_WEIGHTS_NAME),
+            )

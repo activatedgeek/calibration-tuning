@@ -1,10 +1,14 @@
 from .lora import get_lora_model, use_adapter
 from .prompt_tuning import get_prompt_tuning_model
-from .temperature_scaling import get_temperature_scaled_model
+from .temperature_scaling import (
+    inject_temperature_scaled_model,
+    add_temperature_scale_module,
+)
 
 __all__ = [
     "get_prompt_tuning_model",
     "get_lora_model",
     "use_adapter",
-    "get_temperature_scaled_model",
+    "inject_temperature_scaled_model",
+    "add_temperature_scale_module",
 ]
