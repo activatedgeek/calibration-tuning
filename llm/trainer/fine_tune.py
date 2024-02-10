@@ -1,7 +1,13 @@
 import os
 from dataclasses import dataclass, field
 import torch
-from transformers.trainer import Trainer, logger, TRAINING_ARGS_NAME, TrainingArguments
+from transformers.trainer import (
+    Trainer,
+    logger,
+    unwrap_model,
+    TRAINING_ARGS_NAME,
+    TrainingArguments,
+)
 
 from ..datasets import DictCollator, LabeledStringDataCollator
 
@@ -61,6 +67,6 @@ class FineTuner(Trainer):
 
         if self.args.scale_temp:
             torch.save(
-                self.accelerator.unwrap_model(self.model).temperature_head.state_dict(),
+                unwrap_model(self.model).lm_head[-1].state_dict(),
                 os.path.join(output_dir, self.TEMPERATURE_WEIGHTS_NAME),
             )

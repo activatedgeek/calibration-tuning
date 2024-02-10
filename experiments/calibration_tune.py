@@ -4,7 +4,7 @@ from peft import prepare_model_for_kbit_training
 from llm.logging import entrypoint
 from llm.accelerate import AcceleratorState
 from llm.models import get_model
-from llm.models.peft import get_lora_model, add_temperature_scale_module
+from llm.models.peft import get_lora_model, get_temperature_head
 from llm.datasets import get_dataset
 from llm.trainer import WandbConfigUpdateCallback, CalibrationTuner
 
@@ -79,13 +79,12 @@ def main(
         adapter_name="_ref",
     )
 
+    temperature_model = None
     if scale_temp:
-        model = add_temperature_scale_module(
-            model,
-            peft_dir=peft_dir,
+        temperature_model = get_temperature_head(
+            checkpoint_dir=peft_dir,
             is_trainable=True,
-            register_hook=False,
-            target_module_name="query_temperature_head",
+            weights_name=CalibrationTuner.TEMPERATURE_WEIGHTS_NAME,
         )
 
     with accelerator.main_process_first():
@@ -101,6 +100,7 @@ def main(
 
     trainer = CalibrationTuner(
         model=model,
+        query_temperature_model=temperature_model,
         args=CalibrationTuner.Args(
             seed=seed,
             fsdp=False,

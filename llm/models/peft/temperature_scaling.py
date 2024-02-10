@@ -7,90 +7,58 @@ from .utils import get_last_checkpoint_path
 
 
 class TemperatureScale(nn.Module):
-    NAME = "log_temperature"
-
     def __init__(self):
         super().__init__()
 
-        self.register_parameter(
-            self.NAME,
-            nn.Parameter(torch.tensor(0.0)),
-        )
+        self.log_temperature = nn.Parameter(torch.tensor(0.0))
 
     def forward(self, inputs):
-        return inputs / self.get_parameter(self.NAME).exp()
+        return inputs / self.log_temperature.exp()
 
 
-def add_temperature_scale_module(
-    model,
-    peft_dir=None,
-    is_trainable=False,
-    ref_module_name="lm_head",
-    target_module_name="temperature_head",
-    register_hook=False,
+def get_temperature_head(
+    checkpoint_dir=None, is_trainable=False, weights_name="temperature_head.bin"
 ):
-    ref_module = [
-        module for key, module in model.named_modules() if ref_module_name in key
-    ]
-    assert len(ref_module), f"Reference module '{ref_module_name}' not found."
 
-    ref_module = ref_module[0]
-    device, dtype = [(p.device, p.dtype) for _, p in ref_module.named_parameters()][0]
+    temperature_model = TemperatureScale()
 
-    temperature_module = (
-        TemperatureScale().to(device).to(dtype).requires_grad_(is_trainable)
-    )
+    if checkpoint_dir is not None:
+        checkpoint_dir = get_last_checkpoint_path(checkpoint_dir)
 
-    if peft_dir is not None:
-        peft_dir = get_last_checkpoint_path(peft_dir)
-
-        if os.path.isfile(f"{peft_dir}/{target_module_name}.bin"):
-            temperature_module.load_state_dict(
-                torch.load(f"{peft_dir}/{target_module_name}.bin")
+        if os.path.isfile(f"{checkpoint_dir}/{weights_name}"):
+            temperature_model.load_state_dict(
+                torch.load(f"{checkpoint_dir}/{weights_name}")
             )
 
-        logging.info(f"Loaded temperature scale checkpoint from '{peft_dir}'.")
+            logging.info(
+                f"Loaded temperature model checkpoint from '{checkpoint_dir}'."
+            )
 
     if is_trainable:
-        model.requires_grad_(False)
+        temperature_model = temperature_model.train().requires_grad_(True)
+    else:
+        temperature_model = temperature_model.eval().requires_grad_(False)
 
-    model.register_module(target_module_name, temperature_module)
-
-    if register_hook:
-        model.get_submodule(ref_module_name).register_forward_hook(
-            lambda _module, _inputs, outputs: model.get_submodule(target_module_name)(
-                outputs
-            )
-        )
-
-    return model
+    return temperature_model
 
 
-def inject_temperature_scaled_model(
-    model, peft_dir=None, is_trainable=False, target_module_name="lm_head"
-):
-    if peft_dir is not None:
-        peft_dir = get_last_checkpoint_path(peft_dir)
-
-        ## TODO: load checkpoint
+def get_temperature_scale_model(model, target_module_name="lm_head", **kwargs):
 
     for key, mod in model.named_modules():
         if key.endswith(target_module_name):
-            device, dtype = [(p.device, p.dtype) for _, p in mod.named_parameters()][0]
+            device = [p.device for _, p in mod.named_parameters()][0]
 
-            temperature_module = (
-                TemperatureScale().to(device).to(dtype).requires_grad_(is_trainable)
-            )
+            temperature_model = get_temperature_head(**kwargs).to(device)
 
             new_module = nn.Sequential(
                 mod,
-                temperature_module,
+                temperature_model,
             )
 
             parent = model.get_submodule(".".join(key.split(".")[:-1]))
             target_name = key.split(".")[-1]
             setattr(parent, target_name, new_module)
 
-            logging.info(f"Injected temperature scaling module at {key}.")
+            logging.info(f"Added temperature scaling module to {key}.")
 
     return model

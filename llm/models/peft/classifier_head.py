@@ -4,18 +4,22 @@ import torch
 
 
 from .. import get_model
-from .utils import get_last_checkpoint
+from .utils import get_last_checkpoint_path
 
 
 def get_classifier_head(
-    model, checkpoint_dir=None, is_trainable=False, weights_name="classifier_model.bin"
+    model,
+    classifier_model_name="mlp_binary",
+    checkpoint_dir=None,
+    is_trainable=False,
+    weights_name="classifier_model.bin",
 ):
     classifier_model = get_model(
-        "mlp_binary", input_size=model.config.hidden_size, output_size=2
+        classifier_model_name, input_size=model.config.hidden_size, output_size=2
     )
 
     if checkpoint_dir is not None:
-        checkpoint_dir = get_last_checkpoint(checkpoint_dir)
+        checkpoint_dir = get_last_checkpoint_path(checkpoint_dir)
 
         if os.path.isfile(f"{checkpoint_dir}/{weights_name}"):
             classifier_model.load_state_dict(

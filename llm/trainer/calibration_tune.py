@@ -5,6 +5,7 @@ import torch.nn.functional as F
 from torch.distributions import Categorical, kl_divergence
 from transformers.trainer import (
     logger,
+    unwrap_model,
     TRAINING_ARGS_NAME,
     Trainer,
     TrainingArguments,
@@ -31,7 +32,7 @@ class CalibrationTuner(Trainer):
         kl_decay: float = field(default=0.0)
         scale_temp: bool = field(default=False)
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args, query_temperature_model=None, **kwargs):
         super().__init__(
             *args,
             **kwargs,
@@ -39,14 +40,19 @@ class CalibrationTuner(Trainer):
         )
 
         self._collate_fn = LabeledStringDataCollator(self.tokenizer)
+        self.query_temperature_model = query_temperature_model
 
-    def _wrap_model(self, model):
+    def _wrap_model(self, *args, **kwargs):
         if self.args.scale_temp:
-            self.query_temperature_head = self.accelerator.prepare(
-                self.model.query_temperature_head
-            )
+            if (
+                unwrap_model(self.query_temperature_model)
+                is self.query_temperature_model
+            ):
+                self.query_temperature_model = self.accelerator.prepare(
+                    self.query_temperature_model
+                )
 
-        return super()._wrap_model(model)
+        return super()._wrap_model(*args, **kwargs)
 
     def compute_kl_loss(self, model, inputs, outputs):
         with torch.inference_mode():
@@ -106,7 +112,7 @@ class CalibrationTuner(Trainer):
         q_logits = q_generation_outputs.logits[..., -1, q_token_vec]
 
         if self.args.scale_temp:
-            q_logits = self.query_temperature_head(q_logits)
+            q_logits = self.query_temperature_model(q_logits)
 
         q_loss = F.cross_entropy(
             q_logits,
@@ -186,6 +192,6 @@ class CalibrationTuner(Trainer):
 
         if self.args.scale_temp:
             torch.save(
-                self.accelerator.unwrap_model(self.query_temperature_head).state_dict(),
+                unwrap_model(self.query_temperature_model).state_dict(),
                 os.path.join(output_dir, self.TEMPERATURE_WEIGHTS_NAME),
             )

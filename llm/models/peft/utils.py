@@ -1,11 +1,14 @@
 import logging
 from peft import PeftModel
-from transformers.trainer import PREFIX_CHECKPOINT_DIR, get_last_checkpoint
+from transformers.trainer import (
+    PREFIX_CHECKPOINT_DIR,
+    get_last_checkpoint as __get_last_checkpoint,
+)
 
 
 def get_last_checkpoint_path(path):
     if PREFIX_CHECKPOINT_DIR not in path:
-        path = get_last_checkpoint(path)
+        path = __get_last_checkpoint(path)
 
     assert path is not None, f"No checkpoint found in '{path}'."
 
