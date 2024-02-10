@@ -157,8 +157,6 @@ class CalibrationTuner(Trainer):
 
         total_loss = loss + q_loss + self.args.kl_decay * kl_loss
 
-        # self.accelerator.free_memory()
-
         return (total_loss, outputs) if return_outputs else total_loss
 
     ## Skip eval.

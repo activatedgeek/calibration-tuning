@@ -14,14 +14,18 @@ class LabeledStringDataCollator:
     tokenizer: transformers.PreTrainedTokenizer
     target_name: str = "target"
 
-    def __call__(self, instances):
-        tokenizer_args = dict(
+    @staticmethod
+    def get_tokenizer_args(tokenizer):
+        return dict(
             padding=True,
             truncation=True,
-            max_length=self.tokenizer.model_max_length,
+            max_length=tokenizer.model_max_length,
             return_tensors="pt",
             return_length=True,
         )
+
+    def __call__(self, instances):
+        tokenizer_args = self.get_tokenizer_args(self.tokenizer)
 
         inputs = self.tokenizer(
             [str(LMText.from_(instance)) for instance in instances],
