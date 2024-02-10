@@ -135,7 +135,7 @@ class CalibrationTuner(Trainer):
 
         loss, outputs = super().compute_loss(model, loss_inputs, return_outputs=True)
         if not self.args.use_lm_loss:
-            loss = torch.zeros_like(loss).detach()
+            loss = loss.detach()
 
         q_loss = self.compute_query_loss(
             model,
@@ -156,6 +156,8 @@ class CalibrationTuner(Trainer):
             self.log(loss_metrics)
 
         total_loss = loss + q_loss + self.args.kl_decay * kl_loss
+
+        # self.accelerator.free_memory()
 
         return (total_loss, outputs) if return_outputs else total_loss
 
