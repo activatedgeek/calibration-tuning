@@ -223,10 +223,12 @@ def all_200k_c(*args, max_n=200_000, prompt_style="choice", **kwargs):
 
 
 @register_dataset
-def sub_200k(*args, max_n=200_000, prompt_style="choice", **kwargs):
+def sub_200k(
+    *args, seed=None, max_n=200_000, max_val_n=2_000, prompt_style="choice", **kwargs
+):
     all_dataset_names = get_all_datasets_list("all:train", prompt_style=prompt_style)
     all_dataset_names = all_dataset_names[: len(all_dataset_names) // 2]
-    tr, _, _ = get_combined_dataset(
+    tr, vl, _ = get_combined_dataset(
         all_dataset_names=all_dataset_names,
         *args,
         **kwargs,
@@ -234,7 +236,16 @@ def sub_200k(*args, max_n=200_000, prompt_style="choice", **kwargs):
         max_n=max_n,
         complement=False,
     )
-    return tr, None, None
+
+    with FixedSeed(seed):
+        max_val_n = max_val_n or max_n
+        vl = vl.select(
+            np.random.choice(
+                range(min(len(vl), max_val_n)), min(len(vl), max_val_n), replace=False
+            )
+        )
+
+    return tr, vl, None
 
 
 @register_dataset
