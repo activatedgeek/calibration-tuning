@@ -31,7 +31,7 @@ def main(
     max_steps=1,
     log_steps=100,
     save_steps=1000,
-    eval_steps=1000,
+    eval_steps=500,
     use_dataset_cache=True,
     resume_dir=None,
     int8=True,
@@ -73,7 +73,7 @@ def main(
         )
 
     with accelerator.main_process_first():
-        train_data, _, _ = get_dataset(
+        train_data, val_data, _ = get_dataset(
             dataset,
             root=data_dir,
             tokenizer=tokenizer,
@@ -114,6 +114,7 @@ def main(
             scale_temp=scale_temp,
         ),
         train_dataset=train_data,
+        eval_dataset=val_data,
         tokenizer=tokenizer,
         callbacks=[
             WandbConfigUpdateCallback(

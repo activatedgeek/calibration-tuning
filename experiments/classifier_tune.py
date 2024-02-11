@@ -29,7 +29,7 @@ def main(
     max_steps=1,
     log_steps=100,
     save_steps=1000,
-    eval_steps=1000,
+    eval_steps=500,
     use_dataset_cache=True,
     resume_dir=None,
     int8=True,

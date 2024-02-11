@@ -1,5 +1,6 @@
 import os
 from dataclasses import dataclass, field
+from tqdm.auto import tqdm
 import torch
 import torch.nn.functional as F
 from torch.distributions import Categorical, kl_divergence
@@ -56,9 +57,12 @@ class CalibrationTuner(Trainer):
 
     def compute_kl_loss(self, model, inputs, outputs):
         with torch.inference_mode():
-            model.module.set_adapter(self.args.ref_adapter_name)
-            ref_outputs = model.module(**inputs)
-            model.module.set_adapter("default")
+            unwrapped_model = unwrap_model(model)
+            unwrapped_model.set_adapter(self.args.ref_adapter_name)
+            ref_outputs = unwrapped_model(**inputs)
+            unwrapped_model.set_adapter("default")
+
+            del unwrapped_model
 
         labels = inputs.get("labels")[..., 1:]
         probs = outputs.logits[..., :-1, :].softmax(dim=-1)
@@ -159,11 +163,81 @@ class CalibrationTuner(Trainer):
 
         return (total_loss, outputs) if return_outputs else total_loss
 
-    ## Skip eval.
-    def evaluate(self, *_, **__):
-        # metrics = super().evaluate(eval_dataset, ignore_keys, metric_key_prefix)
-        metrics = {}
-        return metrics
+    def evaluate(self, eval_dataset=None, metric_key_prefix="eval", **_):
+        eval_dataset = eval_dataset if eval_dataset is not None else self.eval_dataset
+
+        eval_dataloader = self.get_eval_dataloader(eval_dataset)
+
+        all_metrics = {"loss": [], "q_loss": [], "kl_loss": []}
+
+        for inputs in tqdm(eval_dataloader, leave=False):
+            inputs = [dict(zip(inputs.keys(), vals)) for vals in zip(*inputs.values())]
+            targets = [inp.pop("target") for inp in inputs]
+            B = len(inputs)
+
+            loss_inputs = {
+                k: v.to(self.accelerator.device)
+                for k, v in self._collate_fn(
+                    [{**inp, "target": t} for inp, t in zip(inputs, targets)]
+                ).items()
+            }
+
+            with torch.inference_mode():
+                loss, outputs = super().compute_loss(
+                    self.model, loss_inputs, return_outputs=True
+                )
+
+            if not self.args.use_lm_loss:
+                loss = loss.detach()
+
+            q_loss = self.compute_query_loss(
+                self.model,
+                inputs,
+                targets,
+                outputs,
+            )
+
+            kl_loss = self.compute_kl_loss(self.model, loss_inputs, outputs)
+
+            ## De-mean for distributed only.
+            loss = (
+                torch.zeros(B)
+                .index_fill_(0, torch.tensor([0]).long(), loss * B)
+                .to(loss.device)
+            )
+            q_loss = (
+                torch.zeros(B)
+                .index_fill_(0, torch.tensor([0]).long(), q_loss * B)
+                .to(q_loss.device)
+            )
+            kl_loss = (
+                torch.zeros(B)
+                .index_fill_(0, torch.tensor([0]).long(), kl_loss * B)
+                .to(kl_loss.device)
+            )
+            [
+                all_metrics[l].append(v)
+                for l, v in zip(
+                    ("loss", "q_loss", "kl_loss"),
+                    self.accelerator.gather_for_metrics((loss, q_loss, kl_loss)),
+                )
+            ]
+
+        all_metrics = {k: torch.cat(v, dim=0) for k, v in all_metrics.items()}
+        N = all_metrics["loss"].size(0)
+
+        all_metrics = {
+            f"{metric_key_prefix}_{k}": v[v.nonzero().squeeze(-1)].sum() / N
+            for k, v in all_metrics.items()
+        }
+
+        self.log(all_metrics)
+
+        self.control = self.callback_handler.on_evaluate(
+            self.args, self.state, self.control, all_metrics
+        )
+
+        return all_metrics
 
     def _save(self, output_dir=None, state_dict=None):
         ## NOTE: Fix for name hierarchy due to multiple adapters.
