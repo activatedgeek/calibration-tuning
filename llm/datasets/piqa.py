@@ -91,6 +91,7 @@ def __format_sample_with_prompt(
 def get_piqa(
     root=None,
     prompt_style=None,
+    train_kshot=0,
     eval_kshot=0,
     tokenizer=None,
     num_workers=8,
@@ -122,7 +123,7 @@ def get_piqa(
                 "label",
             ],
         )
-        for data, k in zip(data_splits, [0, eval_kshot])
+        for data, k in zip(data_splits, [train_kshot, eval_kshot])
     ]
 
     return train_data, val_data, None

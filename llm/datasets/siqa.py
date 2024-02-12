@@ -98,6 +98,7 @@ def __format_sample_with_prompt(
 def get_siqa(
     root=None,
     prompt_style=None,
+    train_kshot=0,
     eval_kshot=0,
     tokenizer=None,
     num_workers=8,
@@ -132,7 +133,7 @@ def get_siqa(
         )
         for data, k in zip(
             [dataset.pop("train"), dataset.pop("validation")],
-            [0, eval_kshot],
+            [train_kshot, eval_kshot],
         )
     ]
 

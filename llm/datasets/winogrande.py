@@ -104,6 +104,7 @@ def get_winogrande(
     root=None,
     subset=None,
     prompt_style=None,
+    train_kshot=0,
     eval_kshot=0,
     tokenizer=None,
     num_workers=8,
@@ -139,7 +140,7 @@ def get_winogrande(
                 "answer",
             ],
         )
-        for data, k in zip(data_splits, [0, eval_kshot])
+        for data, k in zip(data_splits, [train_kshot, eval_kshot])
     ]
 
     return train_data, val_data, None

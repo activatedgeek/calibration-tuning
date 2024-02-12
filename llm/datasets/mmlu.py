@@ -165,6 +165,7 @@ def get_mmlu(
     root=None,
     instance=None,
     prompt_style=None,
+    train_kshot=0,
     eval_kshot=5,
     tokenizer=None,
     num_workers=8,
@@ -199,7 +200,8 @@ def get_mmlu(
             ],
         )
         for split, k in zip(
-            ["auxiliary_train", "validation", "test"], [0, eval_kshot, eval_kshot]
+            ["auxiliary_train", "validation", "test"],
+            [train_kshot, eval_kshot, eval_kshot],
         )
     ]
 
