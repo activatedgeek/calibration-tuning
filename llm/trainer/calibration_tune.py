@@ -227,7 +227,7 @@ class CalibrationTuner(Trainer):
         N = all_metrics["loss"].size(0)
 
         all_metrics = {
-            f"{metric_key_prefix}_{k}": v[v.nonzero().squeeze(-1)].sum() / N
+            f"{metric_key_prefix}_{k}": (v[v.nonzero().squeeze(-1)].sum() / N).item()
             for k, v in all_metrics.items()
         }
 

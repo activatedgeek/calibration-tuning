@@ -142,8 +142,9 @@ class ClassificationTuner(Trainer):
             f"{metric_key_prefix}_N": all_labels.size(0),
             f"{metric_key_prefix}_acc": (all_logits.argmax(dim=-1) == all_labels)
             .float()
-            .mean(),
-            f"{metric_key_prefix}_loss": F.cross_entropy(all_logits, all_labels),
+            .mean()
+            .item(),
+            f"{metric_key_prefix}_loss": F.cross_entropy(all_logits, all_labels).item(),
         }
 
         self.log(metrics)
