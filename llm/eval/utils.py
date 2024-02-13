@@ -78,9 +78,9 @@ VERBAL_ELICITATION_MAP = {
             "give the guess with no other words or explanation.\n\nFor example:\n\nExplanation: ",
             "<one sentence step-by-step explanation of your thought process>\n\nGuess: ",
             "<most likely guess, as short as possible; not a complete sentence, just the ",
-            "guess!>\n\n",
+            "guess!>.\n\n",
         ]),
-        "target_prompt": "\nGuess: ",
+        "target_prompt": "\nExplanation: ",
     },
     "2s1g": {
         "prompt": "".join([
