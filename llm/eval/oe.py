@@ -1,8 +1,13 @@
+import logging
+import os
 from tqdm.auto import tqdm
 import torch
+import torch.nn.functional as F
 from peft import PeftModel
 import pandas as pd
 import numpy as np
+from transformers import GenerationConfig
+from sklearn.metrics import roc_auc_score
 
 from llm.datasets.llm_utils import (
     get_token_vec,
@@ -18,9 +23,14 @@ from llm.datasets.llm_utils_oe import (
     clustering_equivalency_with_oracle,
     openai_query,
 )
+from llm.datasets.llm_utils_oe import (
+    equivalency_grading,
+    sanitize_generations,
+)
 from llm.eval.third_party.calibration import calibration
+
 from llm.utils.generate_utils import generate_output
-from transformers import GenerationConfig
+from llm.random import FixedSeed
 
 
 @torch.inference_mode()
@@ -29,152 +39,152 @@ def evaluate_oe(
     model,
     tokenizer,
     loader,
-    prompt_style="oe",
     query_format="roman_choice",
     comparison_strategies=None,
-    max_new_tokens=30,
-    output_row_path=None,
+    max_new_tokens=100,
+    log_dir=None,
+    **_,
 ):
-    assert prompt_style == "oe"
-    assert (not comparison_strategies is None) and len(comparison_strategies) > 0
-
-    device = accelerator.device
-    collate_fn = DataCollatorForSupervisedDataset(tokenizer)
-
     generation_config = GenerationConfig(
         pad_token_id=tokenizer.pad_token_id,
         bos_token_id=tokenizer.bos_token_id,
         eos_token_id=tokenizer.eos_token_id,
         max_new_tokens=max_new_tokens,
+        do_sample=False,
     )
 
-    query_token_vec = get_token_vec(tokenizer, format=query_format)
-    all_unc_y, all_unc_logits = {c: [] for c in comparison_strategies}, {
-        c: [] for c in comparison_strategies
+    collate_fn = LabeledStringDataCollator(tokenizer)
+
+    cs_q_labels = {c: [] for c in comparison_strategies}
+    cs_q_logits = {c: [] for c in comparison_strategies}
+
+    all_data = {
+        "rows": [],
+        "evals": {c: {"q_labels": [], "q_logits": []} for c in comparison_strategies},
     }
-    all_acc = {c: [] for c in comparison_strategies}
-    all_oe_target_strings, all_output_strings, all_question_strings = [], [], []
 
-    output_generator = generate_output(
-        accelerator,
-        model,
-        tokenizer,
-        loader,
-        prompt_style=prompt_style,
-        generation_config=generation_config,
-    )
+    for inputs in tqdm(loader):
+        inputs = [dict(zip(inputs.keys(), vals)) for vals in zip(*inputs.values())]
+        targets = [inp.pop("target") for inp in inputs]
 
-    for example in output_generator:
-        output, raw_input, target = (
-            example["output"],
-            example["raw_input"],
-            example["target"],
+        generation_inputs = {
+            k: v.to(accelerator.device) for k, v in collate_fn(inputs).items()
+        }
+
+        if isinstance(model, PeftModel):
+            model.set_adapter("default")
+
+        generation_outputs = model.generate(
+            **generation_inputs, generation_config=generation_config
         )
-        input_question_string = example["context"]
-        oe_target_strings = [target]
-        output_strings = [output]
-        question_strings = [input_question_string]
 
-        for c in comparison_strategies:
-            query_inputs, acc = prepare_oe_calibration_query(
+        generations = tokenizer.batch_decode(
+            generation_outputs[:, generation_inputs.get("input_ids").size(-1) :],
+            skip_special_tokens=True,
+            clean_up_tokenization_spaces=False,
+        )
+
+        generations = sanitize_generations(generations)
+
+        all_data["rows"].extend(
+            [
+                {**inp, "target": tgt, "output": out}
+                for inp, tgt, out in zip(inputs, targets, generations)
+            ]
+        )
+
+        if isinstance(model, PeftModel) and "query" in model.peft_config:
+            model.set_adapter("query")
+
+        for cs in comparison_strategies:
+            q_inputs, q_labels, q_token_vec = prepare_uncertainty_query(
                 tokenizer,
-                oe_target_strings,
-                output_strings,
-                question_strings,
+                inputs,
+                targets,
+                generations,
+                strategy=cs,
                 format=query_format,
-                comparison_strategy=c,
             )
+            q_labels = q_labels.to(accelerator.device)
 
-            acc = acc.to(device)
-            query_inputs = collate_fn(query_inputs)
+            q_generation_inputs = {
+                k: v.to(accelerator.device) for k, v in collate_fn(q_inputs).items()
+            }
 
-            if isinstance(model, PeftModel) and "query" in model.peft_config:
-                model.set_adapter("query")
+            q_generation_outputs = model(**q_generation_inputs)
+            q_logits = q_generation_outputs.logits[..., -1, :]
 
-            query_inputs = {k: v.to(device) for k, v in query_inputs.items()}
-            query_outputs = model(**query_inputs)
-
-            _, unc_y, unc_logits = extract_qa_exact(
-                tokenizer, query_inputs, outputs=query_outputs
-            )
+            all_data["evals"][cs]["q_labels"].append(q_labels.detach())
+            all_data["evals"][cs]["q_logits"].append(q_logits.detach())
 
             [
                 l.append(v)
                 for l, v in zip(
-                    (all_unc_y[c], all_unc_logits[c], all_acc[c]),
-                    accelerator.gather_for_metrics((unc_y, unc_logits, acc)),
+                    (cs_q_labels[cs], cs_q_logits[cs]),
+                    accelerator.gather_for_metrics((q_labels, q_logits)),
                 )
             ]
 
-        [
-            l.append(v)
-            for l, v in zip(
-                (all_oe_target_strings, all_output_strings, all_question_strings),
-                accelerator.gather_for_metrics(
-                    (oe_target_strings, output_strings, question_strings)
-                ),
+    metrics_dict = {}
+    for cs in comparison_strategies:
+        q_labels = torch.cat(cs_q_labels[cs], dim=0)
+        q_p = torch.cat(cs_q_logits[cs], dim=0)[:, q_token_vec].softmax(dim=-1)
+
+        acc = q_labels.float().mean(dim=0)
+        q_pred = q_p.argmax(dim=-1)
+        q_acc = (q_pred == q_labels).float().mean(dim=0)
+
+        q_ece, _ = calibration(
+            q_labels,
+            q_pred,
+            q_p[torch.arange(q_p.size(0)), q_pred],
+        )
+
+        try:
+            q_auroc = roc_auc_score(
+                q_labels.cpu(),
+                q_p[torch.arange(q_p.size(0)), q_pred].cpu(),
             )
-        ]
+        except ValueError:
+            logging.warning(f"AUROC calculation failed.")
+            q_auroc = float("nan")
 
-    all_oe_target_strings, all_output_strings, all_question_strings = (
-        sum(all_oe_target_strings, []),
-        sum(all_output_strings, []),
-        sum(all_question_strings, []),
-    )
-
-    return_dict = {}
-    # note if using multiple gpus/processes, these string lists will be incomplete.
-    dump = {
-        "oe_target_strings": all_oe_target_strings,
-        "output_strings": all_output_strings,
-        "question_strings": all_question_strings,
-    }
-
-    for c in comparison_strategies:
-
-        query_token_vec = query_token_vec.to(device)
-        all_unc_y_c, all_unc_logits_c, all_acc_c = [
-            torch.cat(l, dim=0) for l in (all_unc_y[c], all_unc_logits[c], all_acc[c])
-        ]
-
-        acc = all_acc_c.float().mean()
-
-        all_unc_y_c, all_unc_p = (
-            (all_unc_y_c.unsqueeze(-1) == query_token_vec).long().argmax(dim=-1),
-            all_unc_logits_c[:, query_token_vec].softmax(dim=-1),
-        )
-        all_unc_y_hat = all_unc_p.argmax(dim=-1)
-        unc_acc = (all_unc_y_c == all_unc_y_hat).float().mean()
-        unc_ece, _ = calibration(
-            all_unc_y_c,
-            all_unc_y_hat,
-            all_unc_p[torch.arange(all_unc_p.size(0)), all_unc_y_hat],
+        ece, _ = calibration(
+            q_labels,
+            q_pred,
+            q_p[torch.arange(q_p.size(0)), 1],  ## corresponds to "yes"
         )
 
-        return_dict.update(
+        metrics_dict.update(
             {
-                f"{c}_acc": acc.item(),
-                f"{c}_unc_acc": unc_acc.item(),
-                f"{c}_unc_ece": unc_ece,
-                "N": all_unc_p.size(0),
+                "N": q_labels.size(0),
+                f"{cs}_acc": acc.item(),
+                f"{cs}_unc_acc": q_acc.item(),
+                f"{cs}_unc_auroc": q_auroc,
+                f"{cs}_unc_ece": q_ece,
+                f"{cs}_ece": ece,
             }
         )
 
-        dump.update(
-            {
-                f"{c}_acc": all_acc_c.cpu().numpy(),
-                f"{c}_all_unc_y": all_unc_y_c.cpu().numpy(),
-                f"{c}_all_unc_y_hat": all_unc_y_hat.cpu().numpy(),
-                f"{c}_unc_acc": unc_acc.item(),
-                f"{c}_unc_ece": unc_ece,
-            }
+    if log_dir is not None:
+        os.makedirs(log_dir, exist_ok=True)
+
+        all_data["evals"] = {
+            k: {qk: torch.cat(qv, dim=0) for qk, qv in v.items()}
+            for k, v in all_data["evals"].items()
+        }
+
+        pd.DataFrame(all_data["rows"]).to_csv(
+            f"{log_dir}/rows_{accelerator.process_index}.csv", index=False
+        )
+        with open(f"{log_dir}/q_{accelerator.process_index}.pt", "wb") as f:
+            torch.save(all_data["evals"], f)
+
+        logging.debug(
+            f"Data saved to '{log_dir}' from process {accelerator.process_index}."
         )
 
-    if accelerator.num_processes == 1 and output_row_path is not None:
-        os.makedirs(output_row_path, exist_ok=True)
-        pd.DataFrame(dump).to_csv(output_row_path, escapechar="\\")
-
-    return return_dict
+    return metrics_dict
 
 
 @torch.inference_mode()
@@ -187,15 +197,14 @@ def evaluate_oe_uncertainty_sampling(
     query_format="roman_choice",
     comparison_strategies=None,
     max_new_tokens=30,
-    output_row_path=None,
     top_p=0.95,
     k=10,
+    seed=1,
+    log_dir=None,
+    **_,
 ):
     assert prompt_style == "oe"
     assert (not comparison_strategies is None) and len(comparison_strategies) > 0
-
-    device = accelerator.device
-    collate_fn = DataCollatorForSupervisedDataset(tokenizer)
 
     generation_config = GenerationConfig(
         pad_token_id=tokenizer.pad_token_id,
@@ -214,255 +223,267 @@ def evaluate_oe_uncertainty_sampling(
         do_sample=True,
     )
 
-    query_token_vec = get_token_vec(tokenizer, format=query_format)
-    all_prob = {c: [] for c in comparison_strategies}
-    all_likelihood_accumulate = {c: [] for c in comparison_strategies}
-    all_normalized_likelihood_accumulate = {c: [] for c in comparison_strategies}
-    all_likelihood_outputs = []
-    all_acc = {c: [] for c in comparison_strategies}
-    (
-        all_oe_target_strings,
-        all_output_strings,
-        all_question_strings,
-        all_generations,
-        all_match_scores,
-    ) = ([], [], [], [], [])
+    with FixedSeed(seed):
+        collate_fn = LabeledStringDataCollator(tokenizer)
 
-    output_generator = generate_output(
-        accelerator,
-        model,
-        tokenizer,
-        loader,
-        prompt_style=prompt_style,
-        generation_config=generation_config,
-        generation_config_sampling=generation_config_sampling,
-        k=k,
-    )
+        cs_q_labels = {c: [] for c in comparison_strategies}
 
-    for example in output_generator:
-        output, raw_input, target = (
-            example["output"],
-            example["raw_input"],
-            example["target"],
-        )
-        input_question_string = example["context"]
-        oe_target_strings = [target]
-        output_strings = [output]
-        question_strings = [input_question_string]
+        cs_us_likelihood = {c: [] for c in comparison_strategies}
+        cs_us_counting = {c: [] for c in comparison_strategies}
 
-        # generate 30 more tokens k addtl times for the uncertainty estimation
-        sampled_outputs = example["sampled_outputs"]
-        sampled_log_probs = example["sampled_log_probs"]
+        all_data = {
+            "rows": [],
+            "evals": {
+                c: {
+                    "q_labels": [],
+                    "summed_likelihood": [],
+                    "sampling_count": [],
+                    "sampling_equivalencies": [],
+                }
+                for c in comparison_strategies
+            },
+        }
 
-        length_normalized_likelihoods = [
-            # get back in likelihood space
-            np.exp(
-                # get the average log-likelihood among the num_tokens (equivalent to summing and dividing by length)
-                np.mean(
-                    # get the max per row of a tensor shaped like [num_tokens, vocab_size]
-                    np.max(
-                        sequence_probs
+        for inputs in tqdm(loader):
+            inputs = [dict(zip(inputs.keys(), vals)) for vals in zip(*inputs.values())]
+            targets = [inp.pop("target") for inp in inputs]
+
+            generation_inputs = {
+                k: v.to(accelerator.device) for k, v in collate_fn(inputs).items()
+            }
+
+            if isinstance(model, PeftModel):
+                model.set_adapter("default")
+
+            generation_outputs = model.generate(
+                **generation_inputs, generation_config=generation_config
+            )
+
+            generations = tokenizer.batch_decode(
+                generation_outputs[:, generation_inputs.get("input_ids").size(-1) :],
+                skip_special_tokens=True,
+                clean_up_tokenization_spaces=False,
+            )
+
+            generations = sanitize_generations(generations)
+
+            # page 15 is original algorithm: https://arxiv.org/pdf/2302.09664.pdf
+            # our modification is based on finding the likelihood under the sampling procedure of the greedy decoded answer's equivalence class
+            # form a cluster based on the equivalency with the greedy decode (but exclude the greedy decode)
+
+            # two strategies to compute likelihood:
+            # 1) find sum of length-normalized likelihoods of all entries in sample -- closest approximation of
+            # the logsumpexp likelihood-summing done here:
+            # https://github.com/lorenzkuhn/semantic_uncertainty/blob/27adbf0dc1bf056c771c205d89c2a79cbd82dc3a/code/compute_confidence_measure.py#L134
+            # NOTE: we do not feel that adding likelihoods of samples produces a convergent estimate of likelihoods
+            # 2) compute the size of the cluster associated with the greedy decode to get an estimate of its confidence - this is a convergent monte carlo estimate.
+
+            # custom clustering procedure differs from paper; we are using modern LLMs for equivalency, not the NLI classifier used in the paper.
+            # full prompting strategy is in llm/datasets/llm_utils_oe.py
+            for cs in comparison_strategies:
+                _, greedy_equivalency_labels, _ = prepare_uncertainty_query(
+                    tokenizer,
+                    inputs,
+                    targets,
+                    generations,
+                    strategy=cs,
+                    format=query_format,
+                )
+                greedy_equivalency_labels = greedy_equivalency_labels.to(
+                    accelerator.device
+                )
+                # q_targets = [qi.pop("target") for qi in q_inputs]
+
+                sampling_likelihoods = []
+                sampling_generations_list = []
+                for _ in range(k):
+                    sampling_generation_outputs = model.generate(
+                        **generation_inputs,
+                        generation_config=generation_config_sampling,
+                        return_dict_in_generate=True,
+                        output_scores=True,
+                    )
+
+                    sampling_generations = tokenizer.batch_decode(
+                        sampling_generation_outputs["sequences"][
+                            :, generation_inputs.get("input_ids").size(-1) :
+                        ],
+                        skip_special_tokens=True,
+                        clean_up_tokenization_spaces=False,
+                    )
+
+                    sampling_generations = sanitize_generations(sampling_generations)
+
+                    # gets the max for each of the generated token among all log softmax probs in the vocab
+                    sampling_log_probs = np.max(
+                        F.log_softmax(
+                            torch.stack(sampling_generation_outputs["scores"], dim=1),
+                            dim=-1,
+                        )
+                        .detach()
+                        .cpu()
+                        .numpy(),
+                        axis=-1,
+                    )
+
+                    # stop early at eos
+                    eos_match_array = (
+                        sampling_generation_outputs["sequences"][
+                            :, generation_inputs.get("input_ids").size(-1) :
+                        ]
                         .detach()
                         .cpu()
                         .numpy()
-                    , axis=-1)
-                )
-            )
-            for sequence_probs in sampled_log_probs
-        ]
-
-        outputs_list = [sampled_outputs]
-        length_normalized_likelihoods_list = [length_normalized_likelihoods]
-
-        # page 15 is original algorithm: https://arxiv.org/pdf/2302.09664.pdf
-        # our modification is based on finding the likelihood under the sampling procedure of the greedy decoded answer's equivalence class
-        # form a cluster based on the equivalency with the greedy decode (but exclude the greedy decode)
-
-        # two strategies to compute likelihood:
-        # 1) find sum of length-normalized likelihoods of all entries in sample -- closest approximation of
-        # the logsumpexp likelihood-summing done here:
-        # https://github.com/lorenzkuhn/semantic_uncertainty/blob/27adbf0dc1bf056c771c205d89c2a79cbd82dc3a/code/compute_confidence_measure.py#L134
-        # NOTE: we do not feel that adding likelihoods of samples produces a convergent estimate of likelihoods
-        # 2) compute the size of the cluster associated with the greedy decode to get an estimate of its confidence - this is a convergent monte carlo estimate.
-
-        # custom clustering procedure differs from paper; we are using modern LLMs for equivalency, not the NLI classifier used in the paper.
-        # full prompting strategy is in llm/datasets/llm_utils_oe.py
-        prob = []
-        match_scores = []
-        likelihood_score = []
-        normalized_likelihood_score = []
-        likelihood_output_list = []
-        for i, question_string, greedy, output_sequences, output_likelihoods in zip(
-            range(len(question_strings)), question_strings, output_strings, outputs_list, length_normalized_likelihoods_list
-        ):
-            n_cluster = 0
-            likelihood_accumulate = 0
-
-            for generation, likelihood in zip(
-                output_sequences, output_likelihoods
-            ):
-
-                add_to_cluster = clustering_equivalency_with_oracle(
-                    greedy,
-                    generation,
-                    question_strings[0],
-                    oracle_fn=openai_query,
-                    oracle_kwargs={"openai_model_name": "gpt-3.5-turbo-1106"},
-                )
-
-                if add_to_cluster:
-                    n_cluster += 1
-                    likelihood_accumulate += likelihood
-
-                match_scores.append(add_to_cluster)
-            # then prob = (size of the cluster associated with greedy) / k
-            prob.append(n_cluster / k)
-            likelihood_score.append(likelihood_accumulate)
-            normalized_likelihood_score.append(
-                likelihood_accumulate
-                / sum(output_likelihoods)
-            )
-            likelihood_output_list.append(
-                output_likelihoods
-            )
-
-        prob = np.array(prob)
-        likelihood_score = np.array(likelihood_score)
-        normalized_likelihood_score = np.array(normalized_likelihood_score)
-
-        # prob = outputs_list_length_normalized[argmax_i] / np.sum(outputs_list_length_normalized)
-        # outputs_argmax = outputs_list[argmax_i].unsqueeze(dim=0)
-        # outputs = model.generate(**oe_inputs, max_new_tokens=max_new_tokens)
-
-        # prepare the calibration query with open ended text
-        # the calculation of the accuracy is done within this function
-        for c in comparison_strategies:
-            _, acc = prepare_oe_calibration_query(
-                tokenizer,
-                oe_target_strings,
-                output_strings,
-                question_strings,
-                format=query_format,
-                comparison_strategy=c,
-            )
-
-            acc = acc.to(device)
-
-            [
-                l.append(v)
-                for l, v in zip(
-                    (
-                        all_prob[c],
-                        all_likelihood_accumulate[c],
-                        all_normalized_likelihood_accumulate[c],
-                        all_acc[c],
-                    ),
-                    accelerator.gather_for_metrics(
-                        (prob, likelihood_score, normalized_likelihood_score, acc)
-                    ),
-                )
-            ]
-
-        [
-            l.append(v)
-            for l, v in zip(
-                (
-                    all_oe_target_strings,
-                    all_output_strings,
-                    all_question_strings,
-                    all_generations,
-                    all_match_scores,
-                    all_likelihood_outputs,
-                ),
-                accelerator.gather_for_metrics(
-                    (
-                        oe_target_strings,
-                        output_strings,
-                        question_strings,
-                        sum(outputs_list, []),
-                        match_scores,
-                        likelihood_output_list,
+                        == tokenizer.eos_token_id
                     )
-                ),
-            )
-        ]
 
-    return_dict = {}
+                    has_eos = np.any(eos_match_array, axis=-1)
 
-    all_oe_target_strings, all_output_strings, all_question_strings = (
-        sum(all_oe_target_strings, []),
-        sum(all_output_strings, []),
-        sum(all_question_strings, []),
-    )
-    all_likelihood_outputs = sum(all_likelihood_outputs, [])
-    dump = {
-        "oe_target_strings": all_oe_target_strings,
-        "output_strings": all_output_strings,
-        "question_strings": all_question_strings,
-        "all_generations": all_generations,
-        "all_match_scores": all_match_scores,
-        "all_likelihood_outputs": all_likelihood_outputs,
-    }
+                    # we want to get the index after the last valid index for each row
+                    stop_index = np.where(
+                        has_eos,
+                        # If there are multiple maximal values in a reduced row then the indices of the first maximal value are returned.
+                        np.argmax(eos_match_array, axis=-1),
+                        sampling_log_probs.shape[-1],
+                    )
 
-    for c in comparison_strategies:
+                    # negative inf are now set to 0 to allow summing, then summed, then divided by stop_index, then exponentiated
+                    # assumption: each sample produces nonzero text
+                    sampling_likelihood = np.exp(
+                        np.sum(
+                            np.where(
+                                np.isinf(sampling_log_probs), 0, sampling_log_probs
+                            ),
+                            axis=-1,
+                        )
+                        / stop_index
+                    )
 
-        all_acc_c = np.concatenate([c.cpu() for c in all_acc[c]], axis=0)
-        all_prob_c = np.concatenate([p for p in all_prob[c]], axis=0)
-        all_likelihood_accumulate_c = np.concatenate(
-            [l for l in all_likelihood_accumulate[c]], axis=0
+                    sampling_likelihoods.append(sampling_likelihood)
+                    sampling_generations_list.append(sampling_generations)
+
+                sampling_equivalencies = np.reshape(
+                    equivalency_grading(
+                        inputs * k,
+                        generations * k,
+                        sum(sampling_generations_list, []),
+                        strategy=cs,
+                    )
+                    .detach()
+                    .cpu()
+                    .numpy(),
+                    (-1, k),
+                )
+
+                sampling_likelihoods = np.stack(sampling_likelihoods, axis=-1)
+                normalized_sampling_likelihoods = sampling_likelihoods / np.sum(
+                    sampling_likelihoods, axis=-1, keepdims=True
+                )
+
+                summed_likelihood = np.sum(
+                    np.where(
+                        sampling_equivalencies,
+                        normalized_sampling_likelihoods,
+                        0,
+                    ),
+                    axis=-1,
+                )
+                sampling_count = (
+                    np.sum(sampling_equivalencies, axis=-1)
+                    / sampling_equivalencies.shape[-1]
+                )
+
+                all_data["rows"].extend(
+                    [
+                        {
+                            **inp,
+                            "target": tgt,
+                            "output": out,
+                            "samples": sps,
+                        }
+                        for inp, tgt, out, sps in zip(
+                            inputs, targets, generations, sampling_generations_list
+                        )
+                    ]
+                )
+
+                all_data["evals"][cs]["q_labels"].append(
+                    greedy_equivalency_labels.detach().cpu().numpy()
+                )
+                all_data["evals"][cs]["summed_likelihood"].append(summed_likelihood)
+                all_data["evals"][cs]["sampling_count"].append(sampling_count)
+                all_data["evals"][cs]["sampling_equivalencies"].append(
+                    sampling_equivalencies
+                )
+
+                [
+                    l.append(v)
+                    for l, v in zip(
+                        (cs_q_labels[cs], cs_us_likelihood[cs], cs_us_counting[cs]),
+                        accelerator.gather_for_metrics(
+                            (
+                                greedy_equivalency_labels,
+                                summed_likelihood,
+                                sampling_count,
+                            )
+                        ),
+                    )
+                ]
+
+        metrics_dict = {}
+        for cs in comparison_strategies:
+            greedy_equivalency_labels = torch.cat(cs_q_labels[cs], dim=0)
+            counting_p = np.concatenate(cs_us_counting[cs], axis=0)
+            likelihood_p = np.concatenate(cs_us_likelihood[cs], axis=0)
+            # q_p = torch.cat(cs_q_logits[cs], dim=0)[:, q_token_vec].softmax(dim=-1)
+
+            acc = greedy_equivalency_labels.float().mean(dim=0)
+            # q_pred = q_p.argmax(dim=-1)
+            # q_acc = (q_pred == q_labels).float().mean(dim=0)
+
+        ece_counting, _ = calibration(
+            np.ones_like(greedy_equivalency_labels.detach().cpu().numpy()),
+            greedy_equivalency_labels,
+            counting_p,
         )
-        all_normalized_likelihood_accumulate_c = np.concatenate(
-            [l for l in all_normalized_likelihood_accumulate[c]], axis=0
+
+        ece_likelihood, _ = calibration(
+            np.ones_like(greedy_equivalency_labels.detach().cpu().numpy()),
+            greedy_equivalency_labels,
+            likelihood_p,
         )
 
-        acc = all_acc_c.mean()
-        # import pdb; pdb.set_trace()
-        assert len(all_prob_c) == len(all_acc_c)
-        assert len(all_likelihood_accumulate_c) == len(all_acc_c)
-        ece, _ = calibration(
-            np.ones_like(all_prob_c),
-            all_acc_c.astype(dtype=np.dtype("i4")),
-            np.array(all_prob_c),
-        )
-
-        likelihood_ece, _ = calibration(
-            np.ones_like(all_likelihood_accumulate_c),
-            all_acc_c.astype(dtype=np.dtype("i4")),
-            np.array(all_likelihood_accumulate_c),
-        )
-
-        likelihood_normalized, _ = calibration(
-            np.ones_like(all_normalized_likelihood_accumulate_c),
-            all_acc_c.astype(dtype=np.dtype("i4")),
-            np.array(all_normalized_likelihood_accumulate_c),
-        )
-
-        return_dict.update(
+        metrics_dict.update(
             {
-                f"{c}_acc": acc.item(),
-                f"{c}_ece_counting": ece,
-                f"{c}_ece_likelihood": likelihood_ece,
-                f"{c}_ece_likelihood_normalized": likelihood_normalized,
-                "N": len(all_acc_c),
+                "N": greedy_equivalency_labels.size(0),
+                f"{cs}_acc": acc.item(),
+                f"{cs}_ece_counting": ece_counting,
+                f"{cs}_ece_likelihood": ece_likelihood,
             }
         )
 
-        dump.update(
-            {
-                f"{c}_acc": all_acc_c,
-                f"{c}_counting_prob": all_prob_c,
-                f"{c}_likelihood_accumulate": all_likelihood_accumulate_c,
-                f"{c}_likelihood_normalized": all_normalized_likelihood_accumulate_c,
-                # f"{c}_all_unc_y": all_unc_y_c.cpu().numpy(),
-                # f"{c}_all_unc_y_hat": all_unc_y_hat.cpu().numpy(),
-            }
+    if log_dir is not None:
+        os.makedirs(log_dir, exist_ok=True)
+        os.makedirs(os.path.join(log_dir, "sampling"), exist_ok=True)
+
+        all_data["evals"] = {
+            k: {qk: np.concatenate(qv, axis=0) for qk, qv in v.items()}
+            for k, v in all_data["evals"].items()
+        }
+
+        pd.DataFrame(all_data["rows"]).to_csv(
+            f"{log_dir}/rows_{accelerator.process_index}.csv", index=False
+        )
+        with open(
+            os.path.join(log_dir, "sampling", f"q_{accelerator.process_index}.pt"), "wb"
+        ) as f:
+            torch.save(all_data["evals"], f)
+
+        logging.debug(
+            f"Data saved to {os.path.join(log_dir, 'sampling')} from process {accelerator.process_index}."
         )
 
-    if accelerator.num_processes == 1 and output_row_path is not None:
-        os.makedirs(output_row_path, exist_ok=True)
-        pd.DataFrame(dump).to_csv(output_row_path, escapechar="\\")
-
-    return return_dict
+    return metrics_dict
 
 
 # # https://github.com/tonyzhaozh/few-shot-learning/blob/e04d8643be91c2cce63f33e07760ff75d5aa3ad0/run_extraction.py#L144C9-L144C9
@@ -741,17 +762,18 @@ VERBAL_ELICITATION_UNC_QUERIES = {
     ]),
 }
 
+
 def parse_verbal_elicitation_oe(
     output_string,
     ve_style,
     stage=1,
     prev_guesses=None,
 ):
-    stages,guess_style = ve_style.split("s")
+    stages, guess_style = ve_style.split("s")
     stages = int(stages)
     num_guesses = int(guess_style[0])
     is_CoT = guess_style[1] == "C"
-    
+
     if stages == 1:
         expected_lines = 2 * num_guesses
     else:
@@ -897,26 +919,6 @@ def evaluate_verbal_elicitation_oe(
         prompt_style=prompt_style,
         generation_config=generation_config,
     )
-
-    # i = 0
-    # for example in output_generator:
-    #     from pprint import pprint
-    #     pprint(example)
-
-    #     output, labels, probs = parse_verbal_elicitation_oe(
-    #         example["output"], ve_style, stage=1
-    #     )
-
-    #     print(output)
-    #     print(labels)
-    #     print(probs)
-
-    #     # print("\n")
-    #     i += 1
-    #     if i > 10:
-    #         break
-    
-    # print(1/0)
 
     for example in output_generator:
         output, raw_input, target = (

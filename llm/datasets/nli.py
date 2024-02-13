@@ -39,7 +39,7 @@ def __format_sample(sample, tokenizer, style):
             ]
         )
 
-        target = string.ascii_lowercase[sample["label"]] + tokenizer.eos_token
+        target = string.ascii_lowercase[sample["label"]]
     elif style == "oe":
         context = "\n".join(
             [
@@ -49,7 +49,7 @@ def __format_sample(sample, tokenizer, style):
             ]
         )
 
-        target = answer_map[sample["label"]] + tokenizer.eos_token
+        target = answer_map[sample["label"]]
     else:
         raise NotImplementedError
 
@@ -97,6 +97,7 @@ def __format_sample_with_prompt(
 def get_snli(
     root=None,
     prompt_style=None,
+    train_kshot=0,
     eval_kshot=0,
     tokenizer=None,
     num_workers=8,
@@ -130,7 +131,7 @@ def get_snli(
                 "label",
             ],
         )
-        for data, k in zip(data_splits, [0, eval_kshot, eval_kshot])
+        for data, k in zip(data_splits, [train_kshot, eval_kshot, eval_kshot])
     ]
 
     return train_data, val_data, test_data
@@ -149,6 +150,7 @@ def get_anli(
     root=None,
     round=None,
     prompt_style=None,
+    train_kshot=0,
     eval_kshot=0,
     tokenizer=None,
     num_workers=8,
@@ -184,7 +186,7 @@ def get_anli(
                 "reason",
             ],
         )
-        for data, k in zip(data_splits, [0, eval_kshot])
+        for data, k in zip(data_splits, [train_kshot, eval_kshot])
     ]
 
     return train_data, None, test_data

@@ -12,7 +12,7 @@ __all__ = [
 
 
 def __format_sample(sample, tokenizer, style):
-    target_prompt = "\nAnswer: "
+    target_prompt = "\nAnswer:"
 
     text = sample["text"]
     answer_map = sample["options"]
@@ -32,7 +32,7 @@ def __format_sample(sample, tokenizer, style):
             ]
         )
 
-        target = string.ascii_lowercase[sample["label"]] + tokenizer.eos_token
+        target = string.ascii_lowercase[sample["label"]]
     elif style == "oe":
         context = "\n".join(
             [
@@ -41,7 +41,7 @@ def __format_sample(sample, tokenizer, style):
             ]
         )
 
-        target = answer_map[sample["label"]] + tokenizer.eos_token
+        target = answer_map[sample["label"]]
     else:
         raise NotImplementedError
 
@@ -100,7 +100,10 @@ def get_wsc(
     from datasets import load_dataset
 
     dataset = load_dataset(
-        "winograd_wsc", subset, cache_dir=os.environ.get("HF_DATASETS_CACHE", root)
+        "winograd_wsc",
+        subset,
+        cache_dir=os.environ.get("HF_DATASETS_CACHE", root),
+        trust_remote_code=True,
     )
     if not use_cache:
         dataset.cleanup_cache_files()

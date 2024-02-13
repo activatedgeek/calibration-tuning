@@ -75,7 +75,7 @@ __ATTRS = dict(tasks=__TASKS)
 
 
 def __format_sample(sample, tokenizer, style):
-    target_prompt = "\nAnswer: "
+    target_prompt = "\nAnswer:"
 
     if style == "choice":
         question = sample["question"]
@@ -92,13 +92,13 @@ def __format_sample(sample, tokenizer, style):
             ]
         )
 
-        target = string.ascii_lowercase[sample["answer"]] + tokenizer.eos_token
+        target = string.ascii_lowercase[sample["answer"]]
     elif style == "oe":
         question = sample["question"]
 
         context = f"Question:\n{question}"
 
-        target = sample["choices"][sample["answer"]] + tokenizer.eos_token
+        target = sample["choices"][sample["answer"]]
     else:
         raise NotImplementedError
 
@@ -110,7 +110,7 @@ def __generate_fewshot_prompts(
 ):
     if kshot <= 0:
         return ""
-    
+
     if prompt_style == "oe":
         fewshot_prompt = "\n".join(
             [
@@ -165,6 +165,7 @@ def get_mmlu(
     root=None,
     instance=None,
     prompt_style=None,
+    train_kshot=0,
     eval_kshot=5,
     tokenizer=None,
     num_workers=8,
@@ -199,7 +200,8 @@ def get_mmlu(
             ],
         )
         for split, k in zip(
-            ["auxiliary_train", "validation", "test"], [0, eval_kshot, eval_kshot]
+            ["auxiliary_train", "validation", "test"],
+            [train_kshot, eval_kshot, eval_kshot],
         )
     ]
 

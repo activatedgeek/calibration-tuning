@@ -1,107 +1,86 @@
-# import os
-# import wandb
-# import pandas as pd
+import pandas as pd
 import torch
-# from accelerate import Accelerator
+import torch.nn.functional as F
 from tqdm.auto import tqdm
 from peft import PeftModel
-# from transformers import GenerationConfig
 
-# from llm.datasets import get_dataset, get_loader
-from llm.datasets.llm_utils import (
-    LMText,
-    prepare_batch,
-    DataCollatorForSupervisedDataset,
-)
-# from llm.models import get_model
-# from llm.models.peft import get_lora_model
-# from llm.logging import entrypoint
-
-# from llm.datasets.llm_utils_oe import prepare_oe_calibration_query
+from llm.datasets import LabeledStringDataCollator
 
 
 def generate_output(
-    accelerator, 
-    model, 
-    tokenizer, 
-    loader, 
-    prompt_style="oe", 
-    generation_config=None, 
+    accelerator,
+    model,
+    tokenizer,
+    loader,
+    generation_config=None,
     generation_config_sampling=None,
-    k=None
+    n_samples=0,
+    log_dir=None,
 ):
-    if isinstance(model, PeftModel):
-        model.set_adapter("default")
+    collate_fn = LabeledStringDataCollator(tokenizer)
 
-    collate_fn = DataCollatorForSupervisedDataset(tokenizer)
+    all_outputs = []
 
     for inputs in tqdm(loader):
-        generation_inputs = prepare_batch(
-            tokenizer,
-            ## Skip "target" for generation.
-            {k: v for k, v in inputs.items() if k != "target"},
-            prompt_style=prompt_style,
-        )
+        inputs = [dict(zip(inputs.keys(), vals)) for vals in zip(*inputs.values())]
+        targets = [inp.pop("target") for inp in inputs]
+
         generation_inputs = {
-            k: v.to(accelerator.device)
-            for k, v in collate_fn(generation_inputs).items()
+            k: v.to(accelerator.device) for k, v in collate_fn(inputs).items()
         }
+
+        if isinstance(model, PeftModel):
+            model.set_adapter("default")
 
         generation_outputs = model.generate(
             **generation_inputs, generation_config=generation_config
         )
 
-        if k is not None:
-            assert(generation_config_sampling is not None)
-            assert(k > 0)
-            #https://github.com/huggingface/transformers/issues/14498#issuecomment-977909651
+        generations = tokenizer.batch_decode(
+            generation_outputs[:, generation_inputs.get("input_ids").size(-1) :],
+            skip_special_tokens=True,
+            clean_up_tokenization_spaces=False,
+        )
+
+        outputs = [
+            {**inp, "target": tgt, "output": gen}
+            for inp, tgt, gen in zip(inputs, targets, generations)
+        ]
+
+        if n_samples:
+            assert generation_config_sampling is not None
+
+            # https://github.com/huggingface/transformers/issues/14498#issuecomment-977909651
             sampled_outputs = [
                 model.generate(
                     **generation_inputs,
                     generation_config=generation_config_sampling,
                     return_dict_in_generate=True,
-                    output_scores=True
+                    output_scores=True,
                 )
-                for _ in range(k)
+                for _ in range(n_samples)
             ]
 
-        ## NOTE: Verify output extraction pre-condition.
-        assert (
-            generation_inputs.get("input_ids")
-            == generation_outputs[:, : generation_inputs.get("input_ids").size(-1)]
-        ).all()
+            outputs = [
+                {
+                    **o,
+                    "sampled_outputs": tokenizer.batch_decode(
+                        so["sequences"][
+                            :, generation_inputs.get("input_ids").size(-1) :
+                        ]
+                    ),
+                    "sampled_log_probs": F.log_softmax(
+                        torch.cat(so["scores"], dim=0), dim=-1
+                    ),
+                }
+                for o, so in zip(outputs, sampled_outputs)
+            ]
 
-        examples_pre = [dict(zip(inputs.keys(), vals)) for vals in zip(*inputs.values())]
-        examples = []
-        for i, o, inp, t in zip(range(len(examples_pre)), examples_pre, generation_inputs.get("input_ids"), generation_outputs):
-            example = {
-                **o,
-                "output": tokenizer.decode(
-                    t[inp.size(0) :],
-                    skip_special_tokens=True,
-                    clean_up_tokenization_spaces=False,
-                ),
-                "raw_input": tokenizer.decode(
-                    inp,
-                    skip_special_tokens=True,
-                    clean_up_tokenization_spaces=False,
-                ),
-                "target": o["target"],
-            }
-            if k is not None:
+        all_outputs.extend(outputs)
 
-                example["sampled_outputs"] = [
-                    tokenizer.decode(
-                        entry['sequences'][i][inp.size(0) :],
-                        skip_special_tokens=True,
-                        clean_up_tokenization_spaces=False,
-                    )
-                    for entry in sampled_outputs
-                ]
-                example["sampled_log_probs"] = [
-                    torch.nn.functional.log_softmax(torch.cat(entry['scores'],dim=0), dim=-1)
-                    for entry in sampled_outputs
-                ]
-            examples.append(example)
+    if log_dir is not None:
+        df = pd.DataFrame(all_outputs)
+        ## NOTE: Avoid spec errors when loading for labeling.
+        df["query_label"] = -1
 
-        yield from examples
+        df.to_csv(f"{log_dir}/rows_{accelerator.process_index}.csv", index=False)

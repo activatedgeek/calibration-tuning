@@ -39,7 +39,7 @@ def __format_sample(sample, tokenizer, style):
             ]
         )
 
-        target = string.ascii_lowercase[sample["coarse_label"]] + tokenizer.eos_token
+        target = string.ascii_lowercase[sample["coarse_label"]]
     elif style == "oe":
         context = "\n".join(
             [
@@ -49,7 +49,7 @@ def __format_sample(sample, tokenizer, style):
             ]
         )
 
-        target = answer_map[sample["coarse_label"]] + tokenizer.eos_token
+        target = answer_map[sample["coarse_label"]]
     else:
         raise NotImplementedError
 
@@ -97,6 +97,7 @@ def __format_sample_with_prompt(
 def get_trec(
     root=None,
     prompt_style=None,
+    train_kshot=0,
     eval_kshot=0,
     tokenizer=None,
     num_workers=8,
@@ -106,7 +107,11 @@ def get_trec(
 ):
     from datasets import load_dataset
 
-    dataset = load_dataset("trec", cache_dir=os.environ.get("HF_DATASETS_CACHE", root))
+    dataset = load_dataset(
+        "trec",
+        cache_dir=os.environ.get("HF_DATASETS_CACHE", root),
+        trust_remote_code=True,
+    )
     if not use_cache:
         dataset.cleanup_cache_files()
 
@@ -118,7 +123,9 @@ def get_trec(
             num_proc=num_workers,
             remove_columns=["text", "coarse_label", "fine_label"],
         )
-        for data, k in zip([dataset.pop("train"), dataset.pop("test")], [0, eval_kshot])
+        for data, k in zip(
+            [dataset.pop("train"), dataset.pop("test")], [train_kshot, eval_kshot]
+        )
     ]
 
     return train_data, None, test_data

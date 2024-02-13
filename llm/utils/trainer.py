@@ -1,62 +1,10 @@
 import tqdm
 from dataclasses import dataclass, field
 import torch
-import torch.nn.functional as F
-from transformers import Trainer, TrainingArguments, TrainerCallback
+from transformers import Trainer, TrainingArguments
 from transformers.training_args import TrainingArguments
-from transformers.trainer_utils import PREFIX_CHECKPOINT_DIR, get_last_checkpoint
 
-from ..datasets.llm_utils import (
-    DataCollatorForSupervisedDataset,
-    extract_qa_exact,
-    prepare_query,
-)
-from ..eval import evaluate_dataset
-from .scheduler import AnyCosineScheduler
-
-
-__all__ = [
-    "WandbConfigUpdateCallback",
-    "TrainingArguments",
-    "UncertaintyTrainer",
-]
-
-
-def get_last_checkpoint_path(path):
-    if PREFIX_CHECKPOINT_DIR not in path:
-        path = get_last_checkpoint(path)
-
-    assert path is not None, f"No checkpoint found in '{path}'."
-
-    return path
-
-
-class WandbConfigUpdateCallback(TrainerCallback):
-    def __init__(self, **config):
-        self._config = config
-
-    def on_train_begin(self, _args, state, _control, **_):
-        if state.is_world_process_zero:
-            import wandb
-
-            wandb.config.update(self._config, allow_val_change=True)
-
-            del self._config
-
-
-class SchedulerInitCallback(TrainerCallback):
-    def __init__(self, scheduler):
-        super().__init__()
-
-        self.scheduler = scheduler
-
-    def on_train_begin(self, args, state, _control, **_):
-        self.scheduler.setup(
-            init_value=args.unc_decay,
-            T_max=int(args.unc_decay_ratio * args.max_steps),
-            last_epoch=state.global_step,
-            eta_min=0.0 if args.loss_mode == "reg" else args.unc_decay,
-        )
+from ..datasets.llm_utils import DataCollatorForSupervisedDataset
 
 
 @dataclass
@@ -67,112 +15,6 @@ class TrainingArguments(TrainingArguments):
     loss_mode: str = field(default="reg")
     query_format: str = field(default="roman_choice")
     label_smoothing: float = field(default=0.0)
-
-
-class UncertaintyTrainer(Trainer):
-    def __init__(self, *args, tokenizer=None, val_data=None, test_data=None, **kwargs):
-        super().__init__(
-            *args,
-            **kwargs,
-            tokenizer=tokenizer,
-            data_collator=DataCollatorForSupervisedDataset(tokenizer),
-        )
-
-        self.val_data = val_data
-        self.test_data = test_data
-
-        self.unc_decay = AnyCosineScheduler()
-        self.add_callback(SchedulerInitCallback(self.unc_decay))
-
-    def compute_unc_loss(self, model, inputs, outputs):
-        query_inputs, query_token_vec = prepare_query(
-            self.tokenizer, inputs, outputs, format=self.args.query_format
-        )
-        query_inputs = self.data_collator(query_inputs)
-
-        if self.args.unc_normalize:
-            query_outputs = model(**query_inputs)
-
-            _, unc_y, unc_logits = extract_qa_exact(
-                self.tokenizer, query_inputs, outputs=query_outputs
-            )
-            unc_y, unc_logits = (
-                (unc_y.unsqueeze(-1) == query_token_vec).long().argmax(dim=-1),
-                unc_logits[:, query_token_vec],
-            )
-
-            unc_loss = F.cross_entropy(
-                unc_logits,
-                unc_y.to(unc_logits.device),
-                label_smoothing=self.args.label_smoothing,
-            )
-
-            return unc_loss
-
-        unc_loss = super().compute_loss(model, query_inputs)
-
-        return unc_loss
-
-    def compute_loss(self, model, inputs, return_outputs=False):
-        loss, outputs = super().compute_loss(model, inputs, return_outputs=True)
-
-        unc_loss = (
-            self.compute_unc_loss(model, inputs, outputs)
-            if self.unc_decay.value > 0.0
-            else torch.tensor(0.0)
-        )
-
-        if self.args.loss_mode == "reg":
-            total_loss = loss + self.unc_decay.value * unc_loss
-        elif self.args.loss_mode == "cvx_comb":
-            total_loss = (
-                1 - self.unc_decay.value
-            ) * loss + self.unc_decay.value * unc_loss
-        else:
-            raise NotImplementedError
-
-        loss_metrics = {
-            "lm_loss": loss.detach().item(),
-            "unc_loss": unc_loss.detach().item(),
-            "total_loss": total_loss.detach().item(),
-            "unc_decay": self.unc_decay.value,
-        }
-
-        if (self.state.global_step + 1) % self.args.logging_steps == 0:
-            self.log(loss_metrics)
-
-        self.unc_decay.step()
-
-        return (total_loss, outputs) if return_outputs else total_loss
-
-    @torch.inference_mode()
-    def evaluate(self, *_, **__):
-        # metrics = super().evaluate(eval_dataset, ignore_keys, metric_key_prefix)
-        metrics = {}
-
-        val_metrics, test_metrics = evaluate_dataset(
-            self.accelerator,
-            self.model,
-            self.tokenizer,
-            None,
-            train_data=False,
-            seed=self.args.seed,
-            val_data=self.val_data,
-            test_data=self.test_data,
-            prompt_style="choice",
-        )
-
-        if val_metrics is not None:
-            val_metrics = {f"eval/{k}": v for k, v in val_metrics.items()}
-            self.log(val_metrics)
-            metrics.update(val_metrics)
-
-        if test_metrics is not None:
-            test_metrics = {f"test/{k}": v for k, v in test_metrics.items()}
-            self.log(test_metrics)
-            metrics.update(test_metrics)
-
-        return metrics
 
 
 class ClassificationTrainer(Trainer):
@@ -211,9 +53,9 @@ class ClassificationTrainer(Trainer):
             torch.arange(output_ids.size(0)), eos_idx - 1
         ]
 
-        response_ids[
-            torch.arange(input_ids.size(0)), eos_idx + 1
-        ] = self.tokenizer.pad_token_id
+        response_ids[torch.arange(input_ids.size(0)), eos_idx + 1] = (
+            self.tokenizer.pad_token_id
+        )
 
         labels = torch.tensor(targets, device=targets.device).long()
 

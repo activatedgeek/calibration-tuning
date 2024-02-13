@@ -3,12 +3,12 @@ from tqdm.auto import tqdm
 import wandb
 import pandas as pd
 import torch
-from accelerate import Accelerator
 
-from llm.logging import entrypoint, Timer
+from llm.accelerate import Accelerator
+from llm.logging import entrypoint
 from llm.datasets import get_all_datasets_list
 from llm.models import get_model
-from llm.models.peft import get_lora_model, prepare_model_for_temperature_scaling
+from llm.models.peft import get_lora_model
 from llm.eval import evaluate_dataset
 
 
@@ -27,6 +27,7 @@ def main(
     use_dataset_cache=True,
     prompt_style="choice",
     mode=None,
+    int8=False,
 ):
     accelerator = Accelerator()
 
@@ -40,6 +41,7 @@ def main(
         "prompt_style": prompt_style,
         "mode": mode,
         "log_dir": log_dir,
+        "int8": int8,
     }
     if accelerator.is_main_process:
         wandb.config.update(config)
@@ -56,6 +58,7 @@ def main(
         model_dir=model_dir,
         use_cache=False,
         tokenizer=tokenizer,
+        load_in_8bit=int8,
     )
 
     model = get_lora_model(
@@ -70,12 +73,7 @@ def main(
         peft_dir=query_peft_dir or peft_dir,
         is_trainable=False,
         adapter_name="query",
-    ).to(accelerator.local_process_index)
-
-    if scale_temp:
-        prepare_model_for_temperature_scaling(
-            model, peft_dir=query_peft_dir or peft_dir
-        )
+    )
 
     model.eval()
 
@@ -87,30 +85,23 @@ def main(
 
     all_metrics = []
     for dataset in tqdm(all_datasets):
-        with Timer() as t:
-            val_metrics, test_metrics = evaluate_dataset(
-                accelerator,
-                model,
-                tokenizer,
-                dataset,
-                train_data=False,
-                seed=seed,
-                batch_size=batch_size,
-                data_dir=data_dir,
-                eval_kshot=eval_kshot,
-                use_cache=use_dataset_cache,
-                prompt_style=prompt_style,
-                log_dir=log_dir,
-                evaluate_fn=mode,
-            )
-
-        dataset_metrics = list(
-            map(
-                lambda m: {**m, **config, "dataset": dataset, "ts": t.elapsed},
-                list(filter(lambda m: m is not None, [val_metrics, test_metrics])),
-            )
+        metrics = evaluate_dataset(
+            accelerator,
+            model,
+            tokenizer,
+            dataset,
+            train_data=False,
+            seed=seed,
+            batch_size=batch_size,
+            data_dir=data_dir,
+            eval_kshot=eval_kshot,
+            use_cache=use_dataset_cache,
+            prompt_style=prompt_style,
+            log_dir=log_dir,
+            evaluate_fn=mode,
         )
-        all_metrics += dataset_metrics
+
+        all_metrics += metrics
         logging.info(
             {"metrics": wandb.Table(dataframe=pd.DataFrame(all_metrics))},
             extra=dict(metrics=True),
@@ -119,8 +110,8 @@ def main(
         accelerator.free_memory()
 
     accelerator.wait_for_everyone()
-    if accelerator.process_index == 0:
-        pd.DataFrame(all_metrics).to_csv(f"{log_dir}/metrics.csv", index=False)
+    if accelerator.is_main_process:
+        wandb.save(f"{log_dir}/metrics/*", base_path=log_dir)
 
 
 if __name__ == "__main__":

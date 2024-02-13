@@ -32,7 +32,7 @@ def __format_sample(sample, tokenizer, style):
             ]
         )
 
-        target = sample["answerKey"].lower() + tokenizer.eos_token
+        target = sample["answerKey"].lower()
     elif style == "oe":
         question = sample["question"]
         answer_map = sample["choices"]["text"]
@@ -46,10 +46,7 @@ def __format_sample(sample, tokenizer, style):
             ]
         )
 
-        target = (
-            answer_map[string.ascii_lowercase.index(sample["answerKey"].lower())]
-            + tokenizer.eos_token
-        )
+        target = answer_map[string.ascii_lowercase.index(sample["answerKey"].lower())]
     else:
         raise NotImplementedError
 
@@ -98,6 +95,7 @@ def get_arc(
     root=None,
     subset=None,
     prompt_style=None,
+    train_kshot=0,
     eval_kshot=0,
     tokenizer=None,
     num_workers=8,
@@ -128,7 +126,7 @@ def get_arc(
         )
         for data, k in zip(
             [dataset.pop("train"), dataset.pop("validation"), dataset.pop("test")],
-            [0, eval_kshot, eval_kshot],
+            [train_kshot, eval_kshot, eval_kshot],
         )
     ]
 

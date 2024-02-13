@@ -30,11 +30,8 @@ def __format_sample(sample, tokenizer, style):
             ]
         )
 
-        target_prompt = "\nAnswer: "
-        target = (
-            string.ascii_lowercase[sample["answer_right_ending"] - 1]
-            + tokenizer.eos_token
-        )
+        target_prompt = "\nAnswer:"
+        target = string.ascii_lowercase[sample["answer_right_ending"] - 1]
     elif style == "oe":
         context = "\n".join(
             [
@@ -43,8 +40,8 @@ def __format_sample(sample, tokenizer, style):
             ]
         )
 
-        target_prompt = "\nEnding: "
-        target = answer_map[sample["answer_right_ending"] - 1] + tokenizer.eos_token
+        target_prompt = "\nEnding:"
+        target = answer_map[sample["answer_right_ending"] - 1]
     else:
         raise NotImplementedError
 

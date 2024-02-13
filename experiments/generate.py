@@ -2,64 +2,19 @@ import os
 import wandb
 import pandas as pd
 import torch
-from accelerate import Accelerator
 from tqdm.auto import tqdm
-from peft import PeftModel
 from transformers import GenerationConfig
 
-from datasets import Dataset
-
+from llm.accelerate import Accelerator
 from llm.datasets import get_dataset, get_loader
-from llm.datasets.llm_utils import (
-    LMText,
-    prepare_batch,
-    DataCollatorForSupervisedDataset,
-)
 from llm.models import get_model
 from llm.models.peft import get_lora_model
 from llm.logging import entrypoint
 
-from llm.datasets.llm_utils_oe import prepare_oe_calibration_query
+from llm.datasets import prepare_uncertainty_query
 
 from llm.utils.generate_utils import generate_output
 
-def prepare_model(
-    accelerator,
-    model_name=None,
-    model_dir=None,
-    peft_dir=None,
-    lora_rank=None,
-    lora_alpha=None,
-    lora_dropout=None,
-):
-    tokenizer = get_model(
-        f"{model_name}_tokenizer",
-        model_dir=model_dir,
-    )
-
-    model = get_model(
-        model_name,
-        device_map={"": accelerator.local_process_index},
-        torch_dtype=torch.bfloat16 if torch.cuda.is_bf16_supported() else torch.float16,
-        model_dir=model_dir,
-        use_cache=False,
-        tokenizer=tokenizer,
-    )
-
-    if peft_dir is not None:
-        model = get_lora_model(
-            model,
-            peft_dir=peft_dir,
-            lora_rank=lora_rank,
-            lora_alpha=lora_alpha,
-            lora_dropout=lora_dropout,
-            is_trainable=False,
-            adapter_name="default",
-        )
-
-    model.eval()
-
-    return tokenizer, model
 
 def generate_outputs_main(
     seed=137,
@@ -77,12 +32,9 @@ def generate_outputs_main(
     use_dataset_cache=True,
     prompt_style="oe",
     max_new_tokens=30,
+    int8=False,
 ):
     accelerator = Accelerator()
-
-    assert (
-        batch_size == 1
-    ), "Only use batch size 1 for now to avoid left padding issues."
 
     config = {
         "seed": seed,
@@ -95,22 +47,41 @@ def generate_outputs_main(
         "prompt_style": prompt_style,
         "max_new_tokens": max_new_tokens,
         "log_dir": log_dir,
+        "int8": int8,
     }
     if accelerator.is_main_process:
         wandb.config.update(config)
 
-    tokenizer, model = prepare_model(
-        accelerator,
-        model_name=model_name,
+    tokenizer = get_model(
+        f"{model_name}_tokenizer",
         model_dir=model_dir,
-        peft_dir=peft_dir,
-        lora_rank=lora_rank,
-        lora_alpha=lora_alpha,
-        lora_dropout=lora_dropout,
     )
 
+    model = get_model(
+        model_name,
+        device_map={"": accelerator.local_process_index},
+        torch_dtype=torch.bfloat16 if torch.cuda.is_bf16_supported() else torch.float16,
+        model_dir=model_dir,
+        use_cache=False,
+        tokenizer=tokenizer,
+        load_in_8bit=int8,
+    )
+
+    if peft_dir is not None:
+        model = get_lora_model(
+            model,
+            peft_dir=peft_dir,
+            lora_rank=lora_rank,
+            lora_alpha=lora_alpha,
+            lora_dropout=lora_dropout,
+            is_trainable=False,
+            adapter_name="default",
+        )
+
+    model.eval()
+
     with accelerator.main_process_first():
-        train_data, _, _ = get_dataset(
+        data_splits = get_dataset(
             dataset,
             root=data_dir,
             tokenizer=tokenizer,
@@ -119,6 +90,11 @@ def generate_outputs_main(
             use_cache=use_dataset_cache,
             prompt_style=prompt_style,
         )
+        data_splits = [
+            (s, ds)
+            for s, ds in zip(["train", "validation", "test"], data_splits)
+            if ds is not None
+        ]
 
     generation_config = GenerationConfig(
         pad_token_id=tokenizer.pad_token_id,
@@ -127,86 +103,52 @@ def generate_outputs_main(
         max_new_tokens=max_new_tokens,
     )
 
-    for data, split in zip([train_data], ["train"]):
+    for split_name, data in data_splits:
         loader = get_loader(
             data,
             batch_size=batch_size,
             pin_memory=True,
             accelerator=accelerator,
-            collate_fn=lambda x: {k: [d[k] for d in x] for k in x[0].keys()},
         )
 
-        output_generator = generate_output(
+        with accelerator.main_process_first():
+            if accelerator.is_main_process:
+                os.makedirs(f"{log_dir}/outputs/{split_name}")
+
+        generate_output(
             accelerator,
             model,
             tokenizer,
             loader,
-            prompt_style=prompt_style,
             generation_config=generation_config,
-            outputs_only=True,
-        )
-
-        csv_path = f"{log_dir}/outputs/{split}"
-        with accelerator.main_process_first():
-            if accelerator.is_main_process:
-                os.makedirs(csv_path)
-
-        pd.DataFrame(output_generator).to_csv(
-            f"{csv_path}/{accelerator.process_index}.csv", index=False
+            log_dir=f"{log_dir}/outputs/{split_name}",
         )
 
 
 def generate_query_label(
     accelerator,
-    model,
     tokenizer,
     loader,
     query_format="roman_choice",
-    comparison_strategy="substring",
+    strategy="substring",
 ):
-    if isinstance(model, PeftModel):
-        model.set_adapter("default")
-
     for inputs in tqdm(loader):
-        inputs_list = []
-        for i in range(len(inputs[next(iter(inputs))])):
-            new_dict = {key: value[i] for key, value in inputs.items()}
-            inputs_list.append(new_dict)
+        inputs = [dict(zip(inputs.keys(), vals)) for vals in zip(*inputs.values())]
+        targets = [inp.pop("target") for inp in inputs]
+        outputs = [inp.pop("output") for inp in inputs]
 
-        question_strings = []
-        for x in inputs_list:
-            x.pop("target")
-            question_strings.append(str(LMText.from_(x)))
-
-        output_strings = inputs["output"]
-        oe_target_strings = inputs["target"]
-        # Find the rightmost occurrence of the eos token.
-        for i, x in enumerate(oe_target_strings):
-            index = x.rfind(tokenizer.eos_token)
-            if index != -1:
-                # Everything before the substring + everything after the substring
-                oe_target_strings[i] = x[:index]
-
-        _, acc = prepare_oe_calibration_query(
+        _, query_labels, _ = prepare_uncertainty_query(
             tokenizer,
-            oe_target_strings,
-            output_strings,
-            question_strings,
+            inputs,
+            targets,
+            outputs,
             format=query_format,
-            comparison_strategy=comparison_strategy,
+            strategy=strategy,
         )
 
         outputs = [
-            LMText(**{**dict(zip(inputs.keys(), vals)), "target": ""})
-            for vals in zip(*inputs.values())
-        ]
-        outputs = [
-            {
-                **s.to_pydict(),
-                "target": inputs["target"][i],
-                "label": t.item(),
-            }
-            for i, (s, t) in enumerate(zip(outputs, acc))
+            {**inp, "target": tgt, "output": out, "query_label": int(ql.item())}
+            for inp, tgt, out, ql in zip(inputs, targets, outputs, query_labels)
         ]
 
         yield from outputs
@@ -244,46 +186,36 @@ def generate_labels_main(
     if accelerator.is_main_process:
         wandb.config.update(config)
 
-    tokenizer, model = prepare_model(
-        accelerator,
-        model_name=model_name,
+    tokenizer = get_model(
+        f"{model_name}_tokenizer",
         model_dir=model_dir,
-        peft_dir=peft_dir,
-        lora_rank=lora_rank,
-        lora_alpha=lora_alpha,
-        lora_dropout=lora_dropout,
     )
 
-    if ".csv" in dataset:
-        df = pd.read_csv(dataset)
-        train_data = Dataset.from_pandas(df)
-    else:
-        with accelerator.main_process_first():
-            train_data, _, _ = get_dataset(
-                dataset,
-                root=data_dir,
-                tokenizer=tokenizer,
-                seed=seed,
-                num_workers=num_workers,
-                use_cache=use_dataset_cache,
-            )
+    with accelerator.main_process_first():
+        data_splits = get_dataset(
+            dataset,
+            root=data_dir,
+            tokenizer=tokenizer,
+            seed=seed,
+            num_workers=num_workers,
+            use_cache=use_dataset_cache,
+        )
+        data_splits = list(filter(lambda x: x is not None, data_splits))
+        data_split_names = ["train", "validation", "test"][: len(data_splits)]
 
-    for data, split in zip([train_data], ["train"]):
-
+    for data, split in zip(data_splits, data_split_names):
         loader = get_loader(
             data,
             batch_size=batch_size,
             pin_memory=True,
             accelerator=accelerator,
-            collate_fn=lambda x: {k: [d[k] for d in x] for k in x[0].keys()},
         )
 
         label_generator = generate_query_label(
             accelerator,
-            model,
             tokenizer,
             loader,
-            comparison_strategy=strategy,
+            strategy=strategy,
         )
 
         csv_path = f"{log_dir}/labels/{split}"

@@ -38,7 +38,7 @@ def __format_sample(sample, tokenizer, style):
             ]
         )
 
-        target = string.ascii_lowercase[int(sample["label"]) - 1] + tokenizer.eos_token
+        target = string.ascii_lowercase[int(sample["label"]) - 1]
     elif style == "oe":
         context = "\n".join(
             [
@@ -50,7 +50,7 @@ def __format_sample(sample, tokenizer, style):
             ]
         )
 
-        target = answer_map[int(sample["label"]) - 1] + tokenizer.eos_token
+        target = answer_map[int(sample["label"]) - 1]
     else:
         raise NotImplementedError
 
@@ -98,6 +98,7 @@ def __format_sample_with_prompt(
 def get_siqa(
     root=None,
     prompt_style=None,
+    train_kshot=0,
     eval_kshot=0,
     tokenizer=None,
     num_workers=8,
@@ -108,7 +109,9 @@ def get_siqa(
     from datasets import load_dataset
 
     dataset = load_dataset(
-        "social_i_qa", cache_dir=os.environ.get("HF_DATASETS_CACHE", root)
+        "social_i_qa",
+        cache_dir=os.environ.get("HF_DATASETS_CACHE", root),
+        trust_remote_code=True,
     )
     if not use_cache:
         dataset.cleanup_cache_files()
@@ -130,7 +133,7 @@ def get_siqa(
         )
         for data, k in zip(
             [dataset.pop("train"), dataset.pop("validation")],
-            [0, eval_kshot],
+            [train_kshot, eval_kshot],
         )
     ]
 

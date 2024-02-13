@@ -12,7 +12,7 @@ __all__ = [
 
 
 def __format_sample(sample, tokenizer, style):
-    target_prompt = "\nAnswer: "
+    target_prompt = "\nAnswer:"
 
     sentence = sample["sentence"]
 
@@ -33,7 +33,7 @@ def __format_sample(sample, tokenizer, style):
             ]
         )
 
-        target = string.ascii_lowercase[int(sample["answer"]) - 1] + tokenizer.eos_token
+        target = string.ascii_lowercase[int(sample["answer"]) - 1]
     elif style == "oe":
         blank_idx = sentence.index("_")
         answer_map = [
@@ -55,7 +55,7 @@ def __format_sample(sample, tokenizer, style):
             ]
         )
 
-        target = answer_map[int(sample["answer"]) - 1] + tokenizer.eos_token
+        target = sample["answer"]
     else:
         raise NotImplementedError
 
@@ -104,6 +104,7 @@ def get_winogrande(
     root=None,
     subset=None,
     prompt_style=None,
+    train_kshot=0,
     eval_kshot=0,
     tokenizer=None,
     num_workers=8,
@@ -139,7 +140,7 @@ def get_winogrande(
                 "answer",
             ],
         )
-        for data, k in zip(data_splits, [0, eval_kshot])
+        for data, k in zip(data_splits, [train_kshot, eval_kshot])
     ]
 
     return train_data, val_data, None

@@ -16,6 +16,7 @@ __all__ = [
 def get_cb(
     root=None,
     prompt_style=None,
+    train_kshot=0,
     eval_kshot=0,
     tokenizer=None,
     num_workers=8,
@@ -58,7 +59,7 @@ def get_cb(
                 ]
             )
 
-            target = string.ascii_lowercase[sample["label"]] + tokenizer.eos_token
+            target = string.ascii_lowercase[sample["label"]]
         elif style == "oe":
             context = "\n".join(
                 [
@@ -68,7 +69,7 @@ def get_cb(
                 ]
             )
 
-            target = answer_map[sample["label"]] + tokenizer.eos_token
+            target = answer_map[sample["label"]]
         else:
             raise NotImplementedError
 
@@ -131,7 +132,7 @@ def get_cb(
                 "label",
             ],
         )
-        for data, k in zip(data_splits, [0, eval_kshot])
+        for data, k in zip(data_splits, [train_kshot, eval_kshot])
     ]
 
     return train_data, val_data, None
@@ -149,6 +150,7 @@ def cb(*args, prompt_style="choice", **kwargs):
 def get_multirc(
     root=None,
     prompt_style=None,
+    train_kshot=0,
     eval_kshot=0,
     tokenizer=None,
     num_workers=8,
@@ -191,7 +193,7 @@ def get_multirc(
                 ]
             )
 
-            target = string.ascii_lowercase[sample["label"]] + tokenizer.eos_token
+            target = string.ascii_lowercase[sample["label"]]
         elif style == "oe":
             context = "\n".join(
                 [
@@ -203,7 +205,7 @@ def get_multirc(
                 ]
             )
 
-            target = answer_map[sample["label"]] + tokenizer.eos_token
+            target = answer_map[sample["label"]]
         else:
             raise NotImplementedError
 
@@ -267,7 +269,7 @@ def get_multirc(
                 "label",
             ],
         )
-        for data, k in zip(data_splits, [0, eval_kshot])
+        for data, k in zip(data_splits, [train_kshot, eval_kshot])
     ]
 
     return train_data, val_data, None
@@ -285,6 +287,7 @@ def multirc(*args, prompt_style="choice", **kwargs):
 def get_copa(
     root=None,
     prompt_style=None,
+    train_kshot=0,
     eval_kshot=0,
     tokenizer=None,
     num_workers=8,
@@ -324,7 +327,7 @@ def get_copa(
                 ]
             )
 
-            target = string.ascii_lowercase[sample["label"]] + tokenizer.eos_token
+            target = string.ascii_lowercase[sample["label"]]
         elif style == "oe":
             context = "\n".join(
                 [
@@ -336,7 +339,7 @@ def get_copa(
                 ]
             )
 
-            target = answer_map[sample["label"]] + tokenizer.eos_token
+            target = str(sample["label"] + 1)
         else:
             raise NotImplementedError
         return LMText(context=context, target_prompt=target_prompt, target=target)
@@ -400,7 +403,7 @@ def get_copa(
                 "label",
             ],
         )
-        for data, k in zip(data_splits, [0, eval_kshot])
+        for data, k in zip(data_splits, [train_kshot, eval_kshot])
     ]
 
     return train_data, val_data, None

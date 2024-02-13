@@ -136,7 +136,7 @@ __MC_TASKS = [
 
 
 def __format_sample(sample, tokenizer, style):
-    target_prompt = "\nAnswer: "
+    target_prompt = "\nAnswer:"
 
     if style == "choice":
         question = sample["inputs"]
@@ -153,10 +153,7 @@ def __format_sample(sample, tokenizer, style):
             ]
         )
 
-        target = (
-            string.ascii_lowercase[np.argmax(sample["multiple_choice_scores"])]
-            + tokenizer.eos_token
-        )
+        target = string.ascii_lowercase[np.argmax(sample["multiple_choice_scores"])]
     else:
         raise NotImplementedError
 
@@ -205,6 +202,7 @@ def get_bigbench_mc(
     root=None,
     subset=None,
     prompt_style=None,
+    train_kshot=0,
     eval_kshot=1,
     tokenizer=None,
     num_workers=8,
@@ -244,7 +242,7 @@ def get_bigbench_mc(
         )
         for data, k in zip(
             [dataset.pop("train"), dataset.pop("validation")],
-            [0, eval_kshot],
+            [train_kshot, eval_kshot],
         )
     ]
 

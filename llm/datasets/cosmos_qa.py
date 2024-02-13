@@ -35,7 +35,7 @@ def __format_sample(sample, tokenizer, style):
             ]
         )
 
-        target = string.ascii_lowercase[int(sample["label"])] + tokenizer.eos_token
+        target = string.ascii_lowercase[int(sample["label"])]
     elif style == "oe":
         context = "\n".join(
             [
@@ -47,7 +47,7 @@ def __format_sample(sample, tokenizer, style):
             ]
         )
 
-        target = answer_map[int(sample["label"])] + tokenizer.eos_token
+        target = answer_map[int(sample["label"])]
     else:
         raise NotImplementedError
 
@@ -95,6 +95,7 @@ def __format_sample_with_prompt(
 def get_cosmos_qa(
     root=None,
     prompt_style=None,
+    train_kshot=0,
     eval_kshot=0,
     tokenizer=None,
     num_workers=8,
@@ -129,7 +130,7 @@ def get_cosmos_qa(
         )
         for data, k in zip(
             [dataset.pop("train"), dataset.pop("validation")],
-            [0, eval_kshot],
+            [train_kshot, eval_kshot],
         )
     ]
 
