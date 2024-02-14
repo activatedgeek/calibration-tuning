@@ -4,6 +4,7 @@ from tqdm.auto import tqdm
 import torch
 import torch.nn.functional as F
 from torch.distributions import Categorical, kl_divergence
+from transformers import DynamicCache
 from transformers.trainer import (
     logger,
     unwrap_model,
@@ -86,7 +87,7 @@ class CalibrationTuner(Trainer):
 
         return loss
 
-    def compute_query_loss(self, model, inputs, targets, outputs):
+    def compute_query_loss(self, model, inputs, targets, outputs, loss_inputs=None):
         if "query_label" in inputs[0]:
             predictions = [inp.pop("output") for inp in inputs]
             q_labels = [inp.pop("query_label") for inp in inputs]
@@ -107,13 +108,42 @@ class CalibrationTuner(Trainer):
             format=self.args.query_format,
         )
 
-        q_generation_inputs = {
+        q_loss_inputs = {
             k: v.to(self.accelerator.device)
             for k, v in self._collate_fn(q_inputs).items()
         }
 
-        q_generation_outputs = model(**q_generation_inputs)
-        q_logits = q_generation_outputs.logits[..., -1, q_token_vec]
+        if outputs.past_key_values is not None and loss_inputs is not None:
+            ## FIXME: assuming prefixes always match at same length.
+            cache_len = (
+                (
+                    q_loss_inputs.get("input_ids")[
+                        :, : loss_inputs.get("input_ids").size(-1)
+                    ]
+                    == loss_inputs.get("input_ids")
+                )
+                .long()
+                .sum(dim=-1)
+            )
+
+            assert torch.all(
+                cache_len == cache_len[0]
+            ), "Pre-condition for using cache not satisfied."
+
+            cache_len = cache_len[0].item()
+
+            kv_cache = DynamicCache()
+            for idx, (k, v) in enumerate(outputs.past_key_values):
+                kv_cache.update(k[..., :cache_len, :], v[..., :cache_len, :], idx)
+
+            q_loss_inputs["past_key_values"] = kv_cache
+            q_loss_inputs["input_ids"] = q_loss_inputs["input_ids"][:, cache_len:]
+
+            ## FIXME: shape mismatch. incorrect usage?
+            # raise NotImplementedError
+
+        q_outputs = model(**q_loss_inputs)
+        q_logits = q_outputs.logits[..., -1, q_token_vec]
 
         if self.args.scale_temp:
             q_logits = self.query_temperature_model(q_logits)
