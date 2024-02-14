@@ -5,6 +5,9 @@ import torch
 from tqdm.auto import tqdm
 from transformers import GenerationConfig
 
+# import multiprocess.context as ctx
+# ctx._force_start_method('spawn')
+
 from llm.accelerate import Accelerator
 from llm.datasets import get_dataset, get_loader
 from llm.models import get_model
@@ -21,7 +24,6 @@ def generate_outputs_main(
     log_dir=None,
     dataset=None,
     data_dir=None,
-    num_workers=8,
     batch_size=1,
     model_name=None,
     model_dir=None,
@@ -30,7 +32,8 @@ def generate_outputs_main(
     lora_alpha=32,
     lora_dropout=0.1,
     use_dataset_cache=True,
-    prompt_style="oe",
+    prompt_style=None,
+    kshot=0,
     max_new_tokens=30,
     int8=False,
 ):
@@ -86,9 +89,11 @@ def generate_outputs_main(
             root=data_dir,
             tokenizer=tokenizer,
             seed=seed,
-            num_workers=num_workers,
+            num_workers=os.cpu_count() // 2,
             use_cache=use_dataset_cache,
             prompt_style=prompt_style,
+            train_kshot=kshot,
+            eval_kshot=kshot,
         )
         data_splits = [
             (s, ds)
