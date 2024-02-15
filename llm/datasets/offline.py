@@ -35,6 +35,12 @@ def get_offline(
         if os.path.isdir(f"{root}/{split_name}"):
             data_files[split_name] = glob.glob(f"{root}/{split_name}/*.csv")
 
+    split_kshot = {
+        "train": train_kshot,
+        "validation": eval_kshot,
+        "test": eval_kshot,
+    }
+
     dataset = load_dataset(
         "csv",
         data_files=data_files,
@@ -51,9 +57,9 @@ def get_offline(
         dataset[split].map(
             _replace_none,
             num_proc=num_workers,
-            remove_columns=["prompt"] if k == 0 else [],
+            remove_columns=["prompt"] if split_kshot[split] == 0 else [],
         )
-        for split, k in zip(data_files.keys(), [train_kshot, eval_kshot])
+        for split in data_files.keys()
     ]
 
     if max_token_length is not None:

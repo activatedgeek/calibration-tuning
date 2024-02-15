@@ -36,9 +36,7 @@ def __format_sample(sample, tokenizer, style):
     elif style == "oe":
         context = "\n".join(
             [
-                "Provide advice on how to accomplish the following goal. Give ONLY the advice, no other words or explanation.\n"
-                "For example:\n",
-                "Answer: <advice, as short as possible; a single sentence!>.\n",
+                "Provide advice on how to accomplish the following goal.\n",
                 f"Goal: {goal}",
             ]
         )
@@ -54,11 +52,20 @@ def __generate_fewshot_prompts(
     tokenizer, prompt_style, prompt_dataset, kshot, seed=None
 ):
     if kshot <= 0:
+        if prompt_style == "oe":
+            return "\n".join(
+                [
+                    "Give ONLY the advice, no other words or explanation.\n",
+                    "For example:",
+                    "Answer: <advice, as short as possible; a single sentence!>.",
+                ]
+            )
+
         return ""
 
     fewshot_prompt = "\n".join(
         [
-            "The following are multiple choice questions.\n",
+            "The following are questions with answers.\n",
             *[
                 str(__format_sample(prompt_dataset[idx], tokenizer, prompt_style))
                 + "\n"

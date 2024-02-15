@@ -86,7 +86,6 @@ class ClassificationTuner(Trainer):
         }
 
         with torch.inference_mode():
-            breakpoint()
             class_outputs = model(**class_inputs, output_hidden_states=True)
 
         class_inputs = class_outputs.hidden_states[self.args.target_layer][
