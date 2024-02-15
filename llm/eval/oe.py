@@ -9,28 +9,17 @@ import numpy as np
 from transformers import GenerationConfig
 from sklearn.metrics import roc_auc_score
 
-from llm.datasets.llm_utils import (
-    get_token_vec,
-    DataCollatorForSupervisedDataset,
-    extract_qa_exact,
-    tokenize_for_causal_lm,
-    prepare_batch,
-)
-from llm.datasets.llm_utils_oe import (
-    extract_oe_inputs,
-    prepare_oe_calibration_query,
+from ..random import FixedSeed
+from ..datasets import LabeledStringDataCollator, prepare_uncertainty_query
+from ..datasets.llm_utils import DataCollatorForSupervisedDataset
+from ..datasets.llm_utils_oe import (
     grade_oe_preds,
-    clustering_equivalency_with_oracle,
-    openai_query,
-)
-from llm.datasets.llm_utils_oe import (
     equivalency_grading,
     sanitize_generations,
 )
-from llm.eval.third_party.calibration import calibration
+from .third_party.calibration import calibration
 
-from llm.utils.generate_utils import generate_output
-from llm.random import FixedSeed
+from ..utils.generate_utils import generate_output
 
 
 @torch.inference_mode()
@@ -728,38 +717,46 @@ def evaluate_oe_uncertainty_sampling(
 
 
 VERBAL_ELICITATION_UNC_QUERIES = {
-    "2s1CoT": "".join([
-        "Provide the probability that your guess is correct. Give ONLY the probability, no other words or explanation.\n\n",
-        "For example:\n\n",
-        "Probability: <the probability between 0.0 and 1.0 that your guess is correct, without any extra commentary whatsoever; just the probability!>\n\n",
-        "Include probability of the guess below:\n",
-        "Probability:"
-    ]),
-    "2s1g": "".join([
-        "Provide the probability that your guess is correct. Give ONLY the probability, no other words or explanation.\n\n",
-        "For example:\n\n",
-        "Probability: <the probability between 0.0 and 1.0 that your guess is correct, without any extra commentary whatsoever; just the probability!>\n\n",
-        "Include probability of each guess below:\n",
-        "Probability:"
-    ]),
-    "2s2g": "".join([
-        "Provide the probability that each of your guesses is correct. Give ONLY the probabilities, no other words or explanation.\n\n",
-        "For example:\n\n",
-        "P1: <the probability between 0.0 and 1.0 that G1 is correct, without any extra commentary whatsoever; just the probability!>\n",
-        "P2: <the probability between 0.0 and 1.0 that G2 is correct, without any extra commentary whatsoever; just the probability!>\n\n",
-        "Include probability of the guess below:\n\n",
-        "P1:"
-    ]),
-    "2s4g": "".join([
-        "Provide the probability that each of your guesses is correct. Give ONLY the probabilities, no other words or explanation.\n\n",
-        "For example:\n\n",
-        "P1: <the probability between 0.0 and 1.0 that G1 is correct, without any extra commentary whatsoever; just the probability!>\n",
-        "P2: <the probability between 0.0 and 1.0 that G2 is correct, without any extra commentary whatsoever; just the probability!>\n",
-        "P3: <the probability between 0.0 and 1.0 that G3 is correct, without any extra commentary whatsoever; just the probability!>\n",
-        "P4: <the probability between 0.0 and 1.0 that G4 is correct, without any extra commentary whatsoever; just the probability!>\n\n",
-        "Include probability of the guess below:\n\n",
-        "P1:"
-    ]),
+    "2s1CoT": "".join(
+        [
+            "Provide the probability that your guess is correct. Give ONLY the probability, no other words or explanation.\n\n",
+            "For example:\n\n",
+            "Probability: <the probability between 0.0 and 1.0 that your guess is correct, without any extra commentary whatsoever; just the probability!>\n\n",
+            "Include probability of the guess below:\n",
+            "Probability:",
+        ]
+    ),
+    "2s1g": "".join(
+        [
+            "Provide the probability that your guess is correct. Give ONLY the probability, no other words or explanation.\n\n",
+            "For example:\n\n",
+            "Probability: <the probability between 0.0 and 1.0 that your guess is correct, without any extra commentary whatsoever; just the probability!>\n\n",
+            "Include probability of each guess below:\n",
+            "Probability:",
+        ]
+    ),
+    "2s2g": "".join(
+        [
+            "Provide the probability that each of your guesses is correct. Give ONLY the probabilities, no other words or explanation.\n\n",
+            "For example:\n\n",
+            "P1: <the probability between 0.0 and 1.0 that G1 is correct, without any extra commentary whatsoever; just the probability!>\n",
+            "P2: <the probability between 0.0 and 1.0 that G2 is correct, without any extra commentary whatsoever; just the probability!>\n\n",
+            "Include probability of the guess below:\n\n",
+            "P1:",
+        ]
+    ),
+    "2s4g": "".join(
+        [
+            "Provide the probability that each of your guesses is correct. Give ONLY the probabilities, no other words or explanation.\n\n",
+            "For example:\n\n",
+            "P1: <the probability between 0.0 and 1.0 that G1 is correct, without any extra commentary whatsoever; just the probability!>\n",
+            "P2: <the probability between 0.0 and 1.0 that G2 is correct, without any extra commentary whatsoever; just the probability!>\n",
+            "P3: <the probability between 0.0 and 1.0 that G3 is correct, without any extra commentary whatsoever; just the probability!>\n",
+            "P4: <the probability between 0.0 and 1.0 that G4 is correct, without any extra commentary whatsoever; just the probability!>\n\n",
+            "Include probability of the guess below:\n\n",
+            "P1:",
+        ]
+    ),
 }
 
 
@@ -781,8 +778,8 @@ def parse_verbal_elicitation_oe(
         if stage == 1:
             expected_lines += 1 if is_CoT else 0
 
-    output_string = output_string.replace("\n\n","\n")
-    output_string = output_string.replace(":\n",":")
+    output_string = output_string.replace("\n\n", "\n")
+    output_string = output_string.replace(":\n", ":")
     parts = output_string.strip("\n").split("\n")[:expected_lines]
 
     if is_CoT and (stage == 1):
@@ -793,34 +790,23 @@ def parse_verbal_elicitation_oe(
         return "", torch.tensor([0]), torch.tensor([[1, 0]])
 
     def parse_guess(guess, idx):
-        if (num_guesses == 1) and ('Probability:' in guess):
+        if (num_guesses == 1) and ("Probability:" in guess):
             return None
-        elif (num_guesses > 1) and any([
-            (f"P{i+1}:" in guess) for i in range(num_guesses)
-        ]):
+        elif (num_guesses > 1) and any(
+            [(f"P{i+1}:" in guess) for i in range(num_guesses)]
+        ):
             return None
 
         guess = guess.split(":")[-1].strip()
         return guess
 
     def parse_prob(prob, idx):
-        if (
-            (num_guesses == 1) and 
-            (stage == 1) and
-            ('Probability:' not in prob)
-        ):
+        if (num_guesses == 1) and (stage == 1) and ("Probability:" not in prob):
             return None
         elif num_guesses > 1:
-            if (
-                (stage == 1) and 
-                (f"P{idx+1}:" not in prob)
-            ):
+            if (stage == 1) and (f"P{idx+1}:" not in prob):
                 return None
-            elif (
-                (stage == 2) and 
-                (idx > 1) and 
-                (f"P{idx+1}:" in prob)
-            ):
+            elif (stage == 2) and (idx > 1) and (f"P{idx+1}:" in prob):
                 return None
         try:
             prob = float(prob.split(":")[-1].strip())
@@ -829,25 +815,17 @@ def parse_verbal_elicitation_oe(
         return prob
 
     if stages == 1:
-        guesses = [
-            parse_guess(g, i) for i, g in enumerate(parts[::2])
-        ]
-        probs = [
-            parse_prob(p, i) for i, p in enumerate(parts[1::2])
-        ]
+        guesses = [parse_guess(g, i) for i, g in enumerate(parts[::2])]
+        probs = [parse_prob(p, i) for i, p in enumerate(parts[1::2])]
     elif stage == 1:
-        guesses = [
-            parse_guess(g, i) for i, g in enumerate(parts)
-        ]
+        guesses = [parse_guess(g, i) for i, g in enumerate(parts)]
         if is_CoT:
             return (guesses, explanation), None, None
         else:
             return guesses, None, None
     elif stage == 2:
         assert prev_guesses is not None
-        probs = [
-            parse_prob(p, i) for i, p in enumerate(parts)
-        ]
+        probs = [parse_prob(p, i) for i, p in enumerate(parts)]
         guesses = prev_guesses
 
     if guesses[0] is None:
@@ -859,9 +837,7 @@ def parse_verbal_elicitation_oe(
         output = guesses[0]
         prob = 0.5
     else:
-        guesses, probs = zip(*[
-            (g, p) for g, p in zip(guesses, probs) if p is not None
-        ])
+        guesses, probs = zip(*[(g, p) for g, p in zip(guesses, probs) if p is not None])
         max_idx = np.argmax(probs)
         output = guesses[max_idx]
         prob = probs[max_idx]
@@ -870,6 +846,7 @@ def parse_verbal_elicitation_oe(
     logits = torch.tensor([[1 - prob, prob]])
 
     return output, y, logits
+
 
 @torch.inference_mode()
 def evaluate_verbal_elicitation_oe(
@@ -935,25 +912,26 @@ def evaluate_verbal_elicitation_oe(
         if unc_logits is None:
 
             uncertainty_prompt = VERBAL_ELICITATION_UNC_QUERIES[ve_style]
-            
+
             guesses_str = ""
             if is_CoT:
                 output, explanation = output
                 guesses_str = f"{explanation}\n\n"
-            
+
             if num_guesses == 1:
                 guesses_str = guesses_str + f"Guess: {output[0]}"
             else:
-                guesses_str = guesses_str + "\n\n".join([
-                    f"G{i+1}: {g}" for i, g in enumerate(output)
-                ])
+                guesses_str = guesses_str + "\n\n".join(
+                    [f"G{i+1}: {g}" for i, g in enumerate(output)]
+                )
 
             sample = (
-                example["prompt"] + 
-                example["context"] +
-                example["target_prompt"] + 
-                guesses_str + "\n\n" +
-                uncertainty_prompt
+                example["prompt"]
+                + example["context"]
+                + example["target_prompt"]
+                + guesses_str
+                + "\n\n"
+                + uncertainty_prompt
             )
 
             tokenizer_args = dict(
@@ -963,8 +941,7 @@ def evaluate_verbal_elicitation_oe(
             tokenize_dict = tokenizer(str(sample), **tokenizer_args)
 
             gen_inputs = {
-                k: v.to(device)
-                for k, v in collate_fn([tokenize_dict]).items()
+                k: v.to(device) for k, v in collate_fn([tokenize_dict]).items()
             }
 
             gen_config = GenerationConfig(
@@ -974,19 +951,16 @@ def evaluate_verbal_elicitation_oe(
                 max_new_tokens=max_new_tokens,
             )
 
-            gen_output = model.generate(
-                **gen_inputs, 
-                generation_config=gen_config
-            )[0]
+            gen_output = model.generate(**gen_inputs, generation_config=gen_config)[0]
 
             gen_output = tokenizer.decode(
-                gen_output[gen_inputs.get("input_ids")[0].size(0):],
+                gen_output[gen_inputs.get("input_ids")[0].size(0) :],
                 skip_special_tokens=True,
                 clean_up_tokenization_spaces=False,
             )
 
             output, unc_y, unc_logits = parse_verbal_elicitation_oe(
-                gen_output, ve_style, stage=2, prev_guesses=output 
+                gen_output, ve_style, stage=2, prev_guesses=output
             )
 
         unc_y = unc_y.to(device)
@@ -1046,8 +1020,10 @@ def evaluate_verbal_elicitation_oe(
         acc = all_acc_c.float().mean()
 
         all_unc_y_c = (
-            all_unc_y_c.unsqueeze(-1) == torch.arange(2).to(device)
-        ).long().argmax(dim=-1)
+            (all_unc_y_c.unsqueeze(-1) == torch.arange(2).to(device))
+            .long()
+            .argmax(dim=-1)
+        )
         all_unc_y_hat = all_unc_p.argmax(dim=-1)
         unc_acc = (all_unc_y_c == all_unc_y_hat).float().mean()
         unc_ece, _ = calibration(
@@ -1070,15 +1046,16 @@ def evaluate_verbal_elicitation_oe(
                 f"{c}_acc": all_acc_c.cpu().numpy(),
                 f"{c}_all_unc_y": all_unc_y_c.cpu().numpy(),
                 f"{c}_all_unc_y_hat": all_unc_y_hat.cpu().numpy(),
-                f"{c}_all_unc_p": all_unc_p[...,1].cpu().numpy(),
+                f"{c}_all_unc_p": all_unc_p[..., 1].cpu().numpy(),
                 f"{c}_unc_acc": unc_acc.item(),
                 f"{c}_unc_ece": unc_ece,
             }
         )
 
     if accelerator.num_processes == 1 and output_row_path is not None:
-        #create parent dir if it doesn't exist
+        # create parent dir if it doesn't exist
         import os
+
         os.makedirs(os.path.dirname(output_row_path), exist_ok=True)
         pd.DataFrame(dump).to_csv(output_row_path, escapechar="\\")
 
