@@ -12,6 +12,8 @@ def get_offline(
     use_cache=True,
     tokenizer=None,
     max_token_length=None,
+    train_kshot=0,
+    eval_kshot=0,
     **_,
 ):
     from datasets import load_dataset, Features, Value
@@ -49,8 +51,9 @@ def get_offline(
         dataset[split].map(
             _replace_none,
             num_proc=num_workers,
+            remove_columns=["prompt"] if k == 0 else [],
         )
-        for split in data_files.keys()
+        for split, k in zip(data_files.keys(), [train_kshot, eval_kshot])
     ]
 
     if max_token_length is not None:
@@ -70,7 +73,7 @@ def get_offline(
 
 
 @register_dataset
-def offline(*args, max_token_length=500, **kwargs):
+def offline(*args, max_token_length=None, **kwargs):
     return get_offline(
         *args,
         **kwargs,

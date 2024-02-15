@@ -178,7 +178,7 @@ def all_200k(
 
 @register_dataset
 def all_20k_uniform(
-    *args, max_n=20_000, max_val_n=2_000, max_token_length=500, **kwargs
+    *args, max_n=20_000, max_val_n=2_000, max_token_length=None, **kwargs
 ):
     return all_200k(
         *args,
