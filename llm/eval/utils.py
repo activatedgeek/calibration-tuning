@@ -78,7 +78,6 @@ VERBAL_ELICITATION_MAP = {
         "target_prompt": "\nG1: ",
     },
     "2s1CoT": {
-<<<<<<< HEAD
         "prompt": "".join([
             "Provide your best guess for the following question. Before giving your answer, ",
             "provide a step-by-step explanation of your thought process. Then on a new line ",
@@ -88,19 +87,6 @@ VERBAL_ELICITATION_MAP = {
             "guess!>.\n\n",
         ]),
         "target_prompt": "\nExplanation: ",
-=======
-        "prompt": "".join(
-            [
-                "Provide your best guess for the following question. Before giving your answer, ",
-                "provide a step-by-step explanation of your thought process. Then on a new line ",
-                "give the guess with no other words or explanation.\n\nFor example:\n\nExplanation: ",
-                "<one sentence step-by-step explanation of your thought process>\n\nGuess: ",
-                "<most likely guess, as short as possible; not a complete sentence, just the ",
-                "guess!>\n\n",
-            ]
-        ),
-        "target_prompt": "\nGuess: ",
->>>>>>> 16194a81aee442bd7b4f097e1d84edc68170338e
     },
     "2s1g": {
         "prompt": "".join(

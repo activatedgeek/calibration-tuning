@@ -37,8 +37,8 @@ class ClassificationTuner(Trainer):
         self.classifier_model = classifier_model
 
     def _wrap_model(self, *args, **kwargs):
-        if unwrap_model(self.classifier_model) is self.classifier_model:
-            self.classifier_model = self.accelerator.prepare(self.classifier_model)
+        # if unwrap_model(self.classifier_model) is self.classifier_model:
+        self.classifier_model = self.accelerator.prepare(self.classifier_model)
 
         return super()._wrap_model(*args, **kwargs)
 
@@ -79,6 +79,16 @@ class ClassificationTuner(Trainer):
 
         if isinstance(model, PeftModel):
             model.set_adapter("default")
+
+        print(generation_inputs['input_ids'][4])
+        print(generation_inputs['attention_mask'][4])
+
+        #decode with llama-2 7b tokenizer
+        from transformers import AutoTokenizer
+        tokenizer = AutoTokenizer.from_pretrained("meta-llama/Llama-2-7b-hf")
+        print(tokenizer.decode(generation_inputs['input_ids'][4]))
+
+        print(1/0)
 
         with torch.inference_mode():
             generation_outputs = model(**generation_inputs, output_hidden_states=True)

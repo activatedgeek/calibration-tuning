@@ -5,8 +5,8 @@ import torch
 from tqdm.auto import tqdm
 from transformers import GenerationConfig
 
-# import multiprocess.context as ctx
-# ctx._force_start_method('spawn')
+import multiprocess.context as ctx
+ctx._force_start_method('spawn')
 
 from llm.accelerate import Accelerator
 from llm.datasets import get_dataset, get_loader
@@ -89,7 +89,7 @@ def generate_outputs_main(
             root=data_dir,
             tokenizer=tokenizer,
             seed=seed,
-            num_workers=os.cpu_count() // 2,
+            num_workers=16,#os.cpu_count() // 2,
             use_cache=use_dataset_cache,
             prompt_style=prompt_style,
             train_kshot=kshot,
