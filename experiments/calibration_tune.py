@@ -40,6 +40,7 @@ def main(
     use_dataset_cache=True,
     resume_dir=None,
     int8=True,
+    max_token_length=None,
 ):
     accelerator = AcceleratorState()
 
@@ -96,6 +97,7 @@ def main(
             num_workers=num_workers,
             use_cache=use_dataset_cache,
             prompt_style=prompt_style,
+            max_token_length=max_token_length,
         )
 
     trainer = CalibrationTuner(

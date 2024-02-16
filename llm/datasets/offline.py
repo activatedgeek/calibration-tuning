@@ -84,20 +84,20 @@ def get_offline(
 
 
 @register_dataset
-def offline(*args, max_token_length=None, **kwargs):
+def offline(*args, root=None, dataset_str=None, max_token_length=None, **kwargs):
+    if len(dataset_str.split(":")) == 2:
+        root = dataset_str.split(":")[1]
+
     return get_offline(
         *args,
         **kwargs,
+        root=root,
         max_token_length=max_token_length,
     )
 
 
 @register_dataset
-def offline_noprompt(*args, max_token_length=None, **kwargs):
-    return get_offline(
-        *args,
-        **kwargs,
-        max_token_length=max_token_length,
-        train_kshot=0,
-        eval_kshot=0,
-    )
+def offline_noprompt(*args, **kwargs):
+    kwargs.pop("train_kshot", None)
+    kwargs.pop("eval_kshot", None)
+    return offline(*args, **kwargs, train_kshot=0, eval_kshot=0)

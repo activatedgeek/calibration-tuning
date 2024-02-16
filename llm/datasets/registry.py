@@ -84,6 +84,15 @@ def get_dataset(dataset, root=None, seed=42, train_subset=1, label_noise=0, **kw
 
         train_data = Subset(train_data, randperm)
 
-    logging.info(f'Loaded "{dataset}".')
+    info_str = " / ".join(
+        [
+            f"{s} (N = {len(ds)})"
+            for ds, s in zip(
+                (train_data, val_data, test_data), ("train", "validation", "test")
+            )
+            if ds is not None
+        ]
+    )
+    logging.info(f'Loaded "{dataset}"; {info_str}')
 
     return train_data, val_data, test_data
