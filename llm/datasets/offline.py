@@ -62,6 +62,11 @@ def get_offline(
         for split in data_files.keys()
     ]
 
+    train_data, val_data = [
+        ds.remove_columns(["prompt"]) if k == 0 else ds
+        for ds, k in zip([train_data, val_data], [train_kshot, eval_kshot])
+    ]
+
     if max_token_length is not None:
         tokenizer_args = LabeledStringDataCollator.get_tokenizer_args(tokenizer)
 
@@ -84,4 +89,15 @@ def offline(*args, max_token_length=None, **kwargs):
         *args,
         **kwargs,
         max_token_length=max_token_length,
+    )
+
+
+@register_dataset
+def offline_noprompt(*args, max_token_length=None, **kwargs):
+    return get_offline(
+        *args,
+        **kwargs,
+        max_token_length=max_token_length,
+        train_kshot=0,
+        eval_kshot=0,
     )
