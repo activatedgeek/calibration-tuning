@@ -47,22 +47,28 @@ def get_offline(
     def _replace_none(x):
         return {k: "" if v is None else v for k, v in x.items()}
 
-    train_data, val_data = [
-        dataset[split].map(
+    data_splits = {
+        split: dataset[split].map(
             _replace_none,
             num_proc=num_workers,
         )
         for split in data_files.keys()
-    ]
+    }
 
-    train_data, val_data = [
-        (
+    data_kshot = {
+        "train": train_kshot,
+        "validation": eval_kshot,
+        "test": eval_kshot,
+    }
+
+    data_splits = {
+        k: (
             ds.remove_columns([c for c in ["prompt"] if c in ds.column_names])
-            if k == 0
+            if data_kshot[k] == 0
             else ds
         )
-        for ds, k in zip([train_data, val_data], [train_kshot, eval_kshot])
-    ]
+        for k, ds in data_splits.items()
+    }
 
     if max_token_length is not None:
         tokenizer_args = LabeledStringDataCollator.get_tokenizer_args(tokenizer)
@@ -74,10 +80,16 @@ def get_offline(
             )
             return inputs.get("input_ids").size(-1) <= max_token_length
 
-        train_data = train_data.filter(token_length_filter, num_proc=num_workers)
-        val_data = val_data.filter(token_length_filter, num_proc=num_workers)
+        data_splits = {
+            k: ds.filter(token_length_filter, num_proc=num_workers)
+            for k, ds in data_splits.items()
+        }
 
-    return train_data, val_data, None
+    return (
+        data_splits.pop("train", None),
+        data_splits.pop("validation", None),
+        data_splits.pop("test", None),
+    )
 
 
 @register_dataset
