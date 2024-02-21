@@ -138,12 +138,6 @@ def evaluate_oe(
             logging.warning(f"AUROC calculation failed.")
             q_auroc = float("nan")
 
-        ece, _ = calibration(
-            q_labels,
-            q_pred,
-            q_p[torch.arange(q_p.size(0)), 1],  ## corresponds to "yes"
-        )
-
         metrics_dict.update(
             {
                 "N": q_labels.size(0),
@@ -151,7 +145,6 @@ def evaluate_oe(
                 f"{cs}_unc_acc": q_acc.item(),
                 f"{cs}_unc_auroc": q_auroc,
                 f"{cs}_unc_ece": q_ece,
-                f"{cs}_ece": ece,
             }
         )
 
