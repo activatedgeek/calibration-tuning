@@ -60,8 +60,6 @@ def setup_log_dir(log_dir=None):
     accelerator = AcceleratorState()
 
     if accelerator.is_main_process:
-        # log_dir = log_dir or os.environ.get("WANDB_DIR")
-
         if log_dir is None:
             root_dir = (
                 Path(os.environ.get("LOGDIR", Path.home() / "logs")) / Path.cwd().name
@@ -200,7 +198,6 @@ def entrypoint(main):
 
         if "WANDB_SWEEP_ID" in os.environ:
             if accelerator.is_main_process:
-                os.environ["WANDB_DIR"] = "/tmp"
                 wandb.agent(
                     os.environ.get("WANDB_SWEEP_ID"),
                     project=os.environ.get("WANDB_PROJECT", Path().cwd().name),

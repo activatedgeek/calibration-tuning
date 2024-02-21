@@ -47,7 +47,7 @@ def __format_sample(sample, tokenizer, style):
 
         context = "\n".join(
             [
-                "Fill in the blank (_) in the following sentence from the following choices.",
+                "Fill in the blank '_' in the following sentence from the following choices.",
                 f"Sentence: {sentence}\n",
                 f"Choice 1: {answer_map[0]}",
                 f"Choice 2: {answer_map[1]}",

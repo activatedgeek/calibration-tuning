@@ -4,7 +4,6 @@ from tqdm.auto import tqdm
 import torch
 import torch.nn.functional as F
 from torch.distributions import Categorical, kl_divergence
-from transformers import DynamicCache
 from transformers.trainer import (
     logger,
     unwrap_model,
@@ -56,18 +55,92 @@ class CalibrationTuner(Trainer):
 
         return super()._wrap_model(*args, **kwargs)
 
-    def compute_kl_loss(self, model, inputs, outputs):
+    def compute_lm_loss(self, model, inputs, targets):
+        if "query_label" in inputs[0]:
+            predictions = [inp.pop("output") for inp in inputs]
+            lm_loss = torch.tensor(0.0)
+        else:
+            generation_inputs = {
+                k: v.to(self.accelerator.device)
+                for k, v in self._collate_fn(
+                    [{**inp, "target": t} for inp, t in zip(inputs, targets)]
+                ).items()
+            }
+
+            with torch.inference_mode(mode=not self.args.use_lm_loss):
+                lm_loss, generation_outputs = model(
+                    **generation_inputs, return_outputs=True
+                )
+
+            predictions = self.tokenizer.batch_decode(
+                generation_outputs.logits[:, -1, :].argmax(dim=-1),
+                skip_special_tokens=True,
+                clean_up_tokenization_spaces=False,
+            )
+
+        assert (
+            lm_loss.requires_grad == self.args.use_lm_loss
+        ), f"Expected lm_loss to be detached."
+
+        return predictions, lm_loss
+
+    def compute_query_loss(self, model, inputs, targets, predictions):
+        q_labels = (
+            [inp.pop("query_label") for inp in inputs]
+            if "query_label" in inputs[0]
+            else None
+        )
+
+        q_inputs, q_labels, q_token_vec = prepare_uncertainty_query(
+            self.tokenizer,
+            inputs,
+            targets,
+            predictions,
+            query_labels=q_labels,
+            format=self.args.query_format,
+        )
+
+        q_loss_inputs = {
+            k: v.to(self.accelerator.device)
+            for k, v in self._collate_fn(q_inputs).items()
+        }
+
+        q_outputs = model(**q_loss_inputs)
+        q_logits = q_outputs.logits[..., -1, q_token_vec]
+
+        if self.args.scale_temp:
+            q_logits = self.query_temperature_model(q_logits)
+
+        q_loss = F.cross_entropy(
+            q_logits,
+            q_labels.to(q_logits.device),
+            label_smoothing=self.args.unc_label_smoothing,
+        )
+
+        return q_loss
+
+    def compute_kl_loss(self, model, inputs, targets):
+        if self.args.kl_decay <= 0.0:
+            return torch.tensor(0.0)
+
+        ref_inputs = {
+            k: v.to(self.accelerator.device)
+            for k, v in self._collate_fn(
+                [{**inp, "target": t} for inp, t in zip(inputs, targets)]
+            ).items()
+        }
+
+        probs = model(**ref_inputs).logits[..., :-1, :].softmax(dim=-1)
+
         with torch.inference_mode():
-            unwrapped_model = unwrap_model(model)
-            unwrapped_model.set_adapter(self.args.ref_adapter_name)
-            ref_outputs = unwrapped_model(**inputs)
-            unwrapped_model.set_adapter("default")
+            ## NOTE: self.model is always unwrapped.
+            self.model.set_adapter(self.args.ref_adapter_name)
 
-            del unwrapped_model
+            ref_probs = self.model(**ref_inputs).logits[..., :-1, :].softmax(dim=-1)
 
-        labels = inputs.get("labels")[..., 1:]
-        probs = outputs.logits[..., :-1, :].softmax(dim=-1)
-        ref_probs = ref_outputs.logits[..., :-1, :].softmax(dim=-1)
+            self.model.set_adapter("default")
+
+        labels = ref_inputs.pop("labels")[..., 1:]
 
         p = Categorical(probs=probs)
         p_ref = Categorical(probs=ref_probs)
@@ -87,179 +160,78 @@ class CalibrationTuner(Trainer):
 
         return loss
 
-    def compute_query_loss(self, model, inputs, targets, outputs, loss_inputs=None):
-        if "query_label" in inputs[0]:
-            predictions = [inp.pop("output") for inp in inputs]
-            q_labels = [inp.pop("query_label") for inp in inputs]
-        else:
-            predictions = self.tokenizer.batch_decode(
-                outputs.logits[:, -1, :].argmax(dim=-1),
-                skip_special_tokens=True,
-                clean_up_tokenization_spaces=False,
-            )
-            q_labels = None
-
-        q_inputs, q_labels, q_token_vec = prepare_uncertainty_query(
-            self.tokenizer,
-            inputs,
-            targets,
-            predictions,
-            query_labels=q_labels,
-            format=self.args.query_format,
-        )
-
-        q_loss_inputs = {
-            k: v.to(self.accelerator.device)
-            for k, v in self._collate_fn(q_inputs).items()
-        }
-
-        if outputs.past_key_values is not None and loss_inputs is not None:
-            ## FIXME: assuming prefixes always match at same length.
-            cache_len = (
-                (
-                    q_loss_inputs.get("input_ids")[
-                        :, : loss_inputs.get("input_ids").size(-1)
-                    ]
-                    == loss_inputs.get("input_ids")
-                )
-                .long()
-                .sum(dim=-1)
-            )
-
-            assert torch.all(
-                cache_len == cache_len[0]
-            ), "Pre-condition for using cache not satisfied."
-
-            cache_len = cache_len[0].item()
-
-            kv_cache = DynamicCache()
-            for idx, (k, v) in enumerate(outputs.past_key_values):
-                kv_cache.update(k[..., :cache_len, :], v[..., :cache_len, :], idx)
-
-            q_loss_inputs["past_key_values"] = kv_cache
-            q_loss_inputs["input_ids"] = q_loss_inputs["input_ids"][:, cache_len:]
-
-            ## FIXME: shape mismatch. incorrect usage?
-            # raise NotImplementedError
-
-        q_outputs = model(**q_loss_inputs)
-        q_logits = q_outputs.logits[..., -1, q_token_vec]
-
-        if self.args.scale_temp:
-            q_logits = self.query_temperature_model(q_logits)
-
-        q_loss = F.cross_entropy(
-            q_logits,
-            q_labels.to(q_logits.device),
-            label_smoothing=self.args.unc_label_smoothing,
-        )
-
-        return q_loss
-
-    def compute_loss(self, model, inputs, return_outputs=False):
+    def compute_loss(self, model, inputs, return_outputs=False, return_metrics=False):
         inputs = [dict(zip(inputs.keys(), vals)) for vals in zip(*inputs.values())]
         targets = [inp.pop("target") for inp in inputs]
 
-        loss_inputs = {
-            k: v.to(self.accelerator.device)
-            for k, v in self._collate_fn(
-                [{**inp, "target": t} for inp, t in zip(inputs, targets)]
-            ).items()
-        }
-
-        loss, outputs = super().compute_loss(model, loss_inputs, return_outputs=True)
-        if not self.args.use_lm_loss:
-            loss = loss.detach()
+        predictions, lm_loss = self.compute_lm_loss(model, inputs, targets)
 
         q_loss = self.compute_query_loss(
             model,
             inputs,
             targets,
-            outputs,
+            predictions,
         )
 
-        kl_loss = self.compute_kl_loss(model, loss_inputs, outputs)
+        kl_loss = self.compute_kl_loss(model, inputs, targets)
 
         loss_metrics = {
-            "lm_loss": loss.detach().item(),
+            "lm_loss": lm_loss.detach().item(),
             "q_loss": q_loss.detach().item(),
             "kl_loss": kl_loss.detach().item(),
         }
 
+        if return_metrics:
+            return loss_metrics
+
         if (self.state.global_step + 1) % self.args.logging_steps == 0:
             self.log(loss_metrics)
 
-        total_loss = loss + q_loss + self.args.kl_decay * kl_loss
+        loss = lm_loss + q_loss + self.args.kl_decay * kl_loss
 
-        return (total_loss, outputs) if return_outputs else total_loss
+        return (loss, None) if return_outputs else loss
 
     def evaluate(self, eval_dataset=None, metric_key_prefix="eval", **_):
         eval_dataset = eval_dataset if eval_dataset is not None else self.eval_dataset
 
         eval_dataloader = self.get_eval_dataloader(eval_dataset)
 
-        all_metrics = {"loss": [], "q_loss": [], "kl_loss": []}
+        all_metrics = {"lm_loss": [], "q_loss": [], "kl_loss": []}
 
         for inputs in tqdm(eval_dataloader, leave=False):
-            inputs = [dict(zip(inputs.keys(), vals)) for vals in zip(*inputs.values())]
-            targets = [inp.pop("target") for inp in inputs]
-            B = len(inputs)
-
-            loss_inputs = {
-                k: v.to(self.accelerator.device)
-                for k, v in self._collate_fn(
-                    [{**inp, "target": t} for inp, t in zip(inputs, targets)]
-                ).items()
-            }
+            B = len(inputs.get("target"))
 
             with torch.inference_mode():
-                loss, outputs = super().compute_loss(
-                    self.model, loss_inputs, return_outputs=True
+                loss_metrics = self.compute_loss(
+                    self.model_wrapped, inputs, return_metrics=True
                 )
 
-            if not self.args.use_lm_loss:
-                loss = loss.detach()
+            ## De-mean for distributed computation. Size for correct gather.
+            loss_metrics = {
+                k: torch.zeros(B)
+                .index_fill_(0, torch.tensor([0]).long(), v * B)
+                .to(self.accelerator.device)
+                for k, v in loss_metrics.items()
+            }
 
-            q_loss = self.compute_query_loss(
-                self.model,
-                inputs,
-                targets,
-                outputs,
-            )
-
-            kl_loss = self.compute_kl_loss(self.model, loss_inputs, outputs)
-
-            ## De-mean for distributed only.
-            loss = (
-                torch.zeros(B)
-                .index_fill_(0, torch.tensor([0]).long(), loss * B)
-                .to(loss.device)
-            )
-            q_loss = (
-                torch.zeros(B)
-                .index_fill_(0, torch.tensor([0]).long(), q_loss * B)
-                .to(q_loss.device)
-            )
-            kl_loss = (
-                torch.zeros(B)
-                .index_fill_(0, torch.tensor([0]).long(), kl_loss * B)
-                .to(kl_loss.device)
-            )
             [
                 all_metrics[l].append(v)
                 for l, v in zip(
-                    ("loss", "q_loss", "kl_loss"),
-                    self.accelerator.gather_for_metrics((loss, q_loss, kl_loss)),
+                    all_metrics.keys(),
+                    self.accelerator.gather_for_metrics(
+                        tuple(loss_metrics[k] for k in all_metrics.keys())
+                    ),
                 )
             ]
 
         all_metrics = {k: torch.cat(v, dim=0) for k, v in all_metrics.items()}
-        N = all_metrics["loss"].size(0)
+        N = all_metrics["q_loss"].size(0)
 
         all_metrics = {
             f"{metric_key_prefix}_{k}": (v[v.nonzero().squeeze(-1)].sum() / N).item()
             for k, v in all_metrics.items()
         }
+        all_metrics[f"{metric_key_prefix}_N"] = N
 
         self.log(all_metrics)
 

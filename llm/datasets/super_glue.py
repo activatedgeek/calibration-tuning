@@ -83,7 +83,7 @@ def get_cb(
 
         fewshot_prompt = "\n".join(
             [
-                "The following are multiple choice questions (with premise, hypothesis, and answers) about entailment.\n",
+                "The following are questions (with premise, hypothesis, and answers) about entailment.\n",
                 *[
                     str(__format_sample(prompt_dataset[idx], tokenizer, prompt_style))
                     + "\n"

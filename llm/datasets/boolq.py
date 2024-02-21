@@ -61,7 +61,7 @@ def __generate_fewshot_prompts(
 
     fewshot_prompt = "\n".join(
         [
-            "The following are comprehension passages with multiple choice answers.\n",
+            "The following are comprehension passages with answers.\n",
             *[
                 str(__format_sample(prompt_dataset[idx], tokenizer, prompt_style))
                 + "\n"

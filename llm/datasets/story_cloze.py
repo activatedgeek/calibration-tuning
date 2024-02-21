@@ -56,7 +56,7 @@ def __generate_fewshot_prompts(
 
     fewshot_prompt = "\n".join(
         [
-            "The following are stories (with completions).\n",
+            "The following are stories (with endings).\n",
             *[
                 str(__format_sample(prompt_dataset[idx], tokenizer, prompt_style))
                 + "\n"
@@ -66,7 +66,7 @@ def __generate_fewshot_prompts(
             ],
         ]
     )
-    fewshot_prompt = fewshot_prompt + "\nNow, answer the next question."
+    fewshot_prompt = fewshot_prompt + "\nNow, complete the next story."
 
     return fewshot_prompt
 
