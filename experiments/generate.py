@@ -6,7 +6,9 @@ from tqdm.auto import tqdm
 from transformers import GenerationConfig
 
 import multiprocess.context as ctx
-ctx._force_start_method('spawn')
+
+## @HOTFIX: for hanging processes in dataset map.
+ctx._force_start_method("spawn")
 
 from llm.accelerate import Accelerator
 from llm.datasets import get_dataset, get_loader
