@@ -1,16 +1,11 @@
 from concurrent.futures import ThreadPoolExecutor
-import openai
 from openai import ChatCompletion
 from openai.error import RateLimitError, APIError, Timeout, ServiceUnavailableError
 import torch
 import logging
 import time
 
-from .llm_utils import (
-    IGNORE_LABEL,
-    get_token_vec,
-    LMText,
-)
+from .llm_utils import LMText, get_token_vec
 
 
 def openai_query(system_prompt, prompt, openai_model_name="gpt-4-1106-preview"):
@@ -89,66 +84,13 @@ def clustering_equivalency_with_oracle(a, b, question, oracle_fn, oracle_kwargs)
     return "yes" in sampled_response.strip().lower()
 
 
-def extract_qa_oe(tokenizer, inputs, outputs=None):
-    """
-    TBD: for @arka to adapt
-    Assumes all answers are open ended and end with EOS token.
-    """
-    labels = inputs.get("labels")[..., 1:]
-
-    eos_idx = labels.eq(tokenizer.eos_token_id).nonzero()[
-        labels.eq(tokenizer.eos_token_id).sum(dim=-1).cumsum(dim=0) - 1
-    ][:, -1]
-
-    y = labels[torch.arange(labels.size(0)), :]
-
-    if outputs is not None:
-        logits = outputs.logits[..., :-1, :]
-        logits = logits[torch.arange(logits.size(0)), :]
-
-        return eos_idx, y, logits
-
-    return eos_idx, y
-
-
-def extract_oe_inputs(tokenizer, inputs):
-    target_start_idx = (
-        inputs.get("labels")
-        .eq(-100)
-        .nonzero()[
-            inputs.get("labels").eq(IGNORE_LABEL).sum(dim=-1).cumsum(dim=-1) - 1
-        ][:, -1]
-        + 1
-    )
-
-    oe_inputs = [
-        tokenizer(
-            tokenizer.decode(inp[1:t].tolist()),
-            padding="longest",
-            truncation=True,
-            max_length=tokenizer.model_max_length,
-        )
-        for inp, t in zip(inputs.get("input_ids"), target_start_idx)
-    ]
-
-    oe_targets = torch.cat(
-        [
-            inp[t:].unsqueeze(0)
-            for inp, t in zip(inputs.get("input_ids"), target_start_idx)
-        ],
-        dim=0,
-    )
-
-    return target_start_idx, oe_inputs, oe_targets
-
-
 def grade_oe_preds(
     true,
     pred,
     questions,
     comparison_strategy="substring",
     mode="answer-key",
-    max_threads=50
+    max_threads=50,
 ):
     # calculate accuracy
     if comparison_strategy == "substring":
@@ -165,18 +107,14 @@ def grade_oe_preds(
     else:
         raise ValueError(f"Invalid comparison strategy {comparison_strategy}")
     with ThreadPoolExecutor(min(max_threads, len(true))) as p:
-        acc = list(
-            p.map(comparison_fn, true, pred, questions) 
-        )
+        acc = list(p.map(comparison_fn, true, pred, questions))
     return acc
 
 
-def newline_strip(
-    input_string
-):
+def newline_strip(input_string):
     output_string = input_string
-    output_string = output_string.replace("\n\n","\n")
-    output_string = output_string.replace(":\n",":")
+    output_string = output_string.replace("\n\n", "\n")
+    output_string = output_string.replace(":\n", ":")
     output_string = output_string.strip("\n").split("\n")[0]
     return output_string
 
@@ -196,7 +134,17 @@ def equivalency_grading(
     return torch.Tensor(query_labels).long()
 
 
-def prepare_oe_uncertainty_query(
+def sanitize_generations(generations):
+    def clean(g):
+        g = g.replace("\n\n", "\n")
+        g = g.replace(":\n", ":")
+        g = g.strip("\n").split("\n")[0]
+        return g
+
+    return list(map(clean, generations))
+
+
+def prepare_uncertainty_query(
     tokenizer,
     inputs,
     targets,
@@ -230,13 +178,3 @@ def prepare_oe_uncertainty_query(
         torch.Tensor(query_labels).long(),
         query_token_vec,
     )
-
-
-def sanitize_generations(generations):
-    def clean(g):
-        g = g.replace("\n\n", "\n")
-        g = g.replace(":\n", ":")
-        g = g.strip("\n").split("\n")[0]
-        return g
-
-    return list(map(clean, generations))

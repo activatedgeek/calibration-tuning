@@ -46,14 +46,10 @@ def __format_sample(sample, tokenizer, style):
     elif style == "oe":
         context = "\n".join(
             [
-                "Read the following paragraph and answer the question. Give ONLY the answer, no other words or explanation.\n",
-                "For example:\n",
-                "Answer: <most likely answer, as short as possible>.\n",
-                f"Paragraph: ",
+                "Read the following and answer the question.",
             ]
-            + ([support] if len(support) else [])
+            + ([support + "\n"] if len(support) else [])
             + [
-                "\n",
                 f"Question: {question}",
             ]
         )
@@ -69,11 +65,19 @@ def __generate_fewshot_prompts(
     tokenizer, prompt_style, prompt_dataset, kshot, seed=None
 ):
     if kshot <= 0:
+        if prompt_style == "oe":
+            return "\n".join(
+                [
+                    "Give ONLY the answer, no other words or explanation.\n",
+                    "For example:",
+                    "Answer: <most likely answer, as short as possible>.",
+                ]
+            )
         return ""
 
     fewshot_prompt = "\n".join(
         [
-            "The following are multiple choice science exam questions.\n",
+            "The following are science exam questions with answers.\n",
             *[
                 str(__format_sample(prompt_dataset[idx], tokenizer, prompt_style))
                 + "\n"
@@ -106,6 +110,7 @@ def __format_sample_with_prompt(
 def get_sciq(
     root=None,
     prompt_style=None,
+    train_kshot=0,
     eval_kshot=0,
     tokenizer=None,
     num_workers=8,
@@ -136,7 +141,7 @@ def get_sciq(
         )
         for data, k in zip(
             [dataset.pop("train"), dataset.pop("validation"), dataset.pop("test")],
-            [0, eval_kshot, eval_kshot],
+            [train_kshot, eval_kshot, eval_kshot],
         )
     ]
 

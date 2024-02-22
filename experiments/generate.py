@@ -2,16 +2,21 @@ import os
 import wandb
 import pandas as pd
 import torch
-from accelerate import Accelerator
 from tqdm.auto import tqdm
 from transformers import GenerationConfig
 
+import multiprocess.context as ctx
+
+## @HOTFIX: for hanging processes in dataset map.
+ctx._force_start_method("spawn")
+
+from llm.accelerate import Accelerator
 from llm.datasets import get_dataset, get_loader
 from llm.models import get_model
 from llm.models.peft import get_lora_model
 from llm.logging import entrypoint
 
-from llm.datasets.llm_utils_oe import prepare_oe_uncertainty_query
+from llm.datasets import prepare_uncertainty_query
 
 from llm.utils.generate_utils import generate_output
 
@@ -21,7 +26,6 @@ def generate_outputs_main(
     log_dir=None,
     dataset=None,
     data_dir=None,
-    num_workers=8,
     batch_size=1,
     model_name=None,
     model_dir=None,
@@ -30,7 +34,8 @@ def generate_outputs_main(
     lora_alpha=32,
     lora_dropout=0.1,
     use_dataset_cache=True,
-    prompt_style="oe",
+    prompt_style=None,
+    kshot=0,
     max_new_tokens=30,
     int8=False,
 ):
@@ -86,12 +91,17 @@ def generate_outputs_main(
             root=data_dir,
             tokenizer=tokenizer,
             seed=seed,
-            num_workers=num_workers,
+            num_workers=os.cpu_count() // 2,
             use_cache=use_dataset_cache,
             prompt_style=prompt_style,
+            train_kshot=kshot,
+            eval_kshot=kshot,
         )
-        data_splits = list(filter(lambda x: x is not None, data_splits))
-        data_split_names = ["train", "validation", "test"][: len(data_splits)]
+        data_splits = [
+            (s, ds)
+            for s, ds in zip(["train", "validation", "test"], data_splits)
+            if ds is not None
+        ]
 
     generation_config = GenerationConfig(
         pad_token_id=tokenizer.pad_token_id,
@@ -100,7 +110,7 @@ def generate_outputs_main(
         max_new_tokens=max_new_tokens,
     )
 
-    for data, split in zip(data_splits, data_split_names):
+    for split_name, data in data_splits:
         loader = get_loader(
             data,
             batch_size=batch_size,
@@ -108,24 +118,18 @@ def generate_outputs_main(
             accelerator=accelerator,
         )
 
-        output_generator = generate_output(
+        with accelerator.main_process_first():
+            if accelerator.is_main_process:
+                os.makedirs(f"{log_dir}/outputs/{split_name}")
+
+        generate_output(
             accelerator,
             model,
             tokenizer,
             loader,
             generation_config=generation_config,
+            log_dir=f"{log_dir}/outputs/{split_name}",
         )
-
-        csv_path = f"{log_dir}/outputs/{split}"
-        with accelerator.main_process_first():
-            if accelerator.is_main_process:
-                os.makedirs(csv_path)
-
-        df = pd.DataFrame(output_generator)
-        ## NOTE: Avoid spec errors when loading for labeling.
-        df["query_label"] = -1
-
-        df.to_csv(f"{csv_path}/{accelerator.process_index}.csv", index=False)
 
 
 def generate_query_label(
@@ -140,7 +144,7 @@ def generate_query_label(
         targets = [inp.pop("target") for inp in inputs]
         outputs = [inp.pop("output") for inp in inputs]
 
-        _, query_labels, _ = prepare_oe_uncertainty_query(
+        _, query_labels, _ = prepare_uncertainty_query(
             tokenizer,
             inputs,
             targets,

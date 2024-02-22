@@ -202,6 +202,7 @@ def get_bigbench_mc(
     root=None,
     subset=None,
     prompt_style=None,
+    train_kshot=0,
     eval_kshot=1,
     tokenizer=None,
     num_workers=8,
@@ -241,7 +242,7 @@ def get_bigbench_mc(
         )
         for data, k in zip(
             [dataset.pop("train"), dataset.pop("validation")],
-            [0, eval_kshot],
+            [train_kshot, eval_kshot],
         )
     ]
 

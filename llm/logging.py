@@ -1,18 +1,11 @@
 from pathlib import Path
-from uuid import uuid4
+from datetime import datetime
 from time import perf_counter
 import logging.config
 import os
-import json
 import wandb
-from accelerate import PartialState as AcceleratorState
 
-
-WANDB_ENTITY_NAME = "WANDB_ENTITY"
-WANDB_PROJECT_NAME = "WANDB_PROJECT"
-WANDB_SWEEP_ID_NAME = "WANDB_SWEEP_ID"
-WANDB_RUN_ID_NAME = "WANDB_RUN_ID"
-WANDB_KWARGS_NAME = "wandb_args.json"
+from .accelerate import Accelerator, AcceleratorState
 
 
 class Timer:
@@ -63,43 +56,35 @@ class MetricsFilter(logging.Filter):
         return should_pass
 
 
-def get_log_dir(log_dir=None):
-    if log_dir is not None:
-        return Path(log_dir)
-
-    root_dir = (
-        Path(os.environ.get("LOGDIR", Path.cwd() / ".log"))
-        / Path.cwd().name
-        / f"run-{str(uuid4())[:8]}"
-    )
-    log_dir = Path(str((root_dir / "files").resolve()))
-    log_dir.mkdir(parents=True, exist_ok=True)
-
-    return log_dir
-
-
-def set_logging(log_dir=None, metrics_extra_key="metrics", generate_log_dir=False):
+def setup_log_dir(log_dir=None):
     accelerator = AcceleratorState()
 
-    log_dir = log_dir or os.environ.get(
-        "WANDB_DIR", get_log_dir() if generate_log_dir else None
-    )
-    assert log_dir is not None, "Missing log_dir."
-
-    with accelerator.main_process_first():
-        os.makedirs(log_dir, exist_ok=True)
-
     if accelerator.is_main_process:
-        ## Set other properties using environment variables: https://docs.wandb.ai/guides/track/environment-variables.
-        wandb.init(
-            mode=os.environ.get("WANDB_MODE", default="offline"),
-            dir=log_dir,
-            # settings=wandb.Settings(start_method="fork"),
-        )
-        ## Store sweep run config, if other processes need it.
-        if WANDB_SWEEP_ID_NAME in os.environ:
-            with open(f"{log_dir}/{WANDB_KWARGS_NAME}", "w") as f:
-                json.dump(dict(wandb.config), f)
+        if log_dir is None:
+            root_dir = (
+                Path(os.environ.get("LOGDIR", Path.home() / "logs")) / Path.cwd().name
+            )
+            dir_name = datetime.today().strftime("%Y-%m-%dT%H-%M-%S")
+            if "SLURM_JOB_ID" in os.environ:
+                dir_name = f"{os.environ.get('SLURM_JOB_ID')}-{dir_name}"
+
+            log_dir = root_dir / dir_name
+        else:
+            log_dir = Path(log_dir)
+
+        log_dir.mkdir(parents=True)
+    else:
+        log_dir = None
+
+    log_dir = accelerator.sync_object(log_dir)
+
+    return str(log_dir.resolve())
+
+
+def setup_logging(log_dir=None, metrics_extra_key="metrics"):
+    accelerator = AcceleratorState()
+
+    log_dir = setup_log_dir(log_dir=log_dir)
 
     _CONFIG = {
         "version": 1,
@@ -136,9 +121,11 @@ def set_logging(log_dir=None, metrics_extra_key="metrics", generate_log_dir=Fals
         },
         "loggers": {
             "": {
-                "handlers": ["stdout", "wandb_file"]
-                if accelerator.is_main_process
-                else ["null"],
+                "handlers": (
+                    ["stdout", "wandb_file"]
+                    if accelerator.is_main_process
+                    else ["null"]
+                ),
                 "level": os.environ.get("LOGLEVEL", "INFO"),
             },
         },
@@ -146,72 +133,84 @@ def set_logging(log_dir=None, metrics_extra_key="metrics", generate_log_dir=Fals
 
     logging.config.dictConfig(_CONFIG)
 
-    logging.info(f'Files stored in "{log_dir}".')
+    logging.info(f"Logging to '{log_dir}'.")
 
-    def finish_logging():
-        if accelerator.is_main_process:
-            wandb.finish()
-
-    return log_dir, finish_logging
+    return log_dir
 
 
-def maybe_load_wandb_kwargs(path):
+def setup_wandb(log_dir):
+    accelerator = AcceleratorState()
+
     wandb_kwargs = {}
 
-    ## For resuming runs.
-    if WANDB_RUN_ID_NAME in os.environ:
-        api = wandb.Api()
-        run_path = "/".join(
-            [
-                os.environ.get(WANDB_ENTITY_NAME),
-                os.environ.get(WANDB_PROJECT_NAME),
-                os.environ.get(WANDB_RUN_ID_NAME),
-            ]
+    if accelerator.is_main_process:
+        default_mode = (
+            "online"
+            if any([k in os.environ for k in ["WANDB_RUN_ID", "WANDB_SWEEP_ID"]])
+            else "offline"
         )
-        run = api.run(run_path)
+
+        wandb.init(
+            dir=log_dir,
+            mode=os.environ.get("WANDB_MODE", default_mode),
+            project=os.environ.get("WANDB_PROJECT", Path().cwd().name),
+            entity=os.environ.get("WANDB_ENTITY"),
+            name=os.environ.get("WANDB_NAME", Path(log_dir).name),
+            resume="WANDB_RUN_ID" in os.environ,
+            id=os.environ.get("WANDB_RUN_ID"),
+        )
+
+        run = wandb.run
+        ## Get arguments for sweep run ID.
+        if "WANDB_RUN_ID" in os.environ:
+            run = wandb.Api().run(
+                "/".join(
+                    [
+                        wandb.run.entity,
+                        wandb.run.project,
+                        os.environ.get("WANDB_RUN_ID"),
+                    ]
+                )
+            )
+
         wandb_kwargs = {
             **wandb_kwargs,
             **{k: v for k, v in run.config.items() if v is not None},
         }
 
-    ## For syncing across distributed processes.
-    wandb_kwargs_path = f"{path}/{WANDB_KWARGS_NAME}"
-    if os.path.isfile(wandb_kwargs_path):
-        with open(wandb_kwargs_path) as f:
-            wandb_kwargs = {
-                **wandb_kwargs,
-                **{k: v for k, v in json.load(f).items() if v is not None},
-            }
+    wandb_kwargs = accelerator.sync_object(wandb_kwargs)
 
     return wandb_kwargs
 
 
 def entrypoint(main):
-    accelerator = AcceleratorState()
+    def _wrapped_main(log_dir=None, **kwargs):
+        log_dir = setup_logging(log_dir=log_dir)
 
-    def _main(log_dir=None, **kwargs):
-        with accelerator.main_process_first():
-            log_dir, finish_logging = set_logging(log_dir=log_dir)
-            kwargs = {**maybe_load_wandb_kwargs(log_dir), **kwargs}
+        wandb_kwargs = setup_wandb(log_dir)
 
-        if accelerator.is_main_process:
-            logging.info(f"Working with {accelerator.num_processes} process(es).")
+        kwargs = {**wandb_kwargs, **kwargs, "log_dir": log_dir}
 
-        main(**kwargs, log_dir=log_dir)
+        return main(**kwargs)
 
-        finish_logging()
+    def _wrapped_entrypoint(**kwargs):
+        accelerator = Accelerator()
 
-    def _entrypoint(**kwargs):
-        if WANDB_SWEEP_ID_NAME in os.environ:
+        if "WANDB_SWEEP_ID" in os.environ:
             if accelerator.is_main_process:
                 wandb.agent(
-                    os.environ.get(WANDB_SWEEP_ID_NAME),
-                    function=lambda **agent_kwargs: _main(**agent_kwargs, **kwargs),
+                    os.environ.get("WANDB_SWEEP_ID"),
+                    project=os.environ.get("WANDB_PROJECT", Path().cwd().name),
+                    entity=os.environ.get("WANDB_ENTITY"),
+                    function=lambda **agent_kwargs: _wrapped_main(
+                        **agent_kwargs,
+                        **kwargs,
+                    ),
                     count=1,
                 )
             else:
-                _main(**kwargs)
+                _wrapped_main(**kwargs)
         else:
-            _main(**kwargs)
+            _wrapped_main(**kwargs)
 
-    return _entrypoint
+    return _wrapped_entrypoint

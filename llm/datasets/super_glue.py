@@ -16,6 +16,7 @@ __all__ = [
 def get_cb(
     root=None,
     prompt_style=None,
+    train_kshot=0,
     eval_kshot=0,
     tokenizer=None,
     num_workers=8,
@@ -82,7 +83,7 @@ def get_cb(
 
         fewshot_prompt = "\n".join(
             [
-                "The following are multiple choice questions (with premise, hypothesis, and answers) about entailment.\n",
+                "The following are questions (with premise, hypothesis, and answers) about entailment.\n",
                 *[
                     str(__format_sample(prompt_dataset[idx], tokenizer, prompt_style))
                     + "\n"
@@ -131,7 +132,7 @@ def get_cb(
                 "label",
             ],
         )
-        for data, k in zip(data_splits, [0, eval_kshot])
+        for data, k in zip(data_splits, [train_kshot, eval_kshot])
     ]
 
     return train_data, val_data, None
@@ -149,6 +150,7 @@ def cb(*args, prompt_style="choice", **kwargs):
 def get_multirc(
     root=None,
     prompt_style=None,
+    train_kshot=0,
     eval_kshot=0,
     tokenizer=None,
     num_workers=8,
@@ -267,7 +269,7 @@ def get_multirc(
                 "label",
             ],
         )
-        for data, k in zip(data_splits, [0, eval_kshot])
+        for data, k in zip(data_splits, [train_kshot, eval_kshot])
     ]
 
     return train_data, val_data, None
@@ -285,6 +287,7 @@ def multirc(*args, prompt_style="choice", **kwargs):
 def get_copa(
     root=None,
     prompt_style=None,
+    train_kshot=0,
     eval_kshot=0,
     tokenizer=None,
     num_workers=8,
@@ -400,7 +403,7 @@ def get_copa(
                 "label",
             ],
         )
-        for data, k in zip(data_splits, [0, eval_kshot])
+        for data, k in zip(data_splits, [train_kshot, eval_kshot])
     ]
 
     return train_data, val_data, None

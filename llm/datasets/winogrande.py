@@ -47,7 +47,7 @@ def __format_sample(sample, tokenizer, style):
 
         context = "\n".join(
             [
-                "Fill in the blank (_) in the following sentence from the following choices.",
+                "Fill in the blank '_' in the following sentence from the following choices.",
                 f"Sentence: {sentence}\n",
                 f"Choice 1: {answer_map[0]}",
                 f"Choice 2: {answer_map[1]}",
@@ -104,6 +104,7 @@ def get_winogrande(
     root=None,
     subset=None,
     prompt_style=None,
+    train_kshot=0,
     eval_kshot=0,
     tokenizer=None,
     num_workers=8,
@@ -139,7 +140,7 @@ def get_winogrande(
                 "answer",
             ],
         )
-        for data, k in zip(data_splits, [0, eval_kshot])
+        for data, k in zip(data_splits, [train_kshot, eval_kshot])
     ]
 
     return train_data, val_data, None

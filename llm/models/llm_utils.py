@@ -1,9 +1,3 @@
-import logging
-from peft import PeftModel, PeftConfig, get_peft_model
-
-from ..utils.trainer import get_last_checkpoint_path
-
-
 DEFAULT_PAD_TOKEN = "[PAD]"
 DEFAULT_EOS_TOKEN = "</s>"
 DEFAULT_BOS_TOKEN = "<s>"
@@ -30,26 +24,22 @@ def get_custom_tokens():
     return [DEFAULT_BOA_TOKEN, DEFAULT_EOA_TOKEN]
 
 
-def load_peft_model_from_pretrained(model, peft_dir=None, query_peft_dir=None):
-    if peft_dir is not None:
-        peft_dir = get_last_checkpoint_path(peft_dir)
+def resize_token_embeddings(tokenizer, model, causal_lm=True):
+    extra_token_count = len(tokenizer) - model.get_input_embeddings().weight.data.size(
+        0
+    )
+    if extra_token_count:
+        model.resize_token_embeddings(len(tokenizer))
 
-        model = PeftModel.from_pretrained(model, peft_dir)
+        input_embeddings = model.get_input_embeddings().weight.data
 
-        logging.info(f"Loaded PEFT checkpoint from '{peft_dir}'")
+        input_embeddings[-extra_token_count:] = input_embeddings[
+            :-extra_token_count
+        ].mean(dim=0, keepdim=True)
 
-    if query_peft_dir is not None:
-        query_peft_dir = get_last_checkpoint_path(query_peft_dir)
+        if causal_lm:
+            output_embeddings = model.get_output_embeddings().weight.data
 
-        ## NOTE: Hack to add a zero "default" adapter, for uniform downstream usage.
-        if not isinstance(model, PeftModel):
-            model = get_peft_model(model, PeftConfig.from_pretrained(query_peft_dir))
-            for n, p in model.named_parameters():
-                if "lora" in n:
-                    p.data.fill_(0.0)
-
-        model.load_adapter(query_peft_dir, adapter_name="query")
-
-        logging.info(f"Loaded PEFT query checkpoint from '{query_peft_dir}'")
-
-    return model
+            output_embeddings[-extra_token_count:] = output_embeddings[
+                :-extra_token_count
+            ].mean(dim=0, keepdim=True)

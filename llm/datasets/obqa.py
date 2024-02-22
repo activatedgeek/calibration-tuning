@@ -36,9 +36,7 @@ def __format_sample(sample, tokenizer, style):
     elif style == "oe":
         context = "\n".join(
             [
-                "Provide your best answer for the following question. Give ONLY the answer, no other words or explanation.\n"
-                "For example:\n",
-                "Answer: <most likely answer, as short as possible; not a complete sentence, just the answer!>.\n",
+                "Provide your best answer for the following question.",
                 f"The question is: {question}",
             ]
         )
@@ -58,7 +56,7 @@ def __generate_fewshot_prompts(
 
     fewshot_prompt = "\n".join(
         [
-            "The following are comprehension passages with multiple choice answers.\n",
+            "The following are comprehension passages with answers.\n",
             *[
                 str(__format_sample(prompt_dataset[idx], tokenizer, prompt_style))
                 + "\n"
@@ -78,11 +76,27 @@ def __generate_fewshot_prompts(
 def __format_sample_with_prompt(
     sample, tokenizer, prompt_style, prompt_dataset, kshot, seed=None
 ):
-    prompt = __generate_fewshot_prompts(
-        tokenizer, prompt_style, prompt_dataset, kshot, seed=seed
-    )
-    if len(prompt):
-        prompt += "\n\n"
+    if kshot > 0:
+        prompt = (
+            __generate_fewshot_prompts(
+                tokenizer, prompt_style, prompt_dataset, kshot, seed=seed
+            )
+            + "\n\n"
+        )
+    else:
+        if prompt_style == "oe":
+            prompt = (
+                "\n".join(
+                    [
+                        "Give ONLY the answer, no other words or explanation.\n",
+                        "For example:",
+                        "Answer: <most likely answer, as short as possible; not a complete sentence, just the answer!>.",
+                    ]
+                )
+                + "\n\n"
+            )
+        else:
+            prompt = ""
 
     sample = __format_sample(sample, tokenizer, prompt_style)
     sample.prompt = prompt
@@ -93,6 +107,7 @@ def __format_sample_with_prompt(
 def get_openbookqa(
     root=None,
     prompt_style=None,
+    train_kshot=0,
     eval_kshot=0,
     tokenizer=None,
     num_workers=8,
@@ -123,7 +138,7 @@ def get_openbookqa(
         )
         for data, k in zip(
             [dataset.pop("train"), dataset.pop("validation"), dataset.pop("test")],
-            [0, eval_kshot, eval_kshot],
+            [train_kshot, eval_kshot, eval_kshot],
         )
     ]
 

@@ -41,6 +41,7 @@ def get_lora_model(
         r=lora_rank,
         lora_alpha=lora_alpha,
         lora_dropout=lora_dropout,
+        inference_mode=not is_trainable,
         **config_args,
     )
     model = get_peft_model(model, peft_config, adapter_name=adapter_name)

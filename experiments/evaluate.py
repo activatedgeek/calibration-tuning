@@ -3,12 +3,12 @@ from tqdm.auto import tqdm
 import wandb
 import pandas as pd
 import torch
-from accelerate import Accelerator
 
-from llm.logging import entrypoint, Timer
+from llm.accelerate import Accelerator
+from llm.logging import entrypoint
 from llm.datasets import get_all_datasets_list
 from llm.models import get_model
-from llm.models.peft import get_lora_model, prepare_model_for_temperature_scaling
+from llm.models.peft import get_lora_model
 from llm.eval import evaluate_dataset
 
 
@@ -42,6 +42,9 @@ def main(
         "mode": mode,
         "log_dir": log_dir,
         "int8": int8,
+        "dataset": dataset,
+        "data_dir": data_dir,
+        "batch_size": batch_size,
     }
     if accelerator.is_main_process:
         wandb.config.update(config)
@@ -75,11 +78,6 @@ def main(
         adapter_name="query",
     )
 
-    if scale_temp:
-        prepare_model_for_temperature_scaling(
-            model, peft_dir=query_peft_dir or peft_dir
-        )
-
     model.eval()
 
     if dataset.startswith("eval"):
@@ -90,30 +88,23 @@ def main(
 
     all_metrics = []
     for dataset in tqdm(all_datasets):
-        with Timer() as t:
-            val_metrics, test_metrics = evaluate_dataset(
-                accelerator,
-                model,
-                tokenizer,
-                dataset,
-                train_data=False,
-                seed=seed,
-                batch_size=batch_size,
-                data_dir=data_dir,
-                eval_kshot=eval_kshot,
-                use_cache=use_dataset_cache,
-                prompt_style=prompt_style,
-                log_dir=log_dir,
-                evaluate_fn=mode,
-            )
-
-        dataset_metrics = list(
-            map(
-                lambda m: {**m, **config, "dataset": dataset, "ts": t.elapsed},
-                list(filter(lambda m: m is not None, [val_metrics, test_metrics])),
-            )
+        metrics = evaluate_dataset(
+            accelerator,
+            model,
+            tokenizer,
+            dataset,
+            train_data=False,
+            seed=seed,
+            batch_size=batch_size,
+            data_dir=data_dir,
+            eval_kshot=eval_kshot,
+            use_cache=use_dataset_cache,
+            prompt_style=prompt_style,
+            log_dir=log_dir,
+            evaluate_fn=mode,
         )
-        all_metrics += dataset_metrics
+
+        all_metrics += metrics
         logging.info(
             {"metrics": wandb.Table(dataframe=pd.DataFrame(all_metrics))},
             extra=dict(metrics=True),

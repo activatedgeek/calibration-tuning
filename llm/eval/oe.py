@@ -9,16 +9,17 @@ import numpy as np
 from transformers import GenerationConfig
 from sklearn.metrics import roc_auc_score
 
-from llm.datasets import LabeledStringDataCollator
-from llm.datasets.llm_utils_oe import (
-    prepare_oe_uncertainty_query,
+from ..random import FixedSeed
+from ..datasets import LabeledStringDataCollator, prepare_uncertainty_query
+from ..datasets.llm_utils import DataCollatorForSupervisedDataset
+from ..datasets.llm_utils_oe import (
+    grade_oe_preds,
     equivalency_grading,
     sanitize_generations,
 )
-from llm.eval.third_party.calibration import calibration
+from .third_party.calibration import calibration
 
-# from llm.utils.generate_utils import generate_output
-from llm.random import FixedSeed
+from ..utils.generate_utils import generate_output
 
 
 @torch.inference_mode()
@@ -85,7 +86,7 @@ def evaluate_oe(
             model.set_adapter("query")
 
         for cs in comparison_strategies:
-            q_inputs, q_labels, q_token_vec = prepare_oe_uncertainty_query(
+            q_inputs, q_labels, q_token_vec = prepare_uncertainty_query(
                 tokenizer,
                 inputs,
                 targets,
@@ -137,12 +138,6 @@ def evaluate_oe(
             logging.warning(f"AUROC calculation failed.")
             q_auroc = float("nan")
 
-        ece, _ = calibration(
-            q_labels,
-            q_pred,
-            q_p[torch.arange(q_p.size(0)), 1],  ## corresponds to "yes"
-        )
-
         metrics_dict.update(
             {
                 "N": q_labels.size(0),
@@ -150,7 +145,6 @@ def evaluate_oe(
                 f"{cs}_unc_acc": q_acc.item(),
                 f"{cs}_unc_auroc": q_auroc,
                 f"{cs}_unc_ece": q_ece,
-                f"{cs}_ece": ece,
             }
         )
 
@@ -269,7 +263,7 @@ def evaluate_oe_uncertainty_sampling(
             # custom clustering procedure differs from paper; we are using modern LLMs for equivalency, not the NLI classifier used in the paper.
             # full prompting strategy is in llm/datasets/llm_utils_oe.py
             for cs in comparison_strategies:
-                _, greedy_equivalency_labels, _ = prepare_oe_uncertainty_query(
+                _, greedy_equivalency_labels, _ = prepare_uncertainty_query(
                     tokenizer,
                     inputs,
                     targets,
@@ -720,14 +714,18 @@ VERBAL_ELICITATION_UNC_QUERIES = {
         [
             "Provide the probability that your guess is correct. Give ONLY the probability, no other words or explanation.\n\n",
             "For example:\n\n",
-            "Probability: <the probability between 0.0 and 1.0 that your guess is correct, without any extra commentary whatsoever; just the probability!>\n",
+            "Probability: <the probability between 0.0 and 1.0 that your guess is correct, without any extra commentary whatsoever; just the probability!>\n\n",
+            "Include probability of the guess below:\n",
+            "Probability:",
         ]
     ),
     "2s1g": "".join(
         [
             "Provide the probability that your guess is correct. Give ONLY the probability, no other words or explanation.\n\n",
             "For example:\n\n",
-            "Probability: <the probability between 0.0 and 1.0 that your guess is correct, without any extra commentary whatsoever; just the probability!>\n",
+            "Probability: <the probability between 0.0 and 1.0 that your guess is correct, without any extra commentary whatsoever; just the probability!>\n\n",
+            "Include probability of each guess below:\n",
+            "Probability:",
         ]
     ),
     "2s2g": "".join(
@@ -735,7 +733,9 @@ VERBAL_ELICITATION_UNC_QUERIES = {
             "Provide the probability that each of your guesses is correct. Give ONLY the probabilities, no other words or explanation.\n\n",
             "For example:\n\n",
             "P1: <the probability between 0.0 and 1.0 that G1 is correct, without any extra commentary whatsoever; just the probability!>\n",
-            "P2: <the probability between 0.0 and 1.0 that G2 is correct, without any extra commentary whatsoever; just the probability!>\n",
+            "P2: <the probability between 0.0 and 1.0 that G2 is correct, without any extra commentary whatsoever; just the probability!>\n\n",
+            "Include probability of the guess below:\n\n",
+            "P1:",
         ]
     ),
     "2s4g": "".join(
@@ -745,7 +745,9 @@ VERBAL_ELICITATION_UNC_QUERIES = {
             "P1: <the probability between 0.0 and 1.0 that G1 is correct, without any extra commentary whatsoever; just the probability!>\n",
             "P2: <the probability between 0.0 and 1.0 that G2 is correct, without any extra commentary whatsoever; just the probability!>\n",
             "P3: <the probability between 0.0 and 1.0 that G3 is correct, without any extra commentary whatsoever; just the probability!>\n",
-            "P4: <the probability between 0.0 and 1.0 that G4 is correct, without any extra commentary whatsoever; just the probability!>\n",
+            "P4: <the probability between 0.0 and 1.0 that G4 is correct, without any extra commentary whatsoever; just the probability!>\n\n",
+            "Include probability of the guess below:\n\n",
+            "P1:",
         ]
     ),
 }
@@ -755,6 +757,7 @@ def parse_verbal_elicitation_oe(
     output_string,
     ve_style,
     stage=1,
+    prev_guesses=None,
 ):
     stages, guess_style = ve_style.split("s")
     stages = int(stages)
@@ -769,7 +772,12 @@ def parse_verbal_elicitation_oe(
             expected_lines += 1 if is_CoT else 0
 
     output_string = output_string.replace("\n\n", "\n")
-    parts = output_string.split("\n")[:expected_lines]
+    output_string = output_string.replace(":\n", ":")
+    parts = output_string.strip("\n").split("\n")[:expected_lines]
+
+    if is_CoT and (stage == 1):
+        explanation = parts[0]
+        parts = parts[1:]
 
     if len(parts) == 0:
         return "", torch.tensor([0]), torch.tensor([[1, 0]])
@@ -786,10 +794,13 @@ def parse_verbal_elicitation_oe(
         return guess
 
     def parse_prob(prob, idx):
-        if (num_guesses == 1) and ("Probability:" not in prob):
+        if (num_guesses == 1) and (stage == 1) and ("Probability:" not in prob):
             return None
-        elif (num_guesses > 1) and (f"P{idx+1}:" not in prob):
-            return None
+        elif num_guesses > 1:
+            if (stage == 1) and (f"P{idx+1}:" not in prob):
+                return None
+            elif (stage == 2) and (idx > 1) and (f"P{idx+1}:" in prob):
+                return None
         try:
             prob = float(prob.split(":")[-1].strip())
         except:
@@ -801,10 +812,14 @@ def parse_verbal_elicitation_oe(
         probs = [parse_prob(p, i) for i, p in enumerate(parts[1::2])]
     elif stage == 1:
         guesses = [parse_guess(g, i) for i, g in enumerate(parts)]
-        probs = []
+        if is_CoT:
+            return (guesses, explanation), None, None
+        else:
+            return guesses, None, None
     elif stage == 2:
-        guesses = []
+        assert prev_guesses is not None
         probs = [parse_prob(p, i) for i, p in enumerate(parts)]
+        guesses = prev_guesses
 
     if guesses[0] is None:
         return "", torch.tensor([0]), torch.tensor([[1, 0]])
@@ -826,169 +841,215 @@ def parse_verbal_elicitation_oe(
     return output, y, logits
 
 
-# @torch.inference_mode()
-# def evaluate_verbal_elicitation_oe(
-#     ve_style,
-#     accelerator,
-#     model,
-#     tokenizer,
-#     loader,
-#     prompt_style="oe",
-#     comparison_strategies=None,
-#     max_new_tokens=30,
-#     output_row_path=None,
-#     **_,
-# ):
-#     assert prompt_style == "oe"
-#     assert (not comparison_strategies is None) and len(comparison_strategies) > 0
+@torch.inference_mode()
+def evaluate_verbal_elicitation_oe(
+    ve_style,
+    accelerator,
+    model,
+    tokenizer,
+    loader,
+    prompt_style="oe",
+    comparison_strategies=None,
+    max_new_tokens=30,
+    output_row_path=None,
+    **_,
+):
+    assert prompt_style == "oe"
+    assert (not comparison_strategies is None) and len(comparison_strategies) > 0
 
-#     device = accelerator.device
+    device = accelerator.device
+    collate_fn = DataCollatorForSupervisedDataset(tokenizer)
 
-#     stages, guess_style = ve_style.split("s")
-#     stages = int(stages)
-#     num_guesses = int(guess_style[0])
-#     max_new_tokens = max(30 * num_guesses, max_new_tokens)
+    stages, guess_style = ve_style.split("s")
+    stages = int(stages)
+    num_guesses = int(guess_style[0])
+    is_CoT = guess_style[1] == "C"
+    if is_CoT:
+        max_new_tokens = 200
+    max_new_tokens = max(30 * num_guesses, max_new_tokens)
 
-#     generation_config = GenerationConfig(
-#         pad_token_id=tokenizer.pad_token_id,
-#         bos_token_id=tokenizer.bos_token_id,
-#         eos_token_id=tokenizer.eos_token_id,
-#         max_new_tokens=max_new_tokens,
-#     )
+    generation_config = GenerationConfig(
+        pad_token_id=tokenizer.pad_token_id,
+        bos_token_id=tokenizer.bos_token_id,
+        eos_token_id=tokenizer.eos_token_id,
+        max_new_tokens=max_new_tokens,
+    )
 
-#     all_unc_y, all_unc_logits = {c: [] for c in comparison_strategies}, {
-#         c: [] for c in comparison_strategies
-#     }
-#     all_acc = {c: [] for c in comparison_strategies}
-#     all_oe_target_strings, all_output_strings, all_question_strings = [], [], []
+    all_unc_y, all_unc_logits = {c: [] for c in comparison_strategies}, {
+        c: [] for c in comparison_strategies
+    }
+    all_acc = {c: [] for c in comparison_strategies}
+    all_oe_target_strings, all_output_strings, all_question_strings = [], [], []
 
-#     output_generator = generate_output(
-#         accelerator,
-#         model,
-#         tokenizer,
-#         loader,
-#         prompt_style=prompt_style,
-#         generation_config=generation_config,
-#     )
+    output_generator = generate_output(
+        accelerator,
+        model,
+        tokenizer,
+        loader,
+        prompt_style=prompt_style,
+        generation_config=generation_config,
+    )
 
-#     # i = 0
-#     # for example in output_generator:
-#     #     from pprint import pprint
-#     #     pprint(example)
+    for example in output_generator:
+        output, raw_input, target = (
+            example["output"],
+            example["raw_input"],
+            example["target"],
+        )
 
-#     #     parse_verbal_elicitation_oe(
-#     #         example["output"], ve_style, stage=1
-#     #     )
-#     #     # print("\n")
-#     #     i += 1
-#     #     if i > 10:
-#     #         break
+        output, unc_y, unc_logits = parse_verbal_elicitation_oe(
+            output, ve_style, stage=1
+        )
 
-#     # print(1/0)
+        # 2 STAGE CASE
+        if unc_logits is None:
 
-#     for example in output_generator:
-#         output, raw_input, target = (
-#             example["output"],
-#             example["raw_input"],
-#             example["target"],
-#         )
+            uncertainty_prompt = VERBAL_ELICITATION_UNC_QUERIES[ve_style]
 
-#         output, unc_y, unc_logits = parse_verbal_elicitation_oe(
-#             output, ve_style, stage=1
-#         )
+            guesses_str = ""
+            if is_CoT:
+                output, explanation = output
+                guesses_str = f"{explanation}\n\n"
 
-#         unc_y = unc_y.to(device)
-#         unc_logits = unc_logits.to(device)
+            if num_guesses == 1:
+                guesses_str = guesses_str + f"Guess: {output[0]}"
+            else:
+                guesses_str = guesses_str + "\n\n".join(
+                    [f"G{i+1}: {g}" for i, g in enumerate(output)]
+                )
 
-#         input_question_string = example["context"]
-#         oe_target_strings = [target]
-#         output_strings = [output]
-#         question_strings = [input_question_string]
+            sample = (
+                example["prompt"]
+                + example["context"]
+                + example["target_prompt"]
+                + guesses_str
+                + "\n\n"
+                + uncertainty_prompt
+            )
 
-#         for c in comparison_strategies:
-#             acc = torch.tensor(
-#                 grade_oe_preds(
-#                     oe_target_strings,
-#                     output_strings,
-#                     question_strings,
-#                     comparison_strategy=c,
-#                 )
-#             ).to(device)
+            tokenizer_args = dict(
+                padding="longest",
+                truncation=True,
+            )
+            tokenize_dict = tokenizer(str(sample), **tokenizer_args)
 
-#             [
-#                 l.append(v)
-#                 for l, v in zip(
-#                     (all_unc_y[c], all_unc_logits[c], all_acc[c]),
-#                     (unc_y, unc_logits, acc),
-#                 )
-#             ]
+            gen_inputs = {
+                k: v.to(device) for k, v in collate_fn([tokenize_dict]).items()
+            }
 
-#         [
-#             l.append(v)
-#             for l, v in zip(
-#                 (all_oe_target_strings, all_output_strings, all_question_strings),
-#                 (oe_target_strings, output_strings, question_strings),
-#             )
-#         ]
+            gen_config = GenerationConfig(
+                pad_token_id=tokenizer.pad_token_id,
+                bos_token_id=tokenizer.bos_token_id,
+                eos_token_id=tokenizer.eos_token_id,
+                max_new_tokens=max_new_tokens,
+            )
 
-#     all_oe_target_strings, all_output_strings, all_question_strings = (
-#         sum(all_oe_target_strings, []),
-#         sum(all_output_strings, []),
-#         sum(all_question_strings, []),
-#     )
+            gen_output = model.generate(**gen_inputs, generation_config=gen_config)[0]
 
-#     return_dict = {}
-#     # note if using multiple gpus/processes, these string lists will be incomplete.
-#     dump = {
-#         "oe_target_strings": all_oe_target_strings,
-#         "output_strings": all_output_strings,
-#         "question_strings": all_question_strings,
-#     }
+            gen_output = tokenizer.decode(
+                gen_output[gen_inputs.get("input_ids")[0].size(0) :],
+                skip_special_tokens=True,
+                clean_up_tokenization_spaces=False,
+            )
 
-#     for c in comparison_strategies:
-#         all_unc_y_c, all_unc_p, all_acc_c = [
-#             torch.cat(l, dim=0) for l in (all_unc_y[c], all_unc_logits[c], all_acc[c])
-#         ]
+            output, unc_y, unc_logits = parse_verbal_elicitation_oe(
+                gen_output, ve_style, stage=2, prev_guesses=output
+            )
 
-#         acc = all_acc_c.float().mean()
+        unc_y = unc_y.to(device)
+        unc_logits = unc_logits.to(device)
 
-#         all_unc_y_c = (
-#             (all_unc_y_c.unsqueeze(-1) == torch.arange(2).to(device))
-#             .long()
-#             .argmax(dim=-1)
-#         )
-#         all_unc_y_hat = all_unc_p.argmax(dim=-1)
-#         unc_acc = (all_unc_y_c == all_unc_y_hat).float().mean()
-#         unc_ece, _ = calibration(
-#             all_unc_y_c,
-#             all_unc_y_hat,
-#             all_unc_p[torch.arange(all_unc_p.size(0)), all_unc_y_hat],
-#         )
+        input_question_string = example["context"]
+        oe_target_strings = [target]
+        output_strings = [output]
+        question_strings = [input_question_string]
 
-#         return_dict.update(
-#             {
-#                 f"{c}_acc": acc.item(),
-#                 f"{c}_unc_acc": unc_acc.item(),
-#                 f"{c}_unc_ece": unc_ece,
-#                 "N": all_unc_p.size(0),
-#             }
-#         )
+        for c in comparison_strategies:
+            acc = torch.tensor(
+                grade_oe_preds(
+                    oe_target_strings,
+                    output_strings,
+                    question_strings,
+                    comparison_strategy=c,
+                )
+            ).to(device)
 
-#         dump.update(
-#             {
-#                 f"{c}_acc": all_acc_c.cpu().numpy(),
-#                 f"{c}_all_unc_y": all_unc_y_c.cpu().numpy(),
-#                 f"{c}_all_unc_y_hat": all_unc_y_hat.cpu().numpy(),
-#                 f"{c}_unc_acc": unc_acc.item(),
-#                 f"{c}_unc_ece": unc_ece,
-#             }
-#         )
+            [
+                l.append(v)
+                for l, v in zip(
+                    (all_unc_y[c], all_unc_logits[c], all_acc[c]),
+                    (unc_y, unc_logits, acc),
+                )
+            ]
 
-#     if accelerator.num_processes == 1 and output_row_path is not None:
-#         # create parent dir if it doesn't exist
-#         import os
+        [
+            l.append(v)
+            for l, v in zip(
+                (all_oe_target_strings, all_output_strings, all_question_strings),
+                (oe_target_strings, output_strings, question_strings),
+            )
+        ]
 
-#         os.makedirs(os.path.dirname(output_row_path), exist_ok=True)
-#         pd.DataFrame(dump).to_csv(output_row_path, escapechar="\\")
+    all_oe_target_strings, all_output_strings, all_question_strings = (
+        sum(all_oe_target_strings, []),
+        sum(all_output_strings, []),
+        sum(all_question_strings, []),
+    )
 
-#     return return_dict
+    return_dict = {}
+    # note if using multiple gpus/processes, these string lists will be incomplete.
+    dump = {
+        "oe_target_strings": all_oe_target_strings,
+        "output_strings": all_output_strings,
+        "question_strings": all_question_strings,
+    }
+
+    for c in comparison_strategies:
+
+        all_unc_y_c, all_unc_p, all_acc_c = [
+            torch.cat(l, dim=0) for l in (all_unc_y[c], all_unc_logits[c], all_acc[c])
+        ]
+
+        acc = all_acc_c.float().mean()
+
+        all_unc_y_c = (
+            (all_unc_y_c.unsqueeze(-1) == torch.arange(2).to(device))
+            .long()
+            .argmax(dim=-1)
+        )
+        all_unc_y_hat = all_unc_p.argmax(dim=-1)
+        unc_acc = (all_unc_y_c == all_unc_y_hat).float().mean()
+        unc_ece, _ = calibration(
+            all_unc_y_c,
+            all_unc_y_hat,
+            all_unc_p[torch.arange(all_unc_p.size(0)), all_unc_y_hat],
+        )
+
+        return_dict.update(
+            {
+                f"{c}_acc": acc.item(),
+                f"{c}_unc_acc": unc_acc.item(),
+                f"{c}_unc_ece": unc_ece,
+                "N": all_unc_p.size(0),
+            }
+        )
+
+        dump.update(
+            {
+                f"{c}_acc": all_acc_c.cpu().numpy(),
+                f"{c}_all_unc_y": all_unc_y_c.cpu().numpy(),
+                f"{c}_all_unc_y_hat": all_unc_y_hat.cpu().numpy(),
+                f"{c}_all_unc_p": all_unc_p[..., 1].cpu().numpy(),
+                f"{c}_unc_acc": unc_acc.item(),
+                f"{c}_unc_ece": unc_ece,
+            }
+        )
+
+    if accelerator.num_processes == 1 and output_row_path is not None:
+        # create parent dir if it doesn't exist
+        import os
+
+        os.makedirs(os.path.dirname(output_row_path), exist_ok=True)
+        pd.DataFrame(dump).to_csv(output_row_path, escapechar="\\")
+
+    return return_dict

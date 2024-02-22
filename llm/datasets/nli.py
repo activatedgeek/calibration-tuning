@@ -64,7 +64,7 @@ def __generate_fewshot_prompts(
 
     fewshot_prompt = "\n".join(
         [
-            "The following are multiple choice questions (with premise, hypothesis, and answers) about entailment.\n",
+            "The following are questions (with premise, hypothesis, and answers) about entailment.\n",
             *[
                 str(__format_sample(prompt_dataset[idx], tokenizer, prompt_style))
                 + "\n"
@@ -97,6 +97,7 @@ def __format_sample_with_prompt(
 def get_snli(
     root=None,
     prompt_style=None,
+    train_kshot=0,
     eval_kshot=0,
     tokenizer=None,
     num_workers=8,
@@ -130,7 +131,7 @@ def get_snli(
                 "label",
             ],
         )
-        for data, k in zip(data_splits, [0, eval_kshot, eval_kshot])
+        for data, k in zip(data_splits, [train_kshot, eval_kshot, eval_kshot])
     ]
 
     return train_data, val_data, test_data
@@ -149,6 +150,7 @@ def get_anli(
     root=None,
     round=None,
     prompt_style=None,
+    train_kshot=0,
     eval_kshot=0,
     tokenizer=None,
     num_workers=8,
@@ -184,7 +186,7 @@ def get_anli(
                 "reason",
             ],
         )
-        for data, k in zip(data_splits, [0, eval_kshot])
+        for data, k in zip(data_splits, [train_kshot, eval_kshot])
     ]
 
     return train_data, None, test_data

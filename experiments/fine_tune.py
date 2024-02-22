@@ -1,12 +1,12 @@
 import torch
-from accelerate import PartialState as AcceleratorState
+from peft import prepare_model_for_kbit_training
 
-from llm.datasets import get_dataset
-from llm.models import get_model
-from llm.models.peft import get_lora_model, prepare_model_for_temperature_scaling
 from llm.logging import entrypoint
-from llm.utils.trainer import WandbConfigUpdateCallback
-from llm.utils.fine_tuner import FineTuner
+from llm.accelerate import AcceleratorState
+from llm.models import get_model
+from llm.models.peft import get_lora_model, get_temperature_scale_model
+from llm.datasets import get_dataset
+from llm.trainer import WandbConfigUpdateCallback, FineTuner
 
 
 def main(
@@ -14,8 +14,8 @@ def main(
     log_dir=None,
     dataset=None,
     data_dir=None,
-    prompt_style="choice",
-    num_workers=8,
+    prompt_style=None,
+    num_workers=4,
     batch_size=1,
     grad_acc=1,
     model_name=None,
@@ -31,7 +31,7 @@ def main(
     max_steps=1,
     log_steps=100,
     save_steps=1000,
-    eval_steps=1000,
+    eval_steps=500,
     use_dataset_cache=True,
     resume_dir=None,
     int8=True,
@@ -51,8 +51,8 @@ def main(
         use_cache=False,
         tokenizer=tokenizer,
         load_in_8bit=int8,
-        temp_scaling=scale_temp,
     )
+    model = prepare_model_for_kbit_training(model, use_gradient_checkpointing=False)
 
     model = get_lora_model(
         model,
@@ -60,15 +60,20 @@ def main(
         lora_rank=lora_rank,
         lora_alpha=lora_alpha,
         lora_dropout=lora_dropout,
-        is_trainable=True,
+        is_trainable=not scale_temp,
         adapter_name="default",
     )
 
     if scale_temp:
-        prepare_model_for_temperature_scaling(model, is_trainable=True)
+        model = get_temperature_scale_model(
+            model,
+            checkpoint_dir=peft_dir,
+            is_trainable=True,
+            weights_name=FineTuner.TEMPERATURE_WEIGHTS_NAME,
+        )
 
     with accelerator.main_process_first():
-        train_data, _, _ = get_dataset(
+        train_data, val_data, _ = get_dataset(
             dataset,
             root=data_dir,
             tokenizer=tokenizer,
@@ -103,11 +108,13 @@ def main(
             gradient_accumulation_steps=grad_acc,
             output_dir=log_dir,
             report_to="wandb",
-            dataloader_num_workers=4,
-            scale_temp=scale_temp,
+            dataloader_num_workers=num_workers,
             label_names=train_data.column_names,
+            ## Custom.
+            scale_temp=scale_temp,
         ),
         train_dataset=train_data,
+        eval_dataset=val_data,
         tokenizer=tokenizer,
         callbacks=[
             WandbConfigUpdateCallback(

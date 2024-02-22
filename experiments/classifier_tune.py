@@ -1,12 +1,12 @@
 import torch
-from accelerate import PartialState as AcceleratorState
+from peft import prepare_model_for_kbit_training
 
-from llm.datasets import get_dataset
-from llm.models import get_model
-from llm.models.peft import get_lora_model, prepare_model_for_temperature_scaling
 from llm.logging import entrypoint
-from llm.utils.trainer import WandbConfigUpdateCallback
-from llm.utils.uncertainty_tuner import UncertaintyTuner
+from llm.accelerate import AcceleratorState
+from llm.models import get_model
+from llm.models.peft import get_lora_model, get_classifier_head
+from llm.datasets import get_dataset
+from llm.trainer import WandbConfigUpdateCallback, ClassificationTuner
 
 
 def main(
@@ -14,8 +14,8 @@ def main(
     log_dir=None,
     dataset=None,
     data_dir=None,
-    prompt_style="choice",
-    num_workers=8,
+    prompt_style=None,
+    num_workers=4,
     batch_size=1,
     grad_acc=1,
     model_name=None,
@@ -25,17 +25,11 @@ def main(
     lora_alpha=32,
     lora_dropout=0.1,
     lr=1e-4,
-    ls=0.0,
     weight_decay=0.0,
-    kl_type="jsd",
-    kl_decay=0.0,
-    use_lm_loss=False,
-    scale_temp=False,
-    warmup_steps=0,
     max_steps=1,
     log_steps=100,
     save_steps=1000,
-    eval_steps=1000,
+    eval_steps=500,
     use_dataset_cache=True,
     resume_dir=None,
     int8=True,
@@ -56,6 +50,7 @@ def main(
         tokenizer=tokenizer,
         load_in_8bit=int8,
     )
+    model = prepare_model_for_kbit_training(model, use_gradient_checkpointing=False)
 
     model = get_lora_model(
         model,
@@ -63,22 +58,19 @@ def main(
         lora_rank=lora_rank,
         lora_alpha=lora_alpha,
         lora_dropout=lora_dropout,
-        is_trainable=True,
+        is_trainable=False,
         adapter_name="default",
     )
 
-    if scale_temp:
-        prepare_model_for_temperature_scaling(model, is_trainable=True)
-    else:
-        model = get_lora_model(
-            model,
-            peft_dir=peft_dir,
-            is_trainable=False,
-            adapter_name="_ref",
-        )
+    classifier_model = get_classifier_head(
+        model,
+        checkpoint_dir=peft_dir,
+        is_trainable=True,
+        weights_name=ClassificationTuner.WEIGHTS_NAME,
+    )
 
     with accelerator.main_process_first():
-        train_data, _, _ = get_dataset(
+        train_data, val_data, _ = get_dataset(
             dataset,
             root=data_dir,
             tokenizer=tokenizer,
@@ -88,9 +80,10 @@ def main(
             prompt_style=prompt_style,
         )
 
-    trainer = UncertaintyTuner(
+    trainer = ClassificationTuner(
         model=model,
-        args=UncertaintyTuner.Args(
+        classifier_model=classifier_model,
+        args=ClassificationTuner.Args(
             seed=seed,
             fsdp=False,
             fp16=not torch.cuda.is_bf16_supported() and not model.is_loaded_in_8bit,
@@ -105,23 +98,18 @@ def main(
             evaluation_strategy="steps",
             per_device_train_batch_size=batch_size,
             per_device_eval_batch_size=batch_size,
-            optim="adamw_torch",
+            optim="sgd",
             learning_rate=lr,
-            lr_scheduler_type="cosine",
-            warmup_steps=warmup_steps,
+            lr_scheduler_type="constant",
             weight_decay=weight_decay,
-            kl_type=kl_type,
-            kl_decay=kl_decay,
-            use_lm_loss=use_lm_loss,
-            unc_label_smoothing=ls,
             gradient_accumulation_steps=grad_acc,
             output_dir=log_dir,
             report_to="wandb",
-            dataloader_num_workers=4,
-            scale_temp=scale_temp,
+            dataloader_num_workers=num_workers,
             label_names=train_data.column_names,
         ),
         train_dataset=train_data,
+        eval_dataset=val_data,
         tokenizer=tokenizer,
         callbacks=[
             WandbConfigUpdateCallback(

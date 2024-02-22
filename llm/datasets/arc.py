@@ -14,6 +14,13 @@ __all__ = [
 def __format_sample(sample, tokenizer, style):
     target_prompt = "\nAnswer:"
 
+    sample["answerKey"] = sample["answerKey"].lower()
+
+    if sample["answerKey"] in string.ascii_lowercase:
+        sample["answerKey"] = string.ascii_lowercase.index(sample["answerKey"])
+    else:
+        sample["answerKey"] = int(sample["answerKey"]) - 1
+
     if style == "choice":
         question = sample["question"]
         answer_map = sample["choices"]["text"]
@@ -32,21 +39,18 @@ def __format_sample(sample, tokenizer, style):
             ]
         )
 
-        target = sample["answerKey"].lower()
+        target = string.ascii_lowercase[sample["answerKey"]]
     elif style == "oe":
         question = sample["question"]
         answer_map = sample["choices"]["text"]
 
         context = "\n".join(
             [
-                "Provide your best answer for the following question. Give ONLY the answer, no other words or explanation.\n"
-                "For example:\n",
-                "Answer: <most likely answer, as short as possible; not a complete sentence, just the answer!>.\n",
                 f"The question is: {question}",
             ]
         )
 
-        target = answer_map[string.ascii_lowercase.index(sample["answerKey"].lower())]
+        target = answer_map[sample["answerKey"]]
     else:
         raise NotImplementedError
 
@@ -61,7 +65,7 @@ def __generate_fewshot_prompts(
 
     fewshot_prompt = "\n".join(
         [
-            "The following are questions with multiple choice answers.\n",
+            "The following are questions with answers.\n",
             *[
                 str(__format_sample(prompt_dataset[idx], tokenizer, prompt_style))
                 + "\n"
@@ -79,11 +83,27 @@ def __generate_fewshot_prompts(
 def __format_sample_with_prompt(
     sample, tokenizer, prompt_style, prompt_dataset, kshot, seed=None
 ):
-    prompt = __generate_fewshot_prompts(
-        tokenizer, prompt_style, prompt_dataset, kshot, seed=seed
-    )
-    if len(prompt):
-        prompt += "\n\n"
+    if kshot > 0:
+        prompt = (
+            __generate_fewshot_prompts(
+                tokenizer, prompt_style, prompt_dataset, kshot, seed=seed
+            )
+            + "\n\n"
+        )
+    else:
+        if prompt_style == "oe":
+            prompt = (
+                "\n".join(
+                    [
+                        "Provide your best answer for the following question. Give ONLY the answer, no other words or explanation.\n",
+                        "For example:",
+                        "Answer: <most likely answer, as short as possible; not a complete sentence, just the answer!>.",
+                    ]
+                )
+                + "\n\n"
+            )
+        else:
+            prompt = ""
 
     sample = __format_sample(sample, tokenizer, prompt_style)
     sample.prompt = prompt
@@ -95,6 +115,7 @@ def get_arc(
     root=None,
     subset=None,
     prompt_style=None,
+    train_kshot=0,
     eval_kshot=0,
     tokenizer=None,
     num_workers=8,
@@ -111,7 +132,7 @@ def get_arc(
         dataset.cleanup_cache_files()
 
     train_data, val_data, test_data = [
-        data.filter(lambda x: x["answerKey"].lower() in string.ascii_lowercase).map(
+        data.map(
             lambda x: __format_sample_with_prompt(
                 x, tokenizer, prompt_style, data, k, seed=seed
             ).to_pydict(),
@@ -125,7 +146,7 @@ def get_arc(
         )
         for data, k in zip(
             [dataset.pop("train"), dataset.pop("validation"), dataset.pop("test")],
-            [0, eval_kshot, eval_kshot],
+            [train_kshot, eval_kshot, eval_kshot],
         )
     ]
 
