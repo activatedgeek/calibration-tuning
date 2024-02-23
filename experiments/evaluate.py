@@ -46,6 +46,9 @@ def main(
         "mode": mode,
         "log_dir": log_dir,
         "int8": int8,
+        "dataset": dataset,
+        "data_dir": data_dir,
+        "batch_size": batch_size,
     }
     if accelerator.is_main_process:
         wandb.config.update(config)
