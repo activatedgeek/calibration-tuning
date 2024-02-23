@@ -103,6 +103,9 @@ def evaluate_oe(
             q_generation_outputs = model(**q_generation_inputs)
             q_logits = q_generation_outputs.logits[..., -1, :]
 
+            if hasattr(model, "query_temperature_model"):
+                q_logits = model.query_temperature_model(q_logits)
+
             all_data["evals"][cs]["q_labels"].append(q_labels.detach())
             all_data["evals"][cs]["q_logits"].append(q_logits.detach())
 
@@ -257,9 +260,7 @@ def evaluate_classifier_oe(
                 class_outputs = model(**class_inputs, output_hidden_states=True)
 
             target_layer = model.classifier_model.target_layer
-            class_inputs = class_outputs.hidden_states[target_layer][
-                ..., -1, :
-            ].clone()
+            class_inputs = class_outputs.hidden_states[target_layer][..., -1, :].clone()
 
             q_logits = model.classifier_model(class_inputs.clone()).to(torch.float32)
 
@@ -327,6 +328,7 @@ def evaluate_classifier_oe(
         )
 
     return metrics_dict
+
 
 @torch.inference_mode()
 def evaluate_oe_uncertainty_sampling(

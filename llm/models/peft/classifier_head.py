@@ -1,6 +1,7 @@
 import os
 import logging
 import torch
+import torch.nn as nn
 
 
 from .. import get_model
@@ -27,6 +28,10 @@ def get_classifier_head(
             )
 
             logging.info(f"Loaded classifier model checkpoint from '{checkpoint_dir}'.")
+    else:
+        for module in classifier_model.modules():
+            if isinstance(module, nn.Linear):
+                nn.init.xavier_normal_(module.weight)
 
     if is_trainable:
         classifier_model = classifier_model.train().requires_grad_(True)

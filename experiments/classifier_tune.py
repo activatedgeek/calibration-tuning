@@ -72,11 +72,6 @@ def main(
 
     model.classifier_model = classifier_model
 
-    from torch import nn
-    for module in classifier_model.modules():
-        if isinstance(module, nn.Linear):
-            nn.init.xavier_normal_(module.weight)
-
     with accelerator.main_process_first():
         train_data, val_data, _ = get_dataset(
             dataset,

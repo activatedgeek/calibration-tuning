@@ -10,9 +10,9 @@ from llm.accelerate import Accelerator
 from llm.logging import entrypoint
 from llm.datasets import get_all_datasets_list
 from llm.models import get_model
-from llm.models.peft import get_lora_model, get_classifier_head
+from llm.models.peft import get_lora_model, get_classifier_head, get_temperature_head
 from llm.eval import evaluate_dataset
-from llm.trainer import ClassificationTuner
+from llm.trainer import ClassificationTuner, CalibrationTuner
 
 
 def main(
@@ -83,21 +83,25 @@ def main(
     )
 
     if classifier_dir is not None:
-        #find the subdir corresponding to the checkpoint with the lowest val loss
-        trainer_state_fn = os.path.join(classifier_dir, 'trainer_state.json')
+        # find the subdir corresponding to the checkpoint with the lowest val loss
+        trainer_state_fn = os.path.join(classifier_dir, "trainer_state.json")
         if not os.path.exists(trainer_state_fn):
             lookup_table = {
-                "mistral_7b-20k_oe_lr1e-3": 5500, 
+                "mistral_7b-20k_oe_lr1e-3": 5500,
                 "mistral_7b_instruct-20k_oe_lr1e-2": 4500,
                 "llama2_13b-20k_oe_lr1e-2": 6000,
                 "llama2_13b_chat-20k_oe_lr1e-2": 6000,
             }
             best_step = lookup_table[os.path.basename(classifier_dir)]
             best_checkpoint = f"checkpoint-{best_step}"
-        else:        
-            with open(os.path.join(classifier_dir, 'trainer_state.json')) as f:
+        else:
+            with open(os.path.join(classifier_dir, "trainer_state.json")) as f:
                 trainer_state = json.load(f)
-                logs = [(x['eval_loss'], x['step']) for x in trainer_state['log_history'] if 'eval_loss' in x]
+                logs = [
+                    (x["eval_loss"], x["step"])
+                    for x in trainer_state["log_history"]
+                    if "eval_loss" in x
+                ]
                 best_step = sorted(logs, key=lambda x: x[0])[0][1]
                 best_checkpoint = f"checkpoint-{best_step}"
 
@@ -113,9 +117,19 @@ def main(
         classifier_model = classifier_model.to(
             torch.bfloat16 if torch.cuda.is_bf16_supported() else torch.float16,
         )
-    
+
         model.classifier_model = classifier_model
         model.classifier_model.target_layer = -1
+
+    ## @WARNING: Only use for calibration-tuned models.
+    if scale_temp:
+        temperature_model = get_temperature_head(
+            checkpoint_dir=query_peft_dir or peft_dir,
+            is_trainable=False,
+            weights_name=CalibrationTuner.TEMPERATURE_WEIGHTS_NAME,
+        ).to(accelerator.local_process_index)
+
+        model.query_temperature_model = temperature_model
 
     model.eval()
 
