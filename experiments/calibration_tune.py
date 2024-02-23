@@ -80,15 +80,19 @@ def main(
         adapter_name="_ref",
     )
 
-    temperature_model = None
     if scale_temp:
+        model.requires_grad_(False)
+
         temperature_model = get_temperature_head(
             checkpoint_dir=peft_dir,
             is_trainable=True,
             weights_name=CalibrationTuner.TEMPERATURE_WEIGHTS_NAME,
-        )
+        ).to(accelerator.local_process_index)
 
-    # model.temperature_model = temperature_model
+        ## HOTFIX: To allow registry with Trainer optimizer.
+        model.temperature_model = temperature_model
+    else:
+        temperature_model = None
 
     with accelerator.main_process_first():
         train_data, val_data, _ = get_dataset(
