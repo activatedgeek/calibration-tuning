@@ -88,7 +88,7 @@ def main(
             weights_name=CalibrationTuner.TEMPERATURE_WEIGHTS_NAME,
         )
 
-    model.temperature_model = temperature_model
+    # model.temperature_model = temperature_model
 
     with accelerator.main_process_first():
         train_data, val_data, _ = get_dataset(

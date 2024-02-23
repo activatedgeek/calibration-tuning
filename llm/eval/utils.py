@@ -7,9 +7,11 @@ from .eos import (
     evaluate_contextual_calibration_via_eos,
     evaluate_candidate_via_eos,
     evaluate_via_eos,
+    evaluate_classifier_via_eos,
 )
 from .oe import (
     evaluate_oe,
+    evaluate_classifier_oe,
     # evaluate_contextual_calibration_oe,
     evaluate_oe_uncertainty_sampling,
     # evaluate_verbal_elicitation_oe,
@@ -19,8 +21,10 @@ EVALUATE_MODE_FN_MAP = {
     "eos": evaluate_via_eos,
     "cc_eos": evaluate_contextual_calibration_via_eos,
     "cand_eos": evaluate_candidate_via_eos,
+    "class_eos": evaluate_classifier_via_eos,
     "oe": evaluate_oe,
     "us_oe": evaluate_oe_uncertainty_sampling,
+    "class_oe": evaluate_classifier_oe,
     # "cc_oe": evaluate_contextual_calibration_oe,
     # "ve_oe": evaluate_verbal_elicitation_oe,
 }
@@ -229,6 +233,13 @@ def evaluate_dataset(
                 "fuzzy_gpt-3.5-turbo-1106",
             ]
             evaluate_fn = EVALUATE_MODE_FN_MAP["cc_oe"]
+        elif "class_oe" in evaluate_fn:
+            comparison_strategies = [
+                # "substring",
+                # "fuzzy_gpt-4-0613",
+                "fuzzy_gpt-3.5-turbo-1106",
+            ]
+            evaluate_fn = EVALUATE_MODE_FN_MAP["class_oe"]
         elif "oe" == evaluate_fn:
             comparison_strategies = [
                 "substring",
