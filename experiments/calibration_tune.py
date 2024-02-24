@@ -80,16 +80,22 @@ def main(
         adapter_name="_ref",
     )
 
-    temperature_model = None
     if scale_temp:
+        model.requires_grad_(False)
+
         temperature_model = get_temperature_head(
             checkpoint_dir=peft_dir,
             is_trainable=True,
             weights_name=CalibrationTuner.TEMPERATURE_WEIGHTS_NAME,
-        )
+        ).to(accelerator.local_process_index)
+
+        ## HOTFIX: To allow registry with Trainer optimizer.
+        model.temperature_model = temperature_model
+    else:
+        temperature_model = None
 
     with accelerator.main_process_first():
-        train_data, val_data, _ = get_dataset(
+        train_data, val_data, test_data = get_dataset(
             dataset,
             root=data_dir,
             tokenizer=tokenizer,
@@ -99,6 +105,8 @@ def main(
             prompt_style=prompt_style,
             max_token_length=max_token_length,
         )
+    if scale_temp:
+        train_data, val_data = val_data, test_data or val_data
 
     trainer = CalibrationTuner(
         model=model,

@@ -50,6 +50,7 @@ def main(
         tokenizer=tokenizer,
         load_in_8bit=int8,
     )
+
     model = prepare_model_for_kbit_training(model, use_gradient_checkpointing=False)
 
     model = get_lora_model(
@@ -68,6 +69,8 @@ def main(
         is_trainable=True,
         weights_name=ClassificationTuner.WEIGHTS_NAME,
     )
+
+    model.classifier_model = classifier_model
 
     with accelerator.main_process_first():
         train_data, val_data, _ = get_dataset(

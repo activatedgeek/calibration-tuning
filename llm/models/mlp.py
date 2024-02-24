@@ -12,6 +12,7 @@ def get_classifier(input_size=None, output_size=None, bias=False):
         nn.Linear(128, 64),
         nn.ReLU(),
         nn.Linear(64, output_size, bias=bias),
+        # nn.Linear(input_size, output_size, bias=bias),
     )
 
     return model
@@ -21,4 +22,4 @@ def get_classifier(input_size=None, output_size=None, bias=False):
 def mlp_binary(**kwargs):
     kwargs.pop("output_size", None)
     kwargs.pop("bias", None)
-    return get_classifier(**kwargs, output_size=2, bias=False)
+    return get_classifier(**kwargs, output_size=2, bias=True)

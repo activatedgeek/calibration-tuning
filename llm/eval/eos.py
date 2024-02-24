@@ -121,6 +121,126 @@ def evaluate_via_eos(
         "unc_ece": q_ece,
     }
 
+@torch.inference_mode()
+def evaluate_classifier_via_eos(
+    accelerator,
+    model,
+    tokenizer,
+    loader,
+    query_format="roman_choice",
+    **_,
+):
+    collate_fn = LabeledStringDataCollator(tokenizer)
+
+    all_labels, all_logits = [], []
+    all_q_labels, all_q_logits = [], []
+
+    for inputs in tqdm(loader):
+        inputs = [dict(zip(inputs.keys(), vals)) for vals in zip(*inputs.values())]
+        targets = [inp.pop("target") for inp in inputs]
+
+        generation_inputs = {
+            k: v.to(accelerator.device) for k, v in collate_fn(inputs).items()
+        }
+
+        if isinstance(model, PeftModel):
+            model.set_adapter("default")
+
+        generation_outputs = model(**generation_inputs)
+        logits = generation_outputs.logits[:, -1, :]
+
+        labels = torch.tensor(tokenizer(targets).get("input_ids"))[:, 1].to(
+            accelerator.device
+        )
+        preds = logits.argmax(dim=-1)
+
+        predictions = tokenizer.batch_decode(
+            preds,
+            skip_special_tokens=True,
+            clean_up_tokenization_spaces=False,
+        )
+
+        _, q_labels, _ = prepare_uncertainty_query(
+            tokenizer,
+            inputs,
+            targets,
+            predictions,
+            strategy="substring",
+            format=query_format,
+        )
+        q_labels = q_labels.to(accelerator.device)
+
+        class_inputs = {
+            k: v.to(accelerator.device)
+            for k, v in collate_fn(
+                [{**inp, "target": t} for inp, t in zip(inputs, predictions)]
+            ).items()
+        }
+
+        if isinstance(model, PeftModel):
+            model.set_adapter("default")
+
+        with torch.inference_mode():
+            class_outputs = model(**class_inputs, output_hidden_states=True)
+
+        target_layer = model.classifier_model.target_layer
+        class_inputs = class_outputs.hidden_states[target_layer][
+            ..., -1, :
+        ].clone()
+
+        q_logits = model.classifier_model(class_inputs.clone()).to(torch.float32)
+
+        [
+            l.append(v)
+            for l, v in zip(
+                (all_labels, all_logits, all_q_labels, all_q_logits),
+                accelerator.gather_for_metrics((labels, logits, q_labels, q_logits)),
+            )
+        ]
+
+    all_labels = torch.cat(all_labels, dim=0)
+    all_p = torch.cat(all_logits, dim=0).softmax(dim=-1)
+    all_q_labels = torch.cat(all_q_labels, dim=0)
+    all_q_p = torch.cat(all_q_logits, dim=0).softmax(dim=-1)
+
+    all_pred = all_p.argmax(dim=-1)
+    acc = (all_pred == all_labels).float().mean(dim=0)
+
+    logits_ece, _ = calibration(
+        all_labels,
+        all_pred,
+        all_p[torch.arange(all_p.size(0)), all_pred],
+    )
+
+    all_q_pred = all_q_p.argmax(dim=-1)
+    q_acc = (all_q_pred == all_q_labels).float().mean(dim=0)
+
+    q_ece, _ = calibration(
+        all_q_labels,
+        all_q_pred,
+        all_q_p[torch.arange(all_q_p.size(0)), all_q_pred],
+    )
+
+    try:
+        q_auroc = roc_auc_score(
+            all_q_labels.cpu(),
+            all_q_p[torch.arange(all_q_p.size(0)), all_q_pred].cpu(),
+        )
+    except ValueError:
+        logging.warning(f"AUROC calculation failed.")
+        q_auroc = float("nan")
+
+    return {
+        "N": all_q_labels.size(0),
+        "logits_ece": logits_ece,
+        "acc": acc.item(),
+        "unc_acc": q_acc.item(),
+        "unc_auroc": q_auroc,
+        "unc_ece": q_ece,
+    }
+
+
+
 
 @torch.inference_mode()
 def evaluate_contextual_calibration_via_eos(

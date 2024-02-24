@@ -103,6 +103,9 @@ def evaluate_oe(
             q_generation_outputs = model(**q_generation_inputs)
             q_logits = q_generation_outputs.logits[..., -1, :]
 
+            if hasattr(model, "query_temperature_model"):
+                q_logits = model.query_temperature_model(q_logits)
+
             all_data["evals"][cs]["q_labels"].append(q_labels.detach())
             all_data["evals"][cs]["q_logits"].append(q_logits.detach())
 
@@ -118,6 +121,164 @@ def evaluate_oe(
     for cs in comparison_strategies:
         q_labels = torch.cat(cs_q_labels[cs], dim=0)
         q_p = torch.cat(cs_q_logits[cs], dim=0)[:, q_token_vec].softmax(dim=-1)
+
+        acc = q_labels.float().mean(dim=0)
+        q_pred = q_p.argmax(dim=-1)
+        q_acc = (q_pred == q_labels).float().mean(dim=0)
+
+        q_ece, _ = calibration(
+            q_labels,
+            q_pred,
+            q_p[torch.arange(q_p.size(0)), q_pred],
+        )
+
+        try:
+            q_auroc = roc_auc_score(
+                q_labels.cpu(),
+                q_p[torch.arange(q_p.size(0)), q_pred].cpu(),
+            )
+        except ValueError:
+            logging.warning(f"AUROC calculation failed.")
+            q_auroc = float("nan")
+
+        metrics_dict.update(
+            {
+                "N": q_labels.size(0),
+                f"{cs}_acc": acc.item(),
+                f"{cs}_unc_acc": q_acc.item(),
+                f"{cs}_unc_auroc": q_auroc,
+                f"{cs}_unc_ece": q_ece,
+            }
+        )
+
+    if log_dir is not None:
+        os.makedirs(log_dir, exist_ok=True)
+
+        all_data["evals"] = {
+            k: {qk: torch.cat(qv, dim=0) for qk, qv in v.items()}
+            for k, v in all_data["evals"].items()
+        }
+
+        pd.DataFrame(all_data["rows"]).to_csv(
+            f"{log_dir}/rows_{accelerator.process_index}.csv", index=False
+        )
+        with open(f"{log_dir}/q_{accelerator.process_index}.pt", "wb") as f:
+            torch.save(all_data["evals"], f)
+
+        logging.debug(
+            f"Data saved to '{log_dir}' from process {accelerator.process_index}."
+        )
+
+    return metrics_dict
+
+
+@torch.inference_mode()
+def evaluate_classifier_oe(
+    accelerator,
+    model,
+    tokenizer,
+    loader,
+    query_format="roman_choice",
+    comparison_strategies=None,
+    max_new_tokens=100,
+    log_dir=None,
+    **_,
+):
+    generation_config = GenerationConfig(
+        pad_token_id=tokenizer.pad_token_id,
+        bos_token_id=tokenizer.bos_token_id,
+        eos_token_id=tokenizer.eos_token_id,
+        max_new_tokens=max_new_tokens,
+        do_sample=False,
+    )
+
+    collate_fn = LabeledStringDataCollator(tokenizer)
+
+    cs_q_labels = {c: [] for c in comparison_strategies}
+    cs_q_logits = {c: [] for c in comparison_strategies}
+
+    all_data = {
+        "rows": [],
+        "evals": {c: {"q_labels": [], "q_logits": []} for c in comparison_strategies},
+    }
+
+    for inputs in tqdm(loader):
+        inputs = [dict(zip(inputs.keys(), vals)) for vals in zip(*inputs.values())]
+        targets = [inp.pop("target") for inp in inputs]
+
+        generation_inputs = {
+            k: v.to(accelerator.device) for k, v in collate_fn(inputs).items()
+        }
+
+        if isinstance(model, PeftModel):
+            model.set_adapter("default")
+
+        generation_outputs = model.generate(
+            **generation_inputs, generation_config=generation_config
+        )
+
+        generations = tokenizer.batch_decode(
+            generation_outputs[:, generation_inputs.get("input_ids").size(-1) :],
+            skip_special_tokens=True,
+            clean_up_tokenization_spaces=False,
+        )
+
+        generations = sanitize_generations(generations)
+
+        all_data["rows"].extend(
+            [
+                {**inp, "target": tgt, "output": out}
+                for inp, tgt, out in zip(inputs, targets, generations)
+            ]
+        )
+
+        if isinstance(model, PeftModel) and "query" in model.peft_config:
+            model.set_adapter("query")
+
+        for cs in comparison_strategies:
+            _, q_labels, _ = prepare_uncertainty_query(
+                tokenizer,
+                inputs,
+                targets,
+                generations,
+                strategy=cs,
+                format=query_format,
+            )
+            q_labels = q_labels.to(accelerator.device)
+
+            class_inputs = {
+                k: v.to(accelerator.device)
+                for k, v in collate_fn(
+                    [{**inp, "target": t} for inp, t in zip(inputs, generations)]
+                ).items()
+            }
+
+            if isinstance(model, PeftModel):
+                model.set_adapter("default")
+
+            with torch.inference_mode():
+                class_outputs = model(**class_inputs, output_hidden_states=True)
+
+            target_layer = model.classifier_model.target_layer
+            class_inputs = class_outputs.hidden_states[target_layer][..., -1, :].clone()
+
+            q_logits = model.classifier_model(class_inputs.clone()).to(torch.float32)
+
+            all_data["evals"][cs]["q_labels"].append(q_labels.detach())
+            all_data["evals"][cs]["q_logits"].append(q_logits.detach())
+
+            [
+                l.append(v)
+                for l, v in zip(
+                    (cs_q_labels[cs], cs_q_logits[cs]),
+                    accelerator.gather_for_metrics((q_labels, q_logits)),
+                )
+            ]
+
+    metrics_dict = {}
+    for cs in comparison_strategies:
+        q_labels = torch.cat(cs_q_labels[cs], dim=0)
+        q_p = torch.cat(cs_q_logits[cs], dim=0).softmax(dim=-1)
 
         acc = q_labels.float().mean(dim=0)
         q_pred = q_p.argmax(dim=-1)

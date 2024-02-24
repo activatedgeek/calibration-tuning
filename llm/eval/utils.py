@@ -7,9 +7,11 @@ from .eos import (
     evaluate_contextual_calibration_via_eos,
     evaluate_candidate_via_eos,
     evaluate_via_eos,
+    evaluate_classifier_via_eos,
 )
 from .oe import (
     evaluate_oe,
+    evaluate_classifier_oe,
     # evaluate_contextual_calibration_oe,
     evaluate_oe_uncertainty_sampling,
     # evaluate_verbal_elicitation_oe,
@@ -19,8 +21,10 @@ EVALUATE_MODE_FN_MAP = {
     "eos": evaluate_via_eos,
     "cc_eos": evaluate_contextual_calibration_via_eos,
     "cand_eos": evaluate_candidate_via_eos,
+    "class_eos": evaluate_classifier_via_eos,
     "oe": evaluate_oe,
     "us_oe": evaluate_oe_uncertainty_sampling,
+    "class_oe": evaluate_classifier_oe,
     # "cc_oe": evaluate_contextual_calibration_oe,
     # "ve_oe": evaluate_verbal_elicitation_oe,
 }
@@ -78,17 +82,15 @@ VERBAL_ELICITATION_MAP = {
         "target_prompt": "\nG1: ",
     },
     "2s1CoT": {
-        "prompt": "".join(
-            [
-                "Provide your best guess for the following question. Before giving your answer, ",
-                "provide a step-by-step explanation of your thought process. Then on a new line ",
-                "give the guess with no other words or explanation.\n\nFor example:\n\nExplanation: ",
-                "<one sentence step-by-step explanation of your thought process>\n\nGuess: ",
-                "<most likely guess, as short as possible; not a complete sentence, just the ",
-                "guess!>\n\n",
-            ]
-        ),
-        "target_prompt": "\nGuess: ",
+        "prompt": "".join([
+            "Provide your best guess for the following question. Before giving your answer, ",
+            "provide a step-by-step explanation of your thought process. Then on a new line ",
+            "give the guess with no other words or explanation.\n\nFor example:\n\nExplanation: ",
+            "<one sentence step-by-step explanation of your thought process>\n\nGuess: ",
+            "<most likely guess, as short as possible; not a complete sentence, just the ",
+            "guess!>.\n\n",
+        ]),
+        "target_prompt": "\nExplanation: ",
     },
     "2s1g": {
         "prompt": "".join(
@@ -231,6 +233,13 @@ def evaluate_dataset(
                 "fuzzy_gpt-3.5-turbo-1106",
             ]
             evaluate_fn = EVALUATE_MODE_FN_MAP["cc_oe"]
+        elif "class_oe" in evaluate_fn:
+            comparison_strategies = [
+                # "substring",
+                # "fuzzy_gpt-4-0613",
+                "fuzzy_gpt-3.5-turbo-1106",
+            ]
+            evaluate_fn = EVALUATE_MODE_FN_MAP["class_oe"]
         elif "oe" == evaluate_fn:
             comparison_strategies = [
                 "substring",

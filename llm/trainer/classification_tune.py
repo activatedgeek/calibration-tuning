@@ -85,6 +85,9 @@ class ClassificationTuner(Trainer):
             ).items()
         }
 
+        if isinstance(model, PeftModel):
+            model.set_adapter("default")
+
         with torch.inference_mode():
             class_outputs = model(**class_inputs, output_hidden_states=True)
 
@@ -94,7 +97,7 @@ class ClassificationTuner(Trainer):
         class_labels = q_labels.to(class_inputs.device)
 
         class_logits = self.classifier_model(class_inputs)
-
+        
         loss = F.cross_entropy(class_logits, class_labels)
 
         loss_metrics = {
@@ -117,19 +120,52 @@ class ClassificationTuner(Trainer):
             inputs = [dict(zip(inputs.keys(), vals)) for vals in zip(*inputs.values())]
             targets = [inp.pop("target") for inp in inputs]
 
-            generation_inputs = {
-                k: v.to(self.accelerator.device)
-                for k, v in self._collate_fn(inputs).items()
-            }
+            if "query_label" in inputs[0]:
+                predictions = [inp.pop("output") for inp in inputs]
+                q_labels = torch.tensor([inp.pop("query_label") for inp in inputs]).long()
+            else:
+                generation_inputs = {
+                    k: v.to(self.accelerator.device)
+                    for k, v in self._collate_fn(inputs).items()
+                }
 
-            with torch.inference_mode():
-                generation_outputs = self.model(
-                    **generation_inputs, output_hidden_states=True
+                with torch.inference_mode():
+                    generation_outputs = self.model(
+                        **generation_inputs, output_hidden_states=True
+                    )
+
+                predictions = self.tokenizer.batch_decode(
+                    generation_outputs.logits[:, -1, :].argmax(dim=-1),
+                    skip_special_tokens=True,
+                    clean_up_tokenization_spaces=False,
+                )
+                _, q_labels, _ = prepare_uncertainty_query(
+                    self.tokenizer,
+                    inputs,
+                    targets,
+                    predictions,
+                    strategy="substring",
                 )
 
-            class_inputs, class_labels = self.compute_classification_inputs(
-                inputs, targets, generation_outputs
-            )
+                del generation_outputs
+
+            class_inputs = {
+                k: v.to(self.accelerator.device)
+                for k, v in self._collate_fn(
+                    [{**inp, "target": t} for inp, t in zip(inputs, predictions)]
+                ).items()
+            }
+
+            if isinstance(self.model, PeftModel):
+                self.model.set_adapter("default")
+
+            with torch.inference_mode():
+                class_outputs = self.model(**class_inputs, output_hidden_states=True)
+
+            class_inputs = class_outputs.hidden_states[self.args.target_layer][
+                ..., -1, :
+            ].clone()
+            class_labels = q_labels.to(class_inputs.device)
 
             class_logits = self.classifier_model(class_inputs.clone())
 

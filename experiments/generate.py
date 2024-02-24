@@ -91,7 +91,7 @@ def generate_outputs_main(
             root=data_dir,
             tokenizer=tokenizer,
             seed=seed,
-            num_workers=os.cpu_count() // 2,
+            num_workers=16,#os.cpu_count() // 2,
             use_cache=use_dataset_cache,
             prompt_style=prompt_style,
             train_kshot=kshot,
