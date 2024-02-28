@@ -1,4 +1,8 @@
+import json
+
+import deepspeed
 import torch
+from torch import distributed as dist
 from peft import prepare_model_for_kbit_training
 
 from llm.logging import entrypoint
@@ -36,8 +40,21 @@ def main(
     resume_dir=None,
     int8=True,
     max_token_length=None,
+    deepspeed_config_path=None,
+    local_rank=None
 ):
-    accelerator = AcceleratorState()
+
+    if deepspeed_config_path:
+        deepspeed.init_distributed()
+        local_rank = dist.get_rank()
+        device_map = 'cuda'
+        with open(deepspeed_config_path, 'rt') as f:
+            deepspeed_config = json.load(f)
+        if deepspeed_config and deepspeed_config['zero_optimization']['stage'] == 3:
+            device_map = None
+    else:
+        accelerator = AcceleratorState()
+        device_map = {"": accelerator.local_process_index}
 
     tokenizer = get_model(
         f"{model_name}_tokenizer",
@@ -46,7 +63,7 @@ def main(
 
     model = get_model(
         model_name,
-        device_map={"": accelerator.local_process_index},
+        device_map=device_map,
         torch_dtype=torch.bfloat16 if torch.cuda.is_bf16_supported() else torch.float16,
         model_dir=model_dir,
         use_cache=False,
@@ -73,7 +90,8 @@ def main(
             weights_name=FineTuner.TEMPERATURE_WEIGHTS_NAME,
         )
 
-    with accelerator.main_process_first():
+    if deepspeed_config_path:
+        dist.barrier()
         train_data, val_data, test_data = get_dataset(
             dataset,
             root=data_dir,
@@ -84,6 +102,19 @@ def main(
             prompt_style=prompt_style,
             max_token_length=max_token_length,
         )
+    else:
+        with accelerator.main_process_first():
+            train_data, val_data, test_data = get_dataset(
+                dataset,
+                root=data_dir,
+                tokenizer=tokenizer,
+                seed=seed,
+                num_workers=num_workers,
+                use_cache=use_dataset_cache,
+                prompt_style=prompt_style,
+                max_token_length=max_token_length,
+            )
+
     if scale_temp:
         train_data, val_data = val_data, test_data or val_data
 
@@ -104,7 +135,7 @@ def main(
             evaluation_strategy="steps",
             per_device_train_batch_size=batch_size,
             per_device_eval_batch_size=batch_size,
-            optim="adamw_torch",
+            optim=('adamw_torch' if not deepspeed_config_path else transformers.TrainingArguments.default_optim),
             learning_rate=lr,
             lr_scheduler_type="cosine",
             warmup_steps=warmup_steps,
@@ -114,6 +145,7 @@ def main(
             report_to="wandb",
             dataloader_num_workers=num_workers,
             label_names=train_data.column_names,
+            deepspeed=deepspeed_config if deepspeed_config_path else None,
             ## Custom.
             scale_temp=scale_temp,
         ),

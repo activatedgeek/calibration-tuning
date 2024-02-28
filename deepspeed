@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+
+# The below may or may not be necessary depending on your setup; comment it out if not required.
+export NCCL_P2P_LEVEL=NVL
+
+__PORT=${PORT:-$(shuf -i 60000-65000 -n 1)}
+__CONFIG_PATh="deepspeed_stage3_lora_no_decay_bf16.json"
+
+deepspeed --master_port=${__PORT} "${@}" --deepspeed-config-path=${__CONFIG_PATh}
