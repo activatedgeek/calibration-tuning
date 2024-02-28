@@ -32,7 +32,7 @@ def main(
     peft_dir=None,
     query_peft_dir=None,
     classifier_dir=None,
-    scale_temp=False,
+    scale_temp=None,
     use_dataset_cache=True,
     prompt_style="choice",
     mode=None,
@@ -157,28 +157,31 @@ def main(
         all_datasets = [dataset]
 
     all_metrics = []
-    for dataset in tqdm(all_datasets):
-        metrics = evaluate_dataset(
-            accelerator,
-            model,
-            tokenizer,
-            dataset,
-            train_data=False,
-            seed=seed,
-            batch_size=batch_size,
-            data_dir=data_dir,
-            eval_kshot=eval_kshot,
-            use_cache=use_dataset_cache,
-            prompt_style=prompt_style,
-            log_dir=log_dir,
-            evaluate_fn=mode,
-        )
+    for dataset in tqdm(all_datasets[21:]):
+        try:
+            metrics = evaluate_dataset(
+                accelerator,
+                model,
+                tokenizer,
+                dataset,
+                train_data=False,
+                seed=seed,
+                batch_size=batch_size,
+                data_dir=data_dir,
+                eval_kshot=eval_kshot,
+                use_cache=use_dataset_cache,
+                prompt_style=prompt_style,
+                log_dir=log_dir,
+                evaluate_fn=mode,
+            )
 
-        all_metrics += metrics
-        logging.info(
-            {"metrics": wandb.Table(dataframe=pd.DataFrame(all_metrics))},
-            extra=dict(metrics=True),
-        )
+            all_metrics += metrics
+            logging.info(
+                {"metrics": wandb.Table(dataframe=pd.DataFrame(all_metrics))},
+                extra=dict(metrics=True),
+            )
+        except torch.cuda.OutOfMemoryError:
+            logging.exception(f"OOM fail for {dataset}.", exc_info=True)
 
         accelerator.free_memory()
 
