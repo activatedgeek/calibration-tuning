@@ -10,9 +10,14 @@ from llm.accelerate import Accelerator
 from llm.logging import entrypoint
 from llm.datasets import get_all_datasets_list
 from llm.models import get_model
-from llm.models.peft import get_lora_model, get_classifier_head, get_temperature_head
+from llm.models.peft import (
+    get_lora_model,
+    get_classifier_head,
+    get_temperature_head,
+    get_temperature_scale_model,
+)
 from llm.eval import evaluate_dataset
-from llm.trainer import ClassificationTuner, CalibrationTuner
+from llm.trainer import ClassificationTuner, CalibrationTuner, FineTuner
 
 
 def main(
@@ -121,15 +126,27 @@ def main(
         model.classifier_model = classifier_model
         model.classifier_model.target_layer = -1
 
-    ## @WARNING: Only use for calibration-tuned models.
-    if scale_temp:
-        temperature_model = get_temperature_head(
-            checkpoint_dir=query_peft_dir or peft_dir,
-            is_trainable=False,
-            weights_name=CalibrationTuner.TEMPERATURE_WEIGHTS_NAME,
-        ).to(accelerator.local_process_index)
+    if scale_temp == "logits":
+        ## @NOTE: Only for fine-tuned models.
+        model = get_temperature_scale_model(
+            model,
+            checkpoint_dir=peft_dir,
+            is_trainable=True,
+            weights_name=FineTuner.TEMPERATURE_WEIGHTS_NAME,
+        )
+    elif scale_temp == "query":
+        ## @NOTE: Only for calibration-tuned models.
+        if scale_temp:
+            temperature_model = get_temperature_head(
+                checkpoint_dir=query_peft_dir or peft_dir,
+                is_trainable=False,
+                weights_name=CalibrationTuner.TEMPERATURE_WEIGHTS_NAME,
+            ).to(accelerator.local_process_index)
 
-        model.query_temperature_model = temperature_model
+            model.query_temperature_model = temperature_model
+    else:
+        if scale_temp is not None:
+            raise NotImplementedError
 
     model.eval()
 
