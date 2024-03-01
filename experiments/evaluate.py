@@ -157,7 +157,7 @@ def main(
         all_datasets = [dataset]
 
     all_metrics = []
-    for dataset in tqdm(all_datasets[21:]):
+    for dataset in tqdm(all_datasets):
         try:
             metrics = evaluate_dataset(
                 accelerator,
