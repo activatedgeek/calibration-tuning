@@ -43,11 +43,10 @@ class ClassificationTuner(Trainer):
         return super()._wrap_model(*args, **kwargs)
 
     def compute_loss(self, model, inputs, return_outputs=False):
+        model = unwrap_model(model)
+
         inputs = [dict(zip(inputs.keys(), vals)) for vals in zip(*inputs.values())]
         targets = [inp.pop("target") for inp in inputs]
-
-        if isinstance(model, PeftModel):
-            model.set_adapter("default")
 
         if "query_label" in inputs[0]:
             predictions = [inp.pop("output") for inp in inputs]
@@ -57,6 +56,9 @@ class ClassificationTuner(Trainer):
                 k: v.to(self.accelerator.device)
                 for k, v in self._collate_fn(inputs).items()
             }
+
+            if isinstance(model, PeftModel):
+                model.set_adapter("default")
 
             with torch.inference_mode():
                 generation_outputs = model(
@@ -78,15 +80,25 @@ class ClassificationTuner(Trainer):
 
             del generation_outputs
 
+        if isinstance(model, PeftModel) and "query" in model.peft_config:
+            model.set_adapter("query")
+
+            class_inputs, _, _ = prepare_uncertainty_query(
+                self.tokenizer,
+                inputs,
+                targets,
+                predictions,
+                strategy="substring",
+            )
+        else:
+            model.set_adapter("default")
+
+            class_inputs = [{**inp, "target": t} for inp, t in zip(inputs, predictions)]
+
         class_inputs = {
             k: v.to(self.accelerator.device)
-            for k, v in self._collate_fn(
-                [{**inp, "target": t} for inp, t in zip(inputs, predictions)]
-            ).items()
+            for k, v in self._collate_fn(class_inputs).items()
         }
-
-        if isinstance(model, PeftModel):
-            model.set_adapter("default")
 
         with torch.inference_mode():
             class_outputs = model(**class_inputs, output_hidden_states=True)
@@ -97,7 +109,7 @@ class ClassificationTuner(Trainer):
         class_labels = q_labels.to(class_inputs.device)
 
         class_logits = self.classifier_model(class_inputs)
-        
+
         loss = F.cross_entropy(class_logits, class_labels)
 
         loss_metrics = {
@@ -122,7 +134,9 @@ class ClassificationTuner(Trainer):
 
             if "query_label" in inputs[0]:
                 predictions = [inp.pop("output") for inp in inputs]
-                q_labels = torch.tensor([inp.pop("query_label") for inp in inputs]).long()
+                q_labels = torch.tensor(
+                    [inp.pop("query_label") for inp in inputs]
+                ).long()
             else:
                 generation_inputs = {
                     k: v.to(self.accelerator.device)

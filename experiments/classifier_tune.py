@@ -21,6 +21,7 @@ def main(
     model_name=None,
     model_dir=None,
     peft_dir=None,
+    query_peft_dir=None,
     lora_rank=8,
     lora_alpha=32,
     lora_dropout=0.1,
@@ -62,6 +63,16 @@ def main(
         is_trainable=False,
         adapter_name="default",
     )
+
+    if query_peft_dir is not None:
+        model = get_lora_model(
+            model,
+            peft_dir=query_peft_dir or peft_dir,
+            is_trainable=False,
+            adapter_name="query",
+        )
+
+    model.requires_grad_(False)
 
     classifier_model = get_classifier_head(
         model,
