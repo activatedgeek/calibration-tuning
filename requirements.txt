@@ -11,3 +11,4 @@ accelerate
 peft
 bitsandbytes
 openai==0.28.0
+umap-learn
