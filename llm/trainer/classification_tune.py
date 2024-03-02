@@ -89,6 +89,7 @@ class ClassificationTuner(Trainer):
                 targets,
                 predictions,
                 strategy="substring",
+                query_labels=q_labels.cpu().numpy().tolist(),
             )
         else:
             model.set_adapter("default")

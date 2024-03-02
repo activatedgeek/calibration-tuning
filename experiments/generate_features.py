@@ -10,7 +10,7 @@ import multiprocess.context as ctx
 # ctx._force_start_method("spawn")
 
 from llm.accelerate import Accelerator
-from llm.datasets import get_dataset, get_loader
+from llm.datasets import get_dataset, get_loader, prepare_uncertainty_query
 from llm.models import get_model
 from llm.models.peft import get_lora_model
 from llm.logging import entrypoint
@@ -28,6 +28,7 @@ def main(
     model_name=None,
     model_dir=None,
     peft_dir=None,
+    query_peft_dir=None,
     lora_rank=8,
     lora_alpha=32,
     lora_dropout=0.1,
@@ -80,6 +81,14 @@ def main(
         adapter_name="default",
     )
 
+    if query_peft_dir is not None:
+        model = get_lora_model(
+            model,
+            peft_dir=query_peft_dir,
+            is_trainable=False,
+            adapter_name="query",
+        )
+
     model.eval()
 
     with accelerator.main_process_first():
@@ -114,47 +123,58 @@ def main(
 
         collate_fn = LabeledStringDataCollator(tokenizer)
 
-        all_query_features, all_query_labels = [], []
+        all_features, all_labels = [], []
 
         for inputs in tqdm(loader):
             inputs = [dict(zip(inputs.keys(), vals)) for vals in zip(*inputs.values())]
-            [inp.pop("target") for inp in inputs]
+            targets = [inp.pop("target") for inp in inputs]
             outputs = [inp.pop("output") for inp in inputs]
-            query_labels = torch.tensor([inp.pop("query_label") for inp in inputs]).to(
-                accelerator.device
-            )
+            query_labels = [inp.pop("query_label") for inp in inputs]
 
-            query_feature_inputs = {
-                k: v.to(accelerator.device)
-                for k, v in collate_fn(
-                    [{**inp, "target": out} for inp, out in zip(inputs, outputs)]
-                ).items()
-            }
+            if isinstance(model, PeftModel) and "query" in model.peft_config:
+                model.set_adapter("query")
 
-            if isinstance(model, PeftModel):
+                feature_inputs, _, _ = prepare_uncertainty_query(
+                    tokenizer,
+                    inputs,
+                    targets,
+                    outputs,
+                    strategy="substring",
+                    query_labels=query_labels,
+                )
+            else:
                 model.set_adapter("default")
 
-            with torch.inference_mode():
-                query_feature_outputs = model(
-                    **query_feature_inputs, output_hidden_states=True
-                )
+                feature_inputs = [
+                    {**inp, "target": t} for inp, t in zip(inputs, outputs)
+                ]
 
-                query_features = query_feature_outputs.hidden_states[-1][..., -1, :]
+            query_labels = torch.tensor(query_labels).to(accelerator.device)
+
+            feature_inputs = {
+                k: v.to(accelerator.device)
+                for k, v in collate_fn(feature_inputs).items()
+            }
+
+            with torch.inference_mode():
+                feature_outputs = model(**feature_inputs, output_hidden_states=True)
+
+                features = feature_outputs.hidden_states[-1][..., -1, :]
 
             [
                 l.append(v)
                 for l, v in zip(
-                    (all_query_features, all_query_labels),
-                    accelerator.gather_for_metrics((query_features, query_labels)),
+                    (all_features, all_labels),
+                    accelerator.gather_for_metrics((features, query_labels)),
                 )
             ]
 
-        all_query_features = torch.cat(all_query_features, dim=0)
-        all_query_labels = torch.cat(all_query_labels, dim=0)
+        all_features = torch.cat(all_features, dim=0)
+        all_labels = torch.cat(all_labels, dim=0)
 
         if accelerator.is_main_process:
             torch.save(
-                {"features": all_query_features, "labels": all_query_labels},
+                {"features": all_features, "labels": all_labels},
                 f"{log_dir}/outputs/{split_name}/features.pt",
             )
 
