@@ -109,7 +109,7 @@ def evaluate_via_eos(
     try:
         q_auroc = roc_auc_score(
             all_q_labels.cpu(),
-            all_q_p[torch.arange(all_q_p.size(0)), all_q_pred].cpu(),
+            all_q_p[torch.arange(all_q_p.size(0)), 1].cpu(),
         )
     except ValueError:
         logging.warning(f"AUROC calculation failed.")
@@ -181,8 +181,8 @@ def evaluate_classifier_via_eos(
             ).items()
         }
 
-        if isinstance(model, PeftModel):
-            model.set_adapter("default")
+        if isinstance(model, PeftModel) and "query" in model.peft_config:
+            model.set_adapter("query")
 
         with torch.inference_mode():
             class_outputs = model(**class_inputs, output_hidden_states=True)
@@ -190,7 +190,7 @@ def evaluate_classifier_via_eos(
         target_layer = model.classifier_model.target_layer
         class_inputs = class_outputs.hidden_states[target_layer][..., -1, :].clone()
 
-        q_logits = model.classifier_model(class_inputs.clone()).to(torch.float32)
+        q_logits = model.classifier_model(class_inputs)
 
         [
             l.append(v)
@@ -220,13 +220,13 @@ def evaluate_classifier_via_eos(
     q_ece, _ = calibration(
         all_q_labels,
         all_q_pred,
-        all_q_p[torch.arange(all_q_p.size(0)), all_q_pred],
+        all_q_p[torch.arange(all_q_p.size(0)), all_q_pred].float(),
     )
 
     try:
         q_auroc = roc_auc_score(
             all_q_labels.cpu(),
-            all_q_p[torch.arange(all_q_p.size(0)), all_q_pred].cpu(),
+            all_q_p[torch.arange(all_q_p.size(0)), 1].float().cpu(),
         )
     except ValueError:
         logging.warning(f"AUROC calculation failed.")

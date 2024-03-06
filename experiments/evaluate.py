@@ -31,7 +31,7 @@ def main(
     model_dir=None,
     peft_dir=None,
     query_peft_dir=None,
-    classifier_dir=None,
+    with_classifier=False,
     scale_temp=None,
     use_dataset_cache=True,
     prompt_style="choice",
@@ -54,6 +54,8 @@ def main(
         "dataset": dataset,
         "data_dir": data_dir,
         "batch_size": batch_size,
+        "scale_temp": scale_temp,
+        "with_classifier": with_classifier,
     }
     if accelerator.is_main_process:
         wandb.config.update(config)
@@ -80,51 +82,24 @@ def main(
         adapter_name="default",
     )
 
-    model = get_lora_model(
-        model,
-        peft_dir=query_peft_dir or peft_dir,
-        is_trainable=False,
-        adapter_name="query",
-    )
-
-    if classifier_dir is not None:
-        # find the subdir corresponding to the checkpoint with the lowest val loss
-        trainer_state_fn = os.path.join(classifier_dir, "trainer_state.json")
-        if not os.path.exists(trainer_state_fn):
-            lookup_table = {
-                "mistral_7b-20k_oe_lr1e-3": 5500,
-                "mistral_7b_instruct-20k_oe_lr1e-2": 4500,
-                "llama2_13b-20k_oe_lr1e-2": 6000,
-                "llama2_13b_chat-20k_oe_lr1e-2": 6000,
-            }
-            best_step = lookup_table[os.path.basename(classifier_dir)]
-            best_checkpoint = f"checkpoint-{best_step}"
-        else:
-            with open(os.path.join(classifier_dir, "trainer_state.json")) as f:
-                trainer_state = json.load(f)
-                logs = [
-                    (x["eval_loss"], x["step"])
-                    for x in trainer_state["log_history"]
-                    if "eval_loss" in x
-                ]
-                best_step = sorted(logs, key=lambda x: x[0])[0][1]
-                best_checkpoint = f"checkpoint-{best_step}"
-
-        classifier_dir = os.path.join(classifier_dir, best_checkpoint)
-        classifier_model = get_classifier_head(
+    if query_peft_dir:
+        model = get_lora_model(
             model,
-            checkpoint_dir=classifier_dir,
+            peft_dir=query_peft_dir,
             is_trainable=False,
-            weights_name=ClassificationTuner.WEIGHTS_NAME,
-        )
-        classifier_model.eval()
-        classifier_model.to(accelerator.device)
-        classifier_model = classifier_model.to(
-            torch.bfloat16 if torch.cuda.is_bf16_supported() else torch.float16,
+            adapter_name="query",
         )
 
-        model.classifier_model = classifier_model
-        model.classifier_model.target_layer = -1
+        if with_classifier:
+            classifier_model = get_classifier_head(
+                model,
+                checkpoint_dir=query_peft_dir,
+                is_trainable=False,
+                weights_name=ClassificationTuner.WEIGHTS_NAME,
+            )
+
+            model.classifier_model = classifier_model.to(accelerator.device)
+            model.classifier_model.target_layer = -1
 
     if scale_temp == "logits":
         ## @NOTE: Only for fine-tuned models.
@@ -136,14 +111,13 @@ def main(
         )
     elif scale_temp == "query":
         ## @NOTE: Only for calibration-tuned models.
-        if scale_temp:
-            temperature_model = get_temperature_head(
-                checkpoint_dir=query_peft_dir or peft_dir,
-                is_trainable=False,
-                weights_name=CalibrationTuner.TEMPERATURE_WEIGHTS_NAME,
-            ).to(accelerator.local_process_index)
+        temperature_model = get_temperature_head(
+            checkpoint_dir=query_peft_dir or peft_dir,
+            is_trainable=False,
+            weights_name=CalibrationTuner.TEMPERATURE_WEIGHTS_NAME,
+        ).to(accelerator.local_process_index)
 
-            model.query_temperature_model = temperature_model
+        model.query_temperature_model = temperature_model
     else:
         if scale_temp is not None:
             raise NotImplementedError

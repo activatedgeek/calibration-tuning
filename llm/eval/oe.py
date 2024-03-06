@@ -135,7 +135,7 @@ def evaluate_oe(
         try:
             q_auroc = roc_auc_score(
                 q_labels.cpu(),
-                q_p[torch.arange(q_p.size(0)), q_pred].cpu(),
+                q_p[torch.arange(q_p.size(0)), 1].cpu(),
             )
         except ValueError:
             logging.warning(f"AUROC calculation failed.")
@@ -293,7 +293,7 @@ def evaluate_classifier_oe(
         try:
             q_auroc = roc_auc_score(
                 q_labels.cpu(),
-                q_p[torch.arange(q_p.size(0)), q_pred].cpu(),
+                q_p[torch.arange(q_p.size(0)), 1].cpu(),
             )
         except ValueError:
             logging.warning(f"AUROC calculation failed.")
