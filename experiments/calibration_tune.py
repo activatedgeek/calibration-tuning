@@ -157,6 +157,7 @@ def main(
                 lora_alpha=lora_alpha,
                 lora_dropout=lora_dropout,
                 prompt_style=prompt_style,
+                max_token_length=max_token_length,
             ),
         ],
     )
