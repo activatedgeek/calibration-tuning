@@ -1,4 +1,5 @@
 import logging
+import os
 from tqdm.auto import tqdm
 import torch
 from peft import PeftModel
@@ -19,6 +20,7 @@ def evaluate_via_eos(
     tokenizer,
     loader,
     query_format="roman_choice",
+    log_dir=None,
     **_,
 ):
     collate_fn = LabeledStringDataCollator(tokenizer)
@@ -103,17 +105,28 @@ def evaluate_via_eos(
     q_ece, _ = calibration(
         all_q_labels,
         all_q_pred,
-        all_q_p[torch.arange(all_q_p.size(0)), all_q_pred],
+        all_q_p[torch.arange(all_q_p.size(0)), all_q_pred].float(),
     )
 
-    try:
-        q_auroc = roc_auc_score(
-            all_q_labels.cpu(),
-            all_q_p[torch.arange(all_q_p.size(0)), 1].cpu(),
+    q_auroc = roc_auc_score(
+        all_q_labels.cpu(),
+        all_q_p[torch.arange(all_q_p.size(0)), 1].float().cpu(),
+    )
+
+    if accelerator.is_main_process and log_dir is not None:
+        os.makedirs(log_dir)
+
+        torch.save(
+            {
+                "labels": all_labels,
+                "p": all_p,
+                "q_labels": all_q_labels,
+                "q_p": all_q_p,
+            },
+            f"{log_dir}/metrics.bin",
         )
-    except ValueError:
-        logging.warning(f"AUROC calculation failed.")
-        q_auroc = float("nan")
+
+        logging.info(f"Raw metrics data saved in '{log_dir}'.")
 
     return {
         "N": all_q_labels.size(0),
@@ -132,6 +145,7 @@ def evaluate_classifier_via_eos(
     tokenizer,
     loader,
     query_format="roman_choice",
+    log_dir=None,
     **_,
 ):
     collate_fn = LabeledStringDataCollator(tokenizer)
@@ -223,14 +237,25 @@ def evaluate_classifier_via_eos(
         all_q_p[torch.arange(all_q_p.size(0)), all_q_pred].float(),
     )
 
-    try:
-        q_auroc = roc_auc_score(
-            all_q_labels.cpu(),
-            all_q_p[torch.arange(all_q_p.size(0)), 1].float().cpu(),
+    q_auroc = roc_auc_score(
+        all_q_labels.cpu(),
+        all_q_p[torch.arange(all_q_p.size(0)), 1].float().cpu(),
+    )
+
+    if accelerator.is_main_process and log_dir is not None:
+        os.makedirs(log_dir)
+
+        torch.save(
+            {
+                "labels": all_labels,
+                "p": all_p,
+                "q_labels": all_q_labels,
+                "q_p": all_q_p,
+            },
+            f"{log_dir}/metrics.bin",
         )
-    except ValueError:
-        logging.warning(f"AUROC calculation failed.")
-        q_auroc = float("nan")
+
+        logging.info(f"Raw metrics data saved in '{log_dir}'.")
 
     return {
         "N": all_q_labels.size(0),

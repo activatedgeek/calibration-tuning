@@ -82,14 +82,16 @@ VERBAL_ELICITATION_MAP = {
         "target_prompt": "\nG1: ",
     },
     "2s1CoT": {
-        "prompt": "".join([
-            "Provide your best guess for the following question. Before giving your answer, ",
-            "provide a step-by-step explanation of your thought process. Then on a new line ",
-            "give the guess with no other words or explanation.\n\nFor example:\n\nExplanation: ",
-            "<one sentence step-by-step explanation of your thought process>\n\nGuess: ",
-            "<most likely guess, as short as possible; not a complete sentence, just the ",
-            "guess!>.\n\n",
-        ]),
+        "prompt": "".join(
+            [
+                "Provide your best guess for the following question. Before giving your answer, ",
+                "provide a step-by-step explanation of your thought process. Then on a new line ",
+                "give the guess with no other words or explanation.\n\nFor example:\n\nExplanation: ",
+                "<one sentence step-by-step explanation of your thought process>\n\nGuess: ",
+                "<most likely guess, as short as possible; not a complete sentence, just the ",
+                "guess!>.\n\n",
+            ]
+        ),
         "target_prompt": "\nExplanation: ",
     },
     "2s1g": {
@@ -269,7 +271,7 @@ def evaluate_dataset(
                     accelerator=accelerator,
                 ),
                 comparison_strategies=comparison_strategies,
-                log_dir=f"{log_dir}/metrics/{split_name}",
+                log_dir=f"{log_dir}/metrics/{dataset}/{split_name}",
             )
         metrics["dataset"] = dataset
         metrics["split"] = split_name
