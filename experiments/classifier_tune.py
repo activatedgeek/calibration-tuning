@@ -21,6 +21,7 @@ def main(
     model_name=None,
     model_dir=None,
     peft_dir=None,
+    with_lora=False,
     lora_rank=8,
     lora_alpha=32,
     lora_dropout=0.1,
@@ -33,6 +34,8 @@ def main(
     use_dataset_cache=True,
     resume_dir=None,
     int8=True,
+    max_token_length=None,
+    with_query=False,
 ):
     accelerator = AcceleratorState()
 
@@ -59,7 +62,7 @@ def main(
         lora_rank=lora_rank,
         lora_alpha=lora_alpha,
         lora_dropout=lora_dropout,
-        is_trainable=False,
+        is_trainable=with_lora,
         adapter_name="default",
     )
 
@@ -81,6 +84,7 @@ def main(
             num_workers=num_workers,
             use_cache=use_dataset_cache,
             prompt_style=prompt_style,
+            max_token_length=max_token_length,
         )
 
     trainer = ClassificationTuner(
@@ -110,6 +114,9 @@ def main(
             report_to="wandb",
             dataloader_num_workers=num_workers,
             label_names=train_data.column_names,
+            ## Custom.
+            with_query=with_query,
+            with_lora=with_lora,
         ),
         train_dataset=train_data,
         eval_dataset=val_data,
@@ -125,6 +132,7 @@ def main(
                 lora_alpha=lora_alpha,
                 lora_dropout=lora_dropout,
                 prompt_style=prompt_style,
+                max_token_length=max_token_length,
             ),
         ],
     )

@@ -1,4 +1,5 @@
 import logging
+import os
 from tqdm.auto import tqdm
 import torch
 from peft import PeftModel
@@ -19,6 +20,7 @@ def evaluate_via_eos(
     tokenizer,
     loader,
     query_format="roman_choice",
+    log_dir=None,
     **_,
 ):
     collate_fn = LabeledStringDataCollator(tokenizer)
@@ -103,17 +105,28 @@ def evaluate_via_eos(
     q_ece, _ = calibration(
         all_q_labels,
         all_q_pred,
-        all_q_p[torch.arange(all_q_p.size(0)), all_q_pred],
+        all_q_p[torch.arange(all_q_p.size(0)), all_q_pred].float(),
     )
 
-    try:
-        q_auroc = roc_auc_score(
-            all_q_labels.cpu(),
-            all_q_p[torch.arange(all_q_p.size(0)), all_q_pred].cpu(),
+    q_auroc = roc_auc_score(
+        all_q_labels.cpu(),
+        all_q_p[torch.arange(all_q_p.size(0)), 1].float().cpu(),
+    )
+
+    if accelerator.is_main_process and log_dir is not None:
+        os.makedirs(log_dir)
+
+        torch.save(
+            {
+                "labels": all_labels,
+                "p": all_p,
+                "q_labels": all_q_labels,
+                "q_p": all_q_p,
+            },
+            f"{log_dir}/metrics.bin",
         )
-    except ValueError:
-        logging.warning(f"AUROC calculation failed.")
-        q_auroc = float("nan")
+
+        logging.info(f"Raw metrics data saved in '{log_dir}'.")
 
     return {
         "N": all_q_labels.size(0),
@@ -132,6 +145,7 @@ def evaluate_classifier_via_eos(
     tokenizer,
     loader,
     query_format="roman_choice",
+    log_dir=None,
     **_,
 ):
     collate_fn = LabeledStringDataCollator(tokenizer)
@@ -181,8 +195,8 @@ def evaluate_classifier_via_eos(
             ).items()
         }
 
-        if isinstance(model, PeftModel):
-            model.set_adapter("default")
+        if isinstance(model, PeftModel) and "query" in model.peft_config:
+            model.set_adapter("query")
 
         with torch.inference_mode():
             class_outputs = model(**class_inputs, output_hidden_states=True)
@@ -190,7 +204,7 @@ def evaluate_classifier_via_eos(
         target_layer = model.classifier_model.target_layer
         class_inputs = class_outputs.hidden_states[target_layer][..., -1, :].clone()
 
-        q_logits = model.classifier_model(class_inputs.clone()).to(torch.float32)
+        q_logits = model.classifier_model(class_inputs)
 
         [
             l.append(v)
@@ -220,17 +234,28 @@ def evaluate_classifier_via_eos(
     q_ece, _ = calibration(
         all_q_labels,
         all_q_pred,
-        all_q_p[torch.arange(all_q_p.size(0)), all_q_pred],
+        all_q_p[torch.arange(all_q_p.size(0)), all_q_pred].float(),
     )
 
-    try:
-        q_auroc = roc_auc_score(
-            all_q_labels.cpu(),
-            all_q_p[torch.arange(all_q_p.size(0)), all_q_pred].cpu(),
+    q_auroc = roc_auc_score(
+        all_q_labels.cpu(),
+        all_q_p[torch.arange(all_q_p.size(0)), 1].float().cpu(),
+    )
+
+    if accelerator.is_main_process and log_dir is not None:
+        os.makedirs(log_dir)
+
+        torch.save(
+            {
+                "labels": all_labels,
+                "p": all_p,
+                "q_labels": all_q_labels,
+                "q_p": all_q_p,
+            },
+            f"{log_dir}/metrics.bin",
         )
-    except ValueError:
-        logging.warning(f"AUROC calculation failed.")
-        q_auroc = float("nan")
+
+        logging.info(f"Raw metrics data saved in '{log_dir}'.")
 
     return {
         "N": all_q_labels.size(0),

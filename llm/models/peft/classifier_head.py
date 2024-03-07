@@ -38,4 +38,4 @@ def get_classifier_head(
     else:
         classifier_model = classifier_model.eval().requires_grad_(False)
 
-    return classifier_model
+    return classifier_model.to(model.dtype)

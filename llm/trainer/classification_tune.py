@@ -25,6 +25,8 @@ class ClassificationTuner(Trainer):
     @dataclass
     class Args(TrainingArguments):
         target_layer: int = field(default=-1)
+        with_query: bool = field(default=False)
+        with_lora: bool = field(default=False)
 
     def __init__(self, *args, classifier_model=None, **kwargs):
         super().__init__(
@@ -42,12 +44,9 @@ class ClassificationTuner(Trainer):
 
         return super()._wrap_model(*args, **kwargs)
 
-    def compute_loss(self, model, inputs, return_outputs=False):
+    def prepare_inputs(self, model, inputs):
         inputs = [dict(zip(inputs.keys(), vals)) for vals in zip(*inputs.values())]
         targets = [inp.pop("target") for inp in inputs]
-
-        if isinstance(model, PeftModel):
-            model.set_adapter("default")
 
         if "query_label" in inputs[0]:
             predictions = [inp.pop("output") for inp in inputs]
@@ -58,8 +57,12 @@ class ClassificationTuner(Trainer):
                 for k, v in self._collate_fn(inputs).items()
             }
 
+            unwrapped_model = unwrap_model(model)
+            if isinstance(unwrapped_model, PeftModel):
+                unwrapped_model.disable_adapter_layers()
+
             with torch.inference_mode():
-                generation_outputs = model(
+                generation_outputs = unwrapped_model(
                     **generation_inputs, output_hidden_states=True
                 )
 
@@ -78,26 +81,50 @@ class ClassificationTuner(Trainer):
 
             del generation_outputs
 
+        q_labels = q_labels.to(self.accelerator.device)
+
+        return inputs, targets, predictions, q_labels
+
+    def prepare_class_inputs(
+        self, model, inputs, targets, predictions, class_labels, eval_mode=False
+    ):
+        if self.args.with_query:
+            class_inputs, _, _ = prepare_uncertainty_query(
+                self.tokenizer,
+                inputs,
+                targets,
+                predictions,
+                strategy="substring",
+                query_labels=class_labels.cpu().numpy().tolist(),
+            )
+        else:
+            class_inputs = [{**inp, "target": t} for inp, t in zip(inputs, predictions)]
+
         class_inputs = {
             k: v.to(self.accelerator.device)
-            for k, v in self._collate_fn(
-                [{**inp, "target": t} for inp, t in zip(inputs, predictions)]
-            ).items()
+            for k, v in self._collate_fn(class_inputs).items()
         }
 
-        if isinstance(model, PeftModel):
-            model.set_adapter("default")
+        inference_mode = (not self.args.with_lora) or eval_mode
 
-        with torch.inference_mode():
-            class_outputs = model(**class_inputs, output_hidden_states=True)
+        with torch.inference_mode(inference_mode):
+            class_inputs = model(**class_inputs, output_hidden_states=True)
+            class_inputs = class_inputs.hidden_states[self.args.target_layer]
+            class_inputs = class_inputs[..., -1, :]
+        if inference_mode:
+            class_inputs = class_inputs.clone()
 
-        class_inputs = class_outputs.hidden_states[self.args.target_layer][
-            ..., -1, :
-        ].clone()
-        class_labels = q_labels.to(class_inputs.device)
+        return class_inputs
+
+    def compute_loss(self, model, inputs, return_outputs=False):
+        inputs, targets, predictions, class_labels = self.prepare_inputs(model, inputs)
+
+        class_inputs = self.prepare_class_inputs(
+            model, inputs, targets, predictions, class_labels
+        )
 
         class_logits = self.classifier_model(class_inputs)
-        
+
         loss = F.cross_entropy(class_logits, class_labels)
 
         loss_metrics = {
@@ -107,8 +134,9 @@ class ClassificationTuner(Trainer):
         if (self.state.global_step + 1) % self.args.logging_steps == 0:
             self.log(loss_metrics)
 
-        return (loss, generation_outputs) if return_outputs else loss
+        return (loss, None) if return_outputs else loss
 
+    @torch.inference_mode
     def evaluate(self, eval_dataset=None, metric_key_prefix="eval", **_):
         eval_dataset = eval_dataset if eval_dataset is not None else self.eval_dataset
 
@@ -117,57 +145,15 @@ class ClassificationTuner(Trainer):
         all_labels, all_logits = [], []
 
         for inputs in tqdm(eval_dataloader, leave=False):
-            inputs = [dict(zip(inputs.keys(), vals)) for vals in zip(*inputs.values())]
-            targets = [inp.pop("target") for inp in inputs]
+            inputs, targets, predictions, class_labels = self.prepare_inputs(
+                self.model, inputs
+            )
 
-            if "query_label" in inputs[0]:
-                predictions = [inp.pop("output") for inp in inputs]
-                q_labels = torch.tensor([inp.pop("query_label") for inp in inputs]).long()
-            else:
-                generation_inputs = {
-                    k: v.to(self.accelerator.device)
-                    for k, v in self._collate_fn(inputs).items()
-                }
+            class_inputs = self.prepare_class_inputs(
+                self.model, inputs, targets, predictions, class_labels, eval_mode=True
+            )
 
-                with torch.inference_mode():
-                    generation_outputs = self.model(
-                        **generation_inputs, output_hidden_states=True
-                    )
-
-                predictions = self.tokenizer.batch_decode(
-                    generation_outputs.logits[:, -1, :].argmax(dim=-1),
-                    skip_special_tokens=True,
-                    clean_up_tokenization_spaces=False,
-                )
-                _, q_labels, _ = prepare_uncertainty_query(
-                    self.tokenizer,
-                    inputs,
-                    targets,
-                    predictions,
-                    strategy="substring",
-                )
-
-                del generation_outputs
-
-            class_inputs = {
-                k: v.to(self.accelerator.device)
-                for k, v in self._collate_fn(
-                    [{**inp, "target": t} for inp, t in zip(inputs, predictions)]
-                ).items()
-            }
-
-            if isinstance(self.model, PeftModel):
-                self.model.set_adapter("default")
-
-            with torch.inference_mode():
-                class_outputs = self.model(**class_inputs, output_hidden_states=True)
-
-            class_inputs = class_outputs.hidden_states[self.args.target_layer][
-                ..., -1, :
-            ].clone()
-            class_labels = q_labels.to(class_inputs.device)
-
-            class_logits = self.classifier_model(class_inputs.clone())
+            class_logits = self.classifier_model(class_inputs)
 
             [
                 l.append(v)
