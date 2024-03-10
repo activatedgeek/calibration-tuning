@@ -132,10 +132,14 @@ def evaluate_oe(
             q_p[torch.arange(q_p.size(0)), q_pred],
         )
 
-        q_auroc = roc_auc_score(
-            q_labels.cpu(),
-            q_p[torch.arange(q_p.size(0)), 1].float().cpu(),
-        )
+        try:
+            q_auroc = roc_auc_score(
+                q_labels.cpu(),
+                q_p[torch.arange(q_p.size(0)), 1].float().cpu(),
+            )
+        except ValueError:
+            q_auroc = float("nan")
+            logging.exception("AUROC calculation failed.", exc_info=True)
 
         metrics_dict.update(
             {
@@ -286,10 +290,14 @@ def evaluate_classifier_oe(
             q_p[torch.arange(q_p.size(0)), q_pred],
         )
 
-        q_auroc = roc_auc_score(
-            q_labels.cpu(),
-            q_p[torch.arange(q_p.size(0)), 1].float().cpu(),
-        )
+        try:
+            q_auroc = roc_auc_score(
+                q_labels.cpu(),
+                q_p[torch.arange(q_p.size(0)), 1].float().cpu(),
+            )
+        except ValueError:
+            q_auroc = float("nan")
+            logging.exception("AUROC calculation failed.", exc_info=True)
 
         metrics_dict.update(
             {

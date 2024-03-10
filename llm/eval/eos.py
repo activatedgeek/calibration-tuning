@@ -108,10 +108,14 @@ def evaluate_via_eos(
         all_q_p[torch.arange(all_q_p.size(0)), all_q_pred].float(),
     )
 
-    q_auroc = roc_auc_score(
-        all_q_labels.cpu(),
-        all_q_p[torch.arange(all_q_p.size(0)), 1].float().cpu(),
-    )
+    try:
+        q_auroc = roc_auc_score(
+            all_q_labels.cpu(),
+            all_q_p[torch.arange(all_q_p.size(0)), 1].float().cpu(),
+        )
+    except ValueError:
+        q_auroc = float("nan")
+        logging.exception("AUROC calculation failed.", exc_info=True)
 
     if accelerator.is_main_process and log_dir is not None:
         os.makedirs(log_dir)
@@ -237,10 +241,14 @@ def evaluate_classifier_via_eos(
         all_q_p[torch.arange(all_q_p.size(0)), all_q_pred].float(),
     )
 
-    q_auroc = roc_auc_score(
-        all_q_labels.cpu(),
-        all_q_p[torch.arange(all_q_p.size(0)), 1].float().cpu(),
-    )
+    try:
+        q_auroc = roc_auc_score(
+            all_q_labels.cpu(),
+            all_q_p[torch.arange(all_q_p.size(0)), 1].float().cpu(),
+        )
+    except ValueError:
+        q_auroc = float("nan")
+        logging.exception("AUROC calculation failed.", exc_info=True)
 
     if accelerator.is_main_process and log_dir is not None:
         os.makedirs(log_dir)

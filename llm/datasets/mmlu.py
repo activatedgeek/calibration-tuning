@@ -186,7 +186,7 @@ def get_mmlu(
 
     dev_data = dataset.pop("dev")
 
-    train_data, val_data, test_data = [
+    val_data, test_data = [
         dataset.pop(split).map(
             lambda x: __format_sample_with_prompt(
                 x, tokenizer, prompt_style, dev_data, instance, k, seed=seed
@@ -200,12 +200,12 @@ def get_mmlu(
             ],
         )
         for split, k in zip(
-            ["auxiliary_train", "validation", "test"],
-            [train_kshot, eval_kshot, eval_kshot],
+            ["validation", "test"],
+            [eval_kshot, eval_kshot],
         )
     ]
 
-    return train_data, val_data, test_data
+    return None, val_data, test_data
 
 
 @register_dataset(attrs=__ATTRS)
