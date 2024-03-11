@@ -89,7 +89,7 @@ def main(
     model.classifier_model = classifier_model
 
     with accelerator.main_process_first():
-        train_data, val_data, _ = get_dataset(
+        train_data, val_data, test_data = get_dataset(
             dataset,
             root=data_dir,
             tokenizer=tokenizer,
@@ -99,6 +99,8 @@ def main(
             prompt_style=prompt_style,
             max_token_length=max_token_length,
         )
+    if scale_temp:
+        train_data, val_data = val_data, test_data or val_data
 
     trainer = ClassificationTuner(
         model=model,
