@@ -142,6 +142,9 @@ def main(
         ).to(accelerator.local_process_index)
 
         model.query_temperature_model = temperature_model
+    elif scale_temp == "lora-probe":
+        ## @NOTE: Already handled earlier.
+        pass
     else:
         if scale_temp is not None:
             raise NotImplementedError
