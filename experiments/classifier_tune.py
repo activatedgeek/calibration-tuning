@@ -4,7 +4,7 @@ from peft import prepare_model_for_kbit_training
 from llm.logging import entrypoint
 from llm.accelerate import AcceleratorState
 from llm.models import get_model
-from llm.models.peft import get_lora_model, get_classifier_head
+from llm.models.peft import get_lora_model, get_classifier_head, get_temperature_head
 from llm.datasets import get_dataset
 from llm.trainer import WandbConfigUpdateCallback, ClassificationTuner
 
@@ -37,6 +37,7 @@ def main(
     int8=True,
     max_token_length=None,
     with_query=False,
+    scale_temp=False,
 ):
     accelerator = AcceleratorState()
 
@@ -63,21 +64,32 @@ def main(
         lora_rank=lora_rank,
         lora_alpha=lora_alpha,
         lora_dropout=lora_dropout,
-        is_trainable=with_lora,
+        is_trainable=with_lora and not scale_temp,
         adapter_name="default",
     )
 
     classifier_model = get_classifier_head(
         model,
         checkpoint_dir=peft_dir,
-        is_trainable=True,
+        is_trainable=not scale_temp,
         weights_name=ClassificationTuner.WEIGHTS_NAME,
     )
+
+    if scale_temp:
+        temperature_model = get_temperature_head(
+            checkpoint_dir=peft_dir,
+            is_trainable=True,
+        )
+
+        classifier_model = torch.nn.Sequential(
+            classifier_model,
+            temperature_model,
+        )
 
     model.classifier_model = classifier_model
 
     with accelerator.main_process_first():
-        train_data, val_data, _ = get_dataset(
+        train_data, val_data, test_data = get_dataset(
             dataset,
             root=data_dir,
             tokenizer=tokenizer,
@@ -87,6 +99,8 @@ def main(
             prompt_style=prompt_style,
             max_token_length=max_token_length,
         )
+    if scale_temp:
+        train_data, val_data = val_data, test_data or val_data
 
     trainer = ClassificationTuner(
         model=model,

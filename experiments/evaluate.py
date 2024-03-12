@@ -1,5 +1,4 @@
 import os
-import json
 import logging
 from tqdm.auto import tqdm
 import wandb
@@ -16,6 +15,7 @@ from llm.models.peft import (
     get_temperature_head,
     get_temperature_scale_model,
 )
+from llm.models.peft.utils import get_last_checkpoint_path
 from llm.eval import evaluate_dataset
 from llm.trainer import ClassificationTuner, CalibrationTuner, FineTuner
 
@@ -93,10 +93,34 @@ def main(
         if with_classifier:
             classifier_model = get_classifier_head(
                 model,
-                checkpoint_dir=query_peft_dir,
+                checkpoint_dir=None if scale_temp == "lora-probe" else query_peft_dir,
                 is_trainable=False,
                 weights_name=ClassificationTuner.WEIGHTS_NAME,
             )
+
+            if scale_temp == "lora-probe":
+                temperature_model = get_temperature_head()
+
+                classifier_model = torch.nn.Sequential(
+                    classifier_model,
+                    temperature_model,
+                )
+
+                if query_peft_dir is not None:
+                    checkpoint_dir = get_last_checkpoint_path(query_peft_dir)
+
+                    if os.path.isfile(
+                        f"{checkpoint_dir}/{ClassificationTuner.WEIGHTS_NAME}"
+                    ):
+                        classifier_model.load_state_dict(
+                            torch.load(
+                                f"{checkpoint_dir}/{ClassificationTuner.WEIGHTS_NAME}"
+                            )
+                        )
+
+                        logging.info(
+                            f"Loaded temperature-scaled classifier model checkpoint from '{checkpoint_dir}'."
+                        )
 
             model.classifier_model = classifier_model.to(accelerator.device)
             model.classifier_model.target_layer = -1
@@ -118,6 +142,9 @@ def main(
         ).to(accelerator.local_process_index)
 
         model.query_temperature_model = temperature_model
+    elif scale_temp == "lora-probe":
+        ## @NOTE: Already handled earlier.
+        pass
     else:
         if scale_temp is not None:
             raise NotImplementedError
