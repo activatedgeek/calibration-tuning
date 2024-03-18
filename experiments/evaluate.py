@@ -5,9 +5,10 @@ import wandb
 import pandas as pd
 import torch
 
-from llm.accelerate import Accelerator
-from llm.logging import entrypoint
 from llm.datasets import get_all_datasets_list
+from llm.distributed import Accelerator
+from llm.eval import evaluate_dataset
+from llm.logging import entrypoint
 from llm.models import get_model
 from llm.models.peft import (
     get_lora_model,
@@ -16,10 +17,10 @@ from llm.models.peft import (
     get_temperature_scale_model,
 )
 from llm.models.peft.utils import get_last_checkpoint_path
-from llm.eval import evaluate_dataset
 from llm.trainer import ClassificationTuner, CalibrationTuner, FineTuner
 
 
+@entrypoint
 def main(
     seed=137,
     log_dir=None,
@@ -28,7 +29,6 @@ def main(
     data_dir=None,
     batch_size=1,
     model_name=None,
-    model_dir=None,
     peft_dir=None,
     query_peft_dir=None,
     with_classifier=False,
@@ -43,7 +43,6 @@ def main(
     config = {
         "seed": seed,
         "model_name": model_name,
-        "model_dir": model_dir,
         "peft_dir": peft_dir,
         "query_peft_dir": query_peft_dir,
         "eval_kshot": eval_kshot,
@@ -60,19 +59,10 @@ def main(
     if accelerator.is_main_process:
         wandb.config.update(config)
 
-    tokenizer = get_model(
-        f"{model_name}_tokenizer",
-        model_dir=model_dir,
-    )
-
-    model = get_model(
+    tokenizer, model = get_model(
         model_name,
         device_map={"": accelerator.local_process_index},
-        torch_dtype=torch.bfloat16 if torch.cuda.is_bf16_supported() else torch.float16,
-        model_dir=model_dir,
-        use_cache=False,
-        tokenizer=tokenizer,
-        load_in_8bit=int8,
+        use_int8=int8,
     )
 
     model = get_lora_model(
@@ -194,4 +184,4 @@ def main(
 if __name__ == "__main__":
     import fire
 
-    fire.Fire(entrypoint(main))
+    fire.Fire(main)

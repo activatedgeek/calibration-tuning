@@ -1,14 +1,15 @@
 import torch
 from peft import prepare_model_for_kbit_training
 
+from llm.datasets import get_dataset
+from llm.distributed import AcceleratorState
 from llm.logging import entrypoint
-from llm.accelerate import AcceleratorState
 from llm.models import get_model
 from llm.models.peft import get_lora_model, get_classifier_head, get_temperature_head
-from llm.datasets import get_dataset
 from llm.trainer import WandbConfigUpdateCallback, ClassificationTuner
 
 
+@entrypoint
 def main(
     seed=137,
     log_dir=None,
@@ -19,7 +20,6 @@ def main(
     batch_size=1,
     grad_acc=1,
     model_name=None,
-    model_dir=None,
     peft_dir=None,
     with_lora=False,
     lora_rank=8,
@@ -41,21 +41,11 @@ def main(
 ):
     accelerator = AcceleratorState()
 
-    tokenizer = get_model(
-        f"{model_name}_tokenizer",
-        model_dir=model_dir,
-    )
-
-    model = get_model(
+    tokenizer, model = get_model(
         model_name,
         device_map={"": accelerator.local_process_index},
-        torch_dtype=torch.bfloat16 if torch.cuda.is_bf16_supported() else torch.float16,
-        model_dir=model_dir,
-        use_cache=False,
-        tokenizer=tokenizer,
-        load_in_8bit=int8,
+        use_int8=int8,
     )
-
     model = prepare_model_for_kbit_training(model, use_gradient_checkpointing=False)
 
     model = get_lora_model(
@@ -142,7 +132,6 @@ def main(
                 dataset=dataset,
                 data_dir=data_dir,
                 model_name=model_name,
-                model_dir=model_dir,
                 peft_dir=peft_dir,
                 lora_rank=lora_rank,
                 lora_alpha=lora_alpha,
@@ -159,4 +148,4 @@ def main(
 if __name__ == "__main__":
     import fire
 
-    fire.Fire(entrypoint(main))
+    fire.Fire(main)

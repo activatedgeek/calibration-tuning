@@ -5,7 +5,7 @@ import logging.config
 import os
 import wandb
 
-from .accelerate import Accelerator, AcceleratorState
+from .distributed import Accelerator, AcceleratorState
 
 
 class Timer:
@@ -193,8 +193,8 @@ def entrypoint(main):
 
         return main(**kwargs)
 
-    def _wrapped_entrypoint(**kwargs):
-        accelerator = Accelerator()
+    def _wrapped_entrypoint(deepspeed_config=None, **kwargs):
+        accelerator = Accelerator(deepspeed_config=deepspeed_config)
 
         if "WANDB_SWEEP_ID" in os.environ:
             if accelerator.is_main_process:

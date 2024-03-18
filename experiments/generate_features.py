@@ -9,13 +9,16 @@ import multiprocess.context as ctx
 ## @HOTFIX: for hanging processes in dataset map.
 # ctx._force_start_method("spawn")
 
-from llm.accelerate import Accelerator
-from llm.datasets import get_dataset, get_loader, prepare_uncertainty_query
+from llm.datasets import (
+    get_dataset,
+    get_loader,
+    prepare_uncertainty_query,
+    LabeledStringDataCollator,
+)
+from llm.distributed import Accelerator
+from llm.logging import entrypoint
 from llm.models import get_model
 from llm.models.peft import get_lora_model
-from llm.logging import entrypoint
-
-from llm.datasets import LabeledStringDataCollator
 
 
 @entrypoint
@@ -26,7 +29,6 @@ def main(
     data_dir=None,
     batch_size=1,
     model_name=None,
-    model_dir=None,
     peft_dir=None,
     query_peft_dir=None,
     lora_rank=8,
@@ -43,7 +45,6 @@ def main(
     config = {
         "seed": seed,
         "model_name": model_name,
-        "model_dir": model_dir,
         "peft_dir": peft_dir,
         "lora_rank": lora_rank,
         "lora_alpha": lora_alpha,
@@ -56,19 +57,10 @@ def main(
     if accelerator.is_main_process:
         wandb.config.update(config)
 
-    tokenizer = get_model(
-        f"{model_name}_tokenizer",
-        model_dir=model_dir,
-    )
-
-    model = get_model(
+    tokenizer, model = get_model(
         model_name,
         device_map={"": accelerator.local_process_index},
-        torch_dtype=torch.bfloat16 if torch.cuda.is_bf16_supported() else torch.float16,
-        model_dir=model_dir,
-        use_cache=False,
-        tokenizer=tokenizer,
-        load_in_8bit=int8,
+        use_int8=int8,
     )
 
     model = get_lora_model(
