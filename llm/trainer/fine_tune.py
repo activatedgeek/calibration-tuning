@@ -2,6 +2,7 @@ import os
 from dataclasses import dataclass, field
 from tqdm.auto import tqdm
 import torch
+from torch.utils.data import default_collate
 from transformers.trainer import (
     Trainer,
     logger,
@@ -10,7 +11,7 @@ from transformers.trainer import (
     TrainingArguments,
 )
 
-from ..datasets import DictCollator, LabeledStringDataCollator
+from ..datasets import LabeledStringDataCollator
 
 
 class FineTuner(Trainer):
@@ -18,16 +19,34 @@ class FineTuner(Trainer):
 
     @dataclass
     class Args(TrainingArguments):
+        fp16: bool = field(default=not torch.cuda.is_bf16_supported())
+        bf16: bool = field(default=torch.cuda.is_bf16_supported())
+        ddp_find_unused_parameters: bool = field(default=False)
+        log_on_each_node: bool = field(default=False)
+        evaluation_strategy: str = field(default="steps")
+        dataloader_num_workers: int = field(default=4)
+        optim: str = field(default="adamw_torch")
+        lr: float = field(default=1e-4)
+        lr_scheduler_type: str = field(default="cosine")
+        weight_decay: float = field(default=0.0)
+        warmup_ratio: float = field(default=0.0)
+        gradient_accumulation_steps: int = field(default=1)
+        report_to: str = field(default="wandb")
+        ## Custom Args.
         scale_temp: bool = field(default=False)
 
-    def __init__(self, *args, **kwargs):
-        super().__init__(
-            *args,
-            **kwargs,
-            data_collator=DictCollator(),
-        )
+    def __init__(self, args=None, train_dataset=None, tokenizer=None, **kwargs):
+        args.label_names = train_dataset.column_names
 
-        self._collate_fn = LabeledStringDataCollator(self.tokenizer)
+        self._collate_fn = LabeledStringDataCollator(tokenizer)
+
+        super().__init__(
+            **kwargs,
+            args=args,
+            tokenizer=tokenizer,
+            train_dataset=train_dataset,
+            data_collator=default_collate,
+        )
 
     def compute_loss(self, model, inputs, **kwargs):
         inputs = [dict(zip(inputs.keys(), vals)) for vals in zip(*inputs.values())]

@@ -3,6 +3,7 @@ from dataclasses import dataclass, field
 from tqdm.auto import tqdm
 import torch
 import torch.nn.functional as F
+from torch.utils.data import default_collate
 from peft import PeftModel
 from transformers.trainer import (
     TRAINING_ARGS_NAME,
@@ -13,7 +14,6 @@ from transformers.trainer import (
 )
 
 from ..datasets import (
-    DictCollator,
     LabeledStringDataCollator,
     prepare_uncertainty_query,
 )
@@ -24,19 +24,45 @@ class ClassificationTuner(Trainer):
 
     @dataclass
     class Args(TrainingArguments):
+        fp16: bool = field(default=not torch.cuda.is_bf16_supported())
+        bf16: bool = field(default=torch.cuda.is_bf16_supported())
+        ddp_find_unused_parameters: bool = field(default=False)
+        log_on_each_node: bool = field(default=False)
+        evaluation_strategy: str = field(default="steps")
+        dataloader_num_workers: int = field(default=4)
+        optim: str = field(default="adamw_torch")
+        lr: float = field(default=1e-4)
+        lr_scheduler_type: str = field(default="cosine")
+        weight_decay: float = field(default=0.0)
+        warmup_ratio: float = field(default=0.0)
+        gradient_accumulation_steps: int = field(default=1)
+        report_to: str = field(default="wandb")
+        ## Custom Args.
         target_layer: int = field(default=-1)
         with_query: bool = field(default=False)
         with_lora: bool = field(default=False)
 
-    def __init__(self, *args, classifier_model=None, **kwargs):
-        super().__init__(
-            *args,
-            **kwargs,
-            data_collator=DictCollator(),
-        )
+    def __init__(
+        self,
+        args=None,
+        train_dataset=None,
+        tokenizer=None,
+        classifier_model=None,
+        **kwargs,
+    ):
+        args.label_names = train_dataset.column_names
 
-        self._collate_fn = LabeledStringDataCollator(self.tokenizer)
+        self._collate_fn = LabeledStringDataCollator(tokenizer)
+
         self.classifier_model = classifier_model
+
+        super().__init__(
+            **kwargs,
+            args=args,
+            tokenizer=tokenizer,
+            train_dataset=train_dataset,
+            data_collator=default_collate,
+        )
 
     def _wrap_model(self, *args, **kwargs):
         if unwrap_model(self.classifier_model) is self.classifier_model:

@@ -1,10 +1,8 @@
+import os
 import logging
 from functools import wraps
-import numpy as np
-import torch
-from torch.utils.data import Subset
+from pathlib import Path
 
-from .utils import get_data_dir, LabelNoiseDataset
 
 __all__ = [
     "register_dataset",
@@ -55,7 +53,22 @@ def list_datasets():
     return list(__func_map.keys())
 
 
-def get_dataset(dataset, root=None, seed=42, train_subset=1, label_noise=0, **kwargs):
+def get_data_dir(data_dir=None):
+    if data_dir is None:
+        if os.environ.get("DATADIR") is not None:
+            data_dir = os.environ.get("DATADIR")
+            logging.debug(
+                f'Using default data directory from environment "{data_dir}".'
+            )
+        else:
+            home_data_dir = Path().home() / "datasets"
+            data_dir = str(home_data_dir.resolve())
+            logging.debug(f'Using default HOME data directory "{data_dir}".')
+
+    return data_dir
+
+
+def get_dataset(dataset, root=None, seed=42, **kwargs):
     dataset_fn = get_dataset_fn(dataset.split(":")[0])
 
     root = get_data_dir(data_dir=root)
@@ -65,24 +78,6 @@ def get_dataset(dataset, root=None, seed=42, train_subset=1, label_noise=0, **kw
         seed=seed,
         **{**kwargs, "dataset_str": dataset},
     )
-
-    if label_noise > 0:
-        train_data = LabelNoiseDataset(
-            train_data,
-            n_labels=get_dataset_attrs(dataset).get("num_classes"),
-            label_noise=label_noise,
-            seed=seed,
-        )
-
-    if np.abs(train_subset) < 1:
-        n = len(train_data)
-        ns = int(n * np.abs(train_subset))
-
-        ## NOTE: -ve train_subset fraction to get latter segment.
-        randperm = torch.randperm(n, generator=torch.Generator().manual_seed(seed))
-        randperm = randperm[ns:] if train_subset < 0 else randperm[:ns]
-
-        train_data = Subset(train_data, randperm)
 
     info_str = " / ".join(
         [

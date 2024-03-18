@@ -2,8 +2,9 @@ import os
 from dataclasses import dataclass, field
 from tqdm.auto import tqdm
 import torch
-import torch.nn.functional as F
 from torch.distributions import Categorical, kl_divergence
+import torch.nn.functional as F
+from torch.utils.data import default_collate
 from transformers.trainer import (
     logger,
     unwrap_model,
@@ -14,7 +15,6 @@ from transformers.trainer import (
 
 from ..datasets import (
     IGNORE_LABEL,
-    DictCollator,
     LabeledStringDataCollator,
     prepare_uncertainty_query,
 )
@@ -25,6 +25,20 @@ class CalibrationTuner(Trainer):
 
     @dataclass
     class Args(TrainingArguments):
+        fp16: bool = field(default=not torch.cuda.is_bf16_supported())
+        bf16: bool = field(default=torch.cuda.is_bf16_supported())
+        ddp_find_unused_parameters: bool = field(default=False)
+        log_on_each_node: bool = field(default=False)
+        evaluation_strategy: str = field(default="steps")
+        dataloader_num_workers: int = field(default=4)
+        optim: str = field(default="adamw_torch")
+        lr: float = field(default=1e-4)
+        lr_scheduler_type: str = field(default="cosine")
+        weight_decay: float = field(default=0.0)
+        warmup_ratio: float = field(default=0.0)
+        gradient_accumulation_steps: int = field(default=1)
+        report_to: str = field(default="wandb")
+        ## Custom Args.
         use_lm_loss: bool = field(default=False)
         query_format: str = field(default="roman_choice")
         ref_adapter_name: str = field(default="_ref")
@@ -33,15 +47,27 @@ class CalibrationTuner(Trainer):
         kl_decay: float = field(default=0.0)
         scale_temp: bool = field(default=False)
 
-    def __init__(self, *args, query_temperature_model=None, **kwargs):
-        super().__init__(
-            *args,
-            **kwargs,
-            data_collator=DictCollator(),
-        )
+    def __init__(
+        self,
+        args=None,
+        train_dataset=None,
+        tokenizer=None,
+        query_temperature_model=None,
+        **kwargs,
+    ):
+        args.label_names = train_dataset.column_names
 
-        self._collate_fn = LabeledStringDataCollator(self.tokenizer)
+        self._collate_fn = LabeledStringDataCollator(tokenizer)
+
         self.query_temperature_model = query_temperature_model
+
+        super().__init__(
+            **kwargs,
+            args=args,
+            tokenizer=tokenizer,
+            train_dataset=train_dataset,
+            data_collator=default_collate,
+        )
 
     def _wrap_model(self, *args, **kwargs):
         if self.args.scale_temp:

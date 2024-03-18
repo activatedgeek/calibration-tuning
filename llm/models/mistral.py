@@ -1,5 +1,6 @@
 import os
 
+from peft import prepare_model_for_kbit_training
 import torch
 from transformers import BitsAndBytesConfig, AutoTokenizer, MistralForCausalLM
 
@@ -63,6 +64,9 @@ def create_model(
     model.config.pad_token_id = tokenizer.pad_token_id
 
     resize_token_embeddings(tokenizer, model)
+
+    if use_int8:
+        model = prepare_model_for_kbit_training(model, use_gradient_checkpointing=False)
 
     return model
 
