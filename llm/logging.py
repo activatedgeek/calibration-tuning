@@ -1,3 +1,4 @@
+from functools import partial
 from pathlib import Path
 from datetime import datetime
 from time import perf_counter
@@ -183,20 +184,21 @@ def setup_wandb(log_dir):
     return wandb_kwargs
 
 
-def entrypoint(main):
+def entrypoint(main, with_accelerator=False, with_wandb=True):
     def _wrapped_main(log_dir=None, **kwargs):
-        log_dir = setup_logging(log_dir=log_dir)
+        if with_wandb:
+            kwargs.update(setup_wandb(log_dir))
 
-        wandb_kwargs = setup_wandb(log_dir)
+        return main(**kwargs, log_dir=log_dir)
 
-        kwargs = {**wandb_kwargs, **kwargs, "log_dir": log_dir}
-
-        return main(**kwargs)
-
-    def _wrapped_entrypoint(deepspeed_config=None, **kwargs):
+    def _wrapped_entrypoint(deepspeed_config=None, log_dir=None, **kwargs):
         accelerator = Accelerator(deepspeed_config=deepspeed_config)
+        if with_accelerator:
+            kwargs.update(dict(accelerator=accelerator))
 
-        if "WANDB_SWEEP_ID" in os.environ:
+        kwargs.update(dict(log_dir=setup_logging(log_dir=log_dir)))
+
+        if with_wandb and "WANDB_SWEEP_ID" in os.environ:
             if accelerator.is_main_process:
                 wandb.agent(
                     os.environ.get("WANDB_SWEEP_ID"),
@@ -214,3 +216,6 @@ def entrypoint(main):
             _wrapped_main(**kwargs)
 
     return _wrapped_entrypoint
+
+
+entrypoint_with_accelerator = partial(entrypoint, with_accelerator=True)

@@ -6,9 +6,8 @@ import pandas as pd
 import torch
 
 from llm.datasets import get_all_datasets_list
-from llm.distributed import Accelerator
 from llm.eval import evaluate_dataset
-from llm.logging import entrypoint
+from llm.logging import entrypoint_with_accelerator
 from llm.models import get_model
 from llm.models.peft import (
     get_lora_model,
@@ -20,49 +19,46 @@ from llm.models.peft.utils import get_last_checkpoint_path
 from llm.trainer import ClassificationTuner, CalibrationTuner, FineTuner
 
 
-@entrypoint
+@entrypoint_with_accelerator
 def main(
+    accelerator=None,
     seed=137,
     log_dir=None,
-    eval_kshot=None,
     dataset=None,
     data_dir=None,
-    batch_size=1,
+    prompt_style=None,
+    eval_kshot=None,
+    use_dataset_cache=True,
     model_name=None,
     peft_dir=None,
     query_peft_dir=None,
-    with_classifier=False,
     scale_temp=None,
-    use_dataset_cache=True,
-    prompt_style="choice",
+    with_classifier=False,
     mode=None,
-    int8=False,
+    batch_size=1,
 ):
-    accelerator = Accelerator()
-
-    config = {
-        "seed": seed,
-        "model_name": model_name,
-        "peft_dir": peft_dir,
-        "query_peft_dir": query_peft_dir,
-        "eval_kshot": eval_kshot,
-        "prompt_style": prompt_style,
-        "mode": mode,
-        "log_dir": log_dir,
-        "int8": int8,
-        "dataset": dataset,
-        "data_dir": data_dir,
-        "batch_size": batch_size,
-        "scale_temp": scale_temp,
-        "with_classifier": with_classifier,
-    }
+    config = dict(
+        seed=seed,
+        log_dir=log_dir,
+        dataset=dataset,
+        data_dir=data_dir,
+        prompt_style=prompt_style,
+        eval_kshot=eval_kshot,
+        use_dataset_cache=use_dataset_cache,
+        model_name=model_name,
+        peft_dir=peft_dir,
+        query_peft_dir=query_peft_dir,
+        scale_temp=scale_temp,
+        with_classifier=with_classifier,
+        mode=mode,
+        batch_size=batch_size,
+    )
     if accelerator.is_main_process:
         wandb.config.update(config)
 
     tokenizer, model = get_model(
         model_name,
         device_map={"": accelerator.local_process_index},
-        use_int8=int8,
     )
 
     model = get_lora_model(
@@ -155,13 +151,13 @@ def main(
                 model,
                 tokenizer,
                 dataset,
+                data_dir=data_dir,
+                prompt_style=prompt_style,
+                eval_kshot=eval_kshot,
+                use_cache=use_dataset_cache,
                 train_data=False,
                 seed=seed,
                 batch_size=batch_size,
-                data_dir=data_dir,
-                eval_kshot=eval_kshot,
-                use_cache=use_dataset_cache,
-                prompt_style=prompt_style,
                 log_dir=log_dir,
                 evaluate_fn=mode,
             )

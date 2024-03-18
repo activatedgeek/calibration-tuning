@@ -1,7 +1,6 @@
 import os
 import wandb
 import pandas as pd
-import torch
 from tqdm.auto import tqdm
 from transformers import GenerationConfig
 
@@ -11,15 +10,15 @@ import multiprocess.context as ctx
 ctx._force_start_method("spawn")
 
 from llm.datasets import get_dataset, get_loader, prepare_uncertainty_query
-from llm.distributed import Accelerator
-from llm.logging import entrypoint
+from llm.logging import entrypoint_with_accelerator
 from llm.models import get_model
 from llm.models.peft import get_lora_model
 from llm.utils.generate_utils import generate_output
 
 
-@entrypoint
+@entrypoint_with_accelerator
 def generate_outputs_main(
+    accelerator=None,
     seed=137,
     log_dir=None,
     dataset=None,
@@ -36,8 +35,6 @@ def generate_outputs_main(
     max_new_tokens=30,
     int8=False,
 ):
-    accelerator = Accelerator()
-
     config = {
         "seed": seed,
         "model_name": model_name,
@@ -148,8 +145,9 @@ def generate_query_label(
         yield from outputs
 
 
-@entrypoint
+@entrypoint_with_accelerator
 def generate_labels_main(
+    accelerator=None,
     seed=137,
     log_dir=None,
     dataset=None,
@@ -164,8 +162,6 @@ def generate_labels_main(
     use_dataset_cache=True,
     strategy="substring",  ## fuzzy_gpt-3.5-turbo-1106
 ):
-    accelerator = Accelerator()
-
     config = {
         "seed": seed,
         "model_name": model_name,
