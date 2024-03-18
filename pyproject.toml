@@ -1,0 +1,31 @@
+[build-system]
+requires = [
+    "setuptools",
+    "wheel"
+]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "llm-calibration"
+description = "LLM Calibration."
+readme = "README.md"
+license = {file = "LICENSE"}
+
+dynamic = ["version", "dependencies"]
+
+[tool.setuptools]
+include-package-data = false
+
+[tool.setuptools.dynamic]
+version = { attr = "llm.__init__.__version__" }
+dependencies = {file = ["requirements-base.txt", "requirements.txt"]}
+
+[tool.setuptools.packages.find]
+exclude = [
+    "*experiments.*",
+    "*experiments",
+    "*notebooks.*",
+    "*notebooks",
+    "*scripts.*",
+    "*scripts"
+]

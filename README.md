@@ -2,19 +2,24 @@
 
 ## Setup
 
-Create a new conda environment (if needed):
-```
-conda env create -f environment.yml -n <env_name>
-```
-
-And finally, run
-```
-pip install --no-cache-dir -e .
-```
-
-**NOTE**: If a different PyTorch CUDA compilation is required, run the following command *first*.
+Create a new conda environment:
 ```shell
-pip install --no-cache-dir 'torch>=2.0' torchvision --extra-index-url https://download.pytorch.org/whl/cu118
+conda env create -f environment.yml -n <env>
+```
+
+Activate environment:
+```shell
+conda activate <env>
+```
+
+And finally, run:
+```
+pip install -e .
+```
+
+**NOTE**: If a different PyTorch CUDA compilation is required, use extra index repositories. e.g. For CUDA 11.8, run:
+```shell
+pip install --no-cache-dir -U torch torchvision --extra-index-url https://download.pytorch.org/whl/cu118
 ```
 
 ## Run

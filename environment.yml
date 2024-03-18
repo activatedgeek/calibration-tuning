@@ -1,19 +1,5 @@
 channels:
   - conda-forge
 dependencies:
-  - python=3.10
+  - python=3
   - pip
-  - pip:
-    ## Base packages.
-    - black
-    - tqdm
-    - fire
-    - jupyterlab
-    - ipywidgets
-    - seaborn
-    - palettable
-    - pandas
-    - wandb
-    - numpy
-    - scipy
-    - scikit-learn
