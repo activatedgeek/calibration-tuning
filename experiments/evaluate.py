@@ -63,7 +63,7 @@ def main(
 
     model = get_lora_model(
         model,
-        peft_dir=peft_dir,
+        peft_id_or_dir=peft_dir,
         is_trainable=False,
         adapter_name="default",
     )
@@ -71,7 +71,7 @@ def main(
     if query_peft_dir:
         model = get_lora_model(
             model,
-            peft_dir=query_peft_dir,
+            peft_id_or_dir=query_peft_dir,
             is_trainable=False,
             adapter_name="query",
         )

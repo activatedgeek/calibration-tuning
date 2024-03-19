@@ -59,7 +59,7 @@ def generate_outputs_main(
     if peft_dir is not None:
         model = get_lora_model(
             model,
-            peft_dir=peft_dir,
+            peft_id_or_dir=peft_dir,
             lora_rank=lora_rank,
             lora_alpha=lora_alpha,
             lora_dropout=lora_dropout,
