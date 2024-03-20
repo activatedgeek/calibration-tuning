@@ -1,25 +1,124 @@
 import os
-from functools import partial
 import fire
+from dataclasses import dataclass, field
 import torch
-from transformers import GenerationConfig
-from peft import PeftModel, PeftModelForCausalLM, MODEL_TYPE_TO_PEFT_MODEL_MAPPING
 
-from llm.datasets import LabeledStringDataCollator, prepare_uncertainty_query
+from transformers import GenerationConfig
+from peft import (
+    MODEL_TYPE_TO_PEFT_MODEL_MAPPING,
+    PEFT_TYPE_TO_CONFIG_MAPPING,
+    PeftModel,
+    LoraConfig,
+    PeftModelForCausalLM,
+)
+
+from llm.datasets import LabeledStringDataCollator
 from llm.models import get_model
 
 
+@dataclass
+class CalibratedLoraConfig(LoraConfig):
+    query_format: int = field(
+        default="roman_choice", metadata={"help": "Query format."}
+    )
+
+
 class PeftModelForCalibratedCausalLM(PeftModelForCausalLM):
-    def generate(self, *args, **kwargs):
-        return super().generate(*args, **kwargs)
+    def get_token_vec(self, tokenizer):
+        query_format = self.active_peft_config.query_format
+
+        vocab = tokenizer.get_vocab()
+
+        def _create_vec(raw_list):
+            for t in raw_list:
+                assert t in vocab, f"Cannot handle {t} as a single token."
+
+            return torch.tensor([tokenizer(t).input_ids[-1] for t in raw_list])
+
+        if query_format == "roman_choice":
+            raw_strings = ["i", "ii"]
+        else:
+            raise NotImplementedError(f'Format "{self.format}" not supported.')
+
+        return _create_vec(raw_strings)
+
+    def prepare_uncertainty_query(self, contexts, predictions):
+        query_format = self.active_peft_config.query_format
+
+        def _format_query_text(c, p):
+            if query_format == "roman_choice":
+                query_text = "\n".join(
+                    [
+                        c + p,
+                        "\nIs the proposed answer correct?",
+                        "Choices:",
+                        "(i): no",
+                        "(ii): yes",
+                        "Answer:",
+                    ]
+                )
+            else:
+                raise NotImplementedError(f'Format "{query_format}" not supported.')
+
+            return query_text
+
+        query_inputs = [_format_query_text(c, p) for c, p in zip(contexts, predictions)]
+
+        return query_inputs
+
+    def generate(self, *args, tokenizer=None, collate_fn=None, **kwargs):
+        with self.disable_adapter():
+            outputs = super().generate(*args, **kwargs)
+
+        input_ids = kwargs.get("input_ids")
+
+        str_inputs = tokenizer.batch_decode(
+            input_ids,
+            skip_special_tokens=True,
+            clean_up_tokenization_spaces=False,
+        )
+
+        str_outputs = tokenizer.batch_decode(
+            outputs[:, input_ids.size(-1) :],
+            skip_special_tokens=True,
+            clean_up_tokenization_spaces=False,
+        )
+
+        q_token_vec = self.get_token_vec(tokenizer)
+        q_str_inputs = self.prepare_uncertainty_query(str_inputs, str_outputs)
+
+        q_str_inputs = [{"context": s} for s in q_str_inputs]
+        q_inputs = {
+            k: v.cuda(input_ids.device) for k, v in collate_fn(q_str_inputs).items()
+        }
+
+        q_outputs = self(**q_inputs)
+        q_logits = q_outputs.logits[..., -1, q_token_vec].softmax(dim=-1)
+
+        p_correct = q_logits[:, 1]
+
+        return outputs, p_correct
 
 
-## Hot patch.
-MODEL_TYPE_TO_PEFT_MODEL_MAPPING["CAUSAL_LM"] = PeftModelForCalibratedCausalLM
+## Hot patch config/model mapping.
+PEFT_TYPE_TO_CONFIG_MAPPING["CALIBRATED_LORA"] = CalibratedLoraConfig
+MODEL_TYPE_TO_PEFT_MODEL_MAPPING["CALIBRATED_CAUSAL_LM"] = (
+    PeftModelForCalibratedCausalLM
+)
 
 
 @torch.inference_mode
-def generate_answer(query, model=None, tokenizer=None, max_new_tokens=None):
+def main(model_name=None, max_new_tokens=100):
+    tokenizer, model = get_model(model_name, device_map="auto")
+
+    model = PeftModel.from_pretrained(
+        model,
+        f"calibration-tuning/{model.config._name_or_path.split('/')[-1]}-ct-oe",
+        adapter_name="query",
+        cache_dir=os.environ.get("HF_MODELS_CACHE"),
+    )
+    model.eval()
+
     generation_config = GenerationConfig(
         pad_token_id=tokenizer.pad_token_id,
         bos_token_id=tokenizer.bos_token_id,
@@ -30,57 +129,25 @@ def generate_answer(query, model=None, tokenizer=None, max_new_tokens=None):
 
     collate_fn = LabeledStringDataCollator(tokenizer)
 
-    str_inputs = [{"context": query}]
-    inputs = {k: v.cuda() for k, v in collate_fn(str_inputs).items()}
-
-    with model.disable_adapter():
-        outputs = model.generate(**inputs, generation_config=generation_config)
-
-    str_outputs = tokenizer.batch_decode(
-        outputs[:, inputs.get("input_ids").size(-1) :],
-        skip_special_tokens=True,
-        clean_up_tokenization_spaces=False,
-    )
-
-    q_str_inputs, _, q_token_vec = prepare_uncertainty_query(
-        tokenizer,
-        str_inputs,
-        [""] * len(str_inputs),
-        str_outputs,
-        strategy="substring",
-        format="roman_choice",
-    )
-    q_inputs = inputs = {k: v.cuda() for k, v in collate_fn(q_str_inputs).items()}
-
-    q_outputs = model(**q_inputs)
-    q_logits = q_outputs.logits[..., -1, q_token_vec].softmax(dim=-1)
-
-    response = str_outputs[0].strip()
-    p_correct = q_logits[:, 1].item()
-
-    return response, p_correct
-
-
-def main(max_new_tokens=100):
-    tokenizer, model = get_model("llama2_13b_chat", device_map="auto")
-    model = PeftModel.from_pretrained(
-        model,
-        "calibration-tuning/Llama-2-13b-chat-ct-oe",
-        adapter_name="query",
-        cache_dir=os.environ.get("HF_MODELS_CACHE"),
-    )
-    model.eval()
-
-    respond_fn = partial(
-        generate_answer, model=model, tokenizer=tokenizer, max_new_tokens=max_new_tokens
-    )
-
     while True:
         query = input("(Enter query)> ")
 
-        response, p_correct = respond_fn(query)
+        inputs = {k: v.cuda() for k, v in collate_fn([{"context": query}]).items()}
 
-        print(f"(Pinocchio says with {p_correct * 100:.1f}% confidence)> {response}")
+        outputs, P = model.generate(
+            **inputs,
+            generation_config=generation_config,
+            tokenizer=tokenizer,
+            collate_fn=collate_fn,
+        )
+
+        response = tokenizer.batch_decode(
+            outputs[:, inputs.get("input_ids").size(-1) :],
+            skip_special_tokens=True,
+            clean_up_tokenization_spaces=False,
+        )
+
+        print(f"(Pinocchio says with {P[0] * 100:.1f}% confidence)> {response[0]}")
         print()
 
 
