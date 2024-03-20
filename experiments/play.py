@@ -1,11 +1,21 @@
+import os
 from functools import partial
 import fire
 import torch
 from transformers import GenerationConfig
+from peft import PeftModel, PeftModelForCausalLM, MODEL_TYPE_TO_PEFT_MODEL_MAPPING
 
 from llm.datasets import LabeledStringDataCollator, prepare_uncertainty_query
 from llm.models import get_model
-from llm.models.peft import get_lora_model
+
+
+class PeftModelForCalibratedCausalLM(PeftModelForCausalLM):
+    def generate(self, *args, **kwargs):
+        return super().generate(*args, **kwargs)
+
+
+## Hot patch.
+MODEL_TYPE_TO_PEFT_MODEL_MAPPING["CAUSAL_LM"] = PeftModelForCalibratedCausalLM
 
 
 @torch.inference_mode
@@ -53,13 +63,12 @@ def generate_answer(query, model=None, tokenizer=None, max_new_tokens=None):
 
 def main(max_new_tokens=100):
     tokenizer, model = get_model("llama2_13b_chat", device_map="auto")
-
-    model = get_lora_model(
+    model = PeftModel.from_pretrained(
         model,
-        peft_id_or_dir="calibration-tuning/Llama-2-13b-chat-ct-oe",
+        "calibration-tuning/Llama-2-13b-chat-ct-oe",
         adapter_name="query",
+        cache_dir=os.environ.get("HF_MODELS_CACHE"),
     )
-
     model.eval()
 
     respond_fn = partial(
