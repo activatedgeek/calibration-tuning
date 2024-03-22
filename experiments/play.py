@@ -10,9 +10,11 @@ from transformers import GenerationConfig
 from peft import (
     MODEL_TYPE_TO_PEFT_MODEL_MAPPING,
     PEFT_TYPE_TO_CONFIG_MAPPING,
-    PeftModel,
+    get_peft_model,
     LoraConfig,
+    PeftModel,
     PeftModelForCausalLM,
+    TaskType,
 )
 from peft.utils.other import infer_device
 
@@ -22,11 +24,12 @@ from llm.models import get_model
 
 @dataclass
 class CalibratedLoraConfig(LoraConfig):
-    query_format: int = field(
-        default="roman_choice", metadata={"help": "Query format."}
+    task_type: str = field(
+        default="CALIBRATED_CAUSAL_LM", metadata={"help": "Task type"}
     )
+    query_format: int = field(default="roman_choice", metadata={"help": "Query format"})
     use_temperature: bool = field(
-        default=False, metadata={"help": "Temperature-scaled query probabilities."}
+        default=False, metadata={"help": "Temperature-scaled query probabilities"}
     )
 
 
@@ -219,14 +222,17 @@ MODEL_TYPE_TO_PEFT_MODEL_MAPPING["CALIBRATED_CAUSAL_LM"] = (
 
 
 @torch.inference_mode
-def main(model_name=None, max_new_tokens=100, use_temp=False):
+def main(model_name=None, max_new_tokens=100, use_query_only=False, use_temp=False):
     tokenizer, model = get_model(model_name, device_map="auto")
-    model = PeftModel.from_pretrained(
-        model,
-        f"calibration-tuning/{model.config._name_or_path.split('/')[-1]}-ct-oe",
-        adapter_name="query",
-    )
-    model.peft_config["query"].use_temperature = use_temp
+    if use_query_only:
+        model = get_peft_model(model, CalibratedLoraConfig(), adapter_name="query")
+    else:
+        model = PeftModel.from_pretrained(
+            model,
+            f"calibration-tuning/{model.config._name_or_path.split('/')[-1]}-ct-oe",
+            adapter_name="query",
+        )
+        model.peft_config["query"].use_temperature = use_temp
 
     model.eval()
 
