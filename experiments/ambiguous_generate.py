@@ -6,11 +6,13 @@ import torch
 
 from transformers import GenerationConfig
 from peft import (
+    get_peft_model,
     MODEL_TYPE_TO_PEFT_MODEL_MAPPING,
     PEFT_TYPE_TO_CONFIG_MAPPING,
     PeftModel,
     LoraConfig,
     PeftModelForCausalLM,
+    TaskType
 )
 
 import torch.nn as nn
@@ -18,6 +20,7 @@ from safetensors.torch import load_file as safe_load_file
 from huggingface_hub import file_exists as hf_file_exists, hf_hub_download
 from huggingface_hub.utils import EntryNotFoundError
 from peft.utils.other import infer_device
+
 
 from llm.datasets import LabeledStringDataCollator, LMText
 from llm.models import get_model
@@ -59,11 +62,12 @@ def get_query_labels(
 
 @dataclass
 class CalibratedLoraConfig(LoraConfig):
-    query_format: int = field(
-        default="roman_choice", metadata={"help": "Query format."}
+    task_type: str = field(
+        default="CALIBRATED_CAUSAL_LM", metadata={"help": "Task type"}
     )
+    query_format: int = field(default="roman_choice", metadata={"help": "Query format"})
     use_temperature: bool = field(
-        default=False, metadata={"help": "Temperature-scaled query probabilities."}
+        default=False, metadata={"help": "Temperature-scaled query probabilities"}
     )
 
 
@@ -263,9 +267,9 @@ def main(model_name=None, max_new_tokens=100, output_path='/workspace/output_amb
     P = {}
     response = {}
     correctness = {}
+    columns_dict = {}
 
-    # for adapter_name in 'default', 'query':
-    for adapter_name in ['query']:
+    for adapter_name in 'default', 'query':
 
         with open('SelfAware.json') as f:
             self_aware = json.load(f)
@@ -281,7 +285,7 @@ def main(model_name=None, max_new_tokens=100, output_path='/workspace/output_amb
                 )
                 model.peft_config["query"].use_temperature = use_temp
             else:
-                pass
+                model = get_peft_model(model, CalibratedLoraConfig(), adapter_name="query")
                 # keep at base.
 
             model.eval()
@@ -333,6 +337,14 @@ def main(model_name=None, max_new_tokens=100, output_path='/workspace/output_amb
                     strategy="fuzzy_gpt-3.5-turbo-1106",
                 )
 
+                outputs[id][adapter_name] = outputs[id][adapter_name].detach().cpu().numpy()
+                P[id][adapter_name] = P[id][adapter_name].detach().cpu().numpy()
+                correctness[id][adapter_name] = correctness[id][adapter_name].detach().cpu().numpy()
+
+            del model 
+
+
+
                 # import pdb; pdb.set_trace()
 
             # print(f"(Pinocchio says with {P[0] * 100:.1f}% confidence)> {response[0]}")
@@ -348,8 +360,19 @@ def main(model_name=None, max_new_tokens=100, output_path='/workspace/output_amb
         #     f"{csv_path}/{accelerator.process_index}.csv", index=False
         # )
 
-        pd.DataFrame(label_generator).to_csv(
-            output_path, index=False
+        for col_name, d in [
+            ('queries', queries),
+            # ('outputs', outputs),
+            ('P', P),
+            ('response', response),
+            ('correctness', correctness)
+        ]:
+            columns_dict[f'{adapter_name}_{col_name}'] = [
+                v[adapter_name] if isinstance(v, dict) else v for k,v in d.items()
+            ]
+
+        pd.DataFrame.from_dict(columns_dict).to_csv(
+            output_path, index=False, escapechar='\\'
         )
 
 
