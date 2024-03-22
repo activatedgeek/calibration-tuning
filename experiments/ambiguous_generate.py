@@ -13,6 +13,12 @@ from peft import (
     PeftModelForCausalLM,
 )
 
+import torch.nn as nn
+from safetensors.torch import load_file as safe_load_file
+from huggingface_hub import file_exists as hf_file_exists, hf_hub_download
+from huggingface_hub.utils import EntryNotFoundError
+from peft.utils.other import infer_device
+
 from llm.datasets import LabeledStringDataCollator, LMText
 from llm.models import get_model
 
@@ -50,15 +56,30 @@ def get_query_labels(
     return torch.Tensor(query_labels).long()
 
 
+
 @dataclass
 class CalibratedLoraConfig(LoraConfig):
     query_format: int = field(
         default="roman_choice", metadata={"help": "Query format."}
     )
+    use_temperature: bool = field(
+        default=False, metadata={"help": "Temperature-scaled query probabilities."}
+    )
 
 
 class PeftModelForCalibratedCausalLM(PeftModelForCausalLM):
-    def get_token_vec(self, tokenizer):
+    TEMPERATURE_WEIGHTS_NAME = "temperature_model.pt"
+    SAFETENSORS_TEMPERATURE_WEIGHTS_NAME = "temperature_model.safetensors"
+
+    class TemperatureScale(nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.log_temperature = nn.Parameter(torch.tensor(0.0))
+
+        def forward(self, inputs):
+            return inputs / self.log_temperature.exp()
+
+    def _get_token_vec(self, tokenizer):
         query_format = self.active_peft_config.query_format
 
         vocab = tokenizer.get_vocab()
@@ -76,7 +97,7 @@ class PeftModelForCalibratedCausalLM(PeftModelForCausalLM):
 
         return _create_vec(raw_strings)
 
-    def prepare_uncertainty_query(self, contexts, predictions):
+    def _prepare_uncertainty_query(self, contexts, predictions):
         query_format = self.active_peft_config.query_format
 
         def _format_query_text(c, p):
@@ -100,7 +121,11 @@ class PeftModelForCalibratedCausalLM(PeftModelForCausalLM):
 
         return query_inputs
 
-    def generate(self, *args, tokenizer=None, collate_fn=None, **kwargs):
+    def generate(
+        self, *args, tokenizer=None, collate_fn=None, use_temperature=False, **kwargs
+    ):
+        use_temperature = use_temperature or self.active_peft_config.use_temperature
+
         with self.disable_adapter():
             outputs = super().generate(*args, **kwargs)
 
@@ -118,20 +143,109 @@ class PeftModelForCalibratedCausalLM(PeftModelForCausalLM):
             clean_up_tokenization_spaces=False,
         )
 
-        q_token_vec = self.get_token_vec(tokenizer)
-        q_str_inputs = self.prepare_uncertainty_query(str_inputs, str_outputs)
+        q_token_vec = self._get_token_vec(tokenizer)
+        q_str_inputs = self._prepare_uncertainty_query(str_inputs, str_outputs)
 
         q_str_inputs = [{"context": s} for s in q_str_inputs]
         q_inputs = {
             k: v.cuda(input_ids.device) for k, v in collate_fn(q_str_inputs).items()
         }
 
-        q_outputs = self(**q_inputs)
-        q_logits = q_outputs.logits[..., -1, q_token_vec].softmax(dim=-1)
+        q_logits = self(**q_inputs).logits[..., -1, q_token_vec]
+        if use_temperature:
+            q_logits = self.temperature_scale[self.active_adapter](q_logits)
 
-        p_correct = q_logits[:, 1]
+        p_correct = q_logits.softmax(dim=-1)[:, 1]
 
         return outputs, p_correct
+
+    def load_temperature_adapter(self, model_id, device=None, **hf_hub_download_kwargs):
+        path = (
+            os.path.join(model_id, hf_hub_download_kwargs["subfolder"])
+            if hf_hub_download_kwargs.get("subfolder", None) is not None
+            else model_id
+        )
+
+        if device is None:
+            device = infer_device()
+
+        if os.path.exists(
+            os.path.join(path, self.SAFETENSORS_TEMPERATURE_WEIGHTS_NAME)
+        ):
+            filename = os.path.join(path, self.SAFETENSORS_TEMPERATURE_WEIGHTS_NAME)
+            use_safetensors = True
+        elif os.path.exists(os.path.join(path, self.TEMPERATURE_WEIGHTS_NAME)):
+            filename = os.path.join(path, self.TEMPERATURE_WEIGHTS_NAME)
+            use_safetensors = False
+        else:
+            token = hf_hub_download_kwargs.get("token", None)
+            if token is None:
+                token = hf_hub_download_kwargs.get("use_auth_token", None)
+
+            hub_filename = (
+                os.path.join(
+                    hf_hub_download_kwargs["subfolder"],
+                    self.SAFETENSORS_TEMPERATURE_WEIGHTS_NAME,
+                )
+                if hf_hub_download_kwargs.get("subfolder", None) is not None
+                else self.SAFETENSORS_TEMPERATURE_WEIGHTS_NAME
+            )
+            has_remote_safetensors_file = hf_file_exists(
+                repo_id=model_id,
+                filename=hub_filename,
+                revision=hf_hub_download_kwargs.get("revision", None),
+                repo_type=hf_hub_download_kwargs.get("repo_type", None),
+                token=token,
+            )
+
+            use_safetensors = has_remote_safetensors_file
+
+            if has_remote_safetensors_file:
+                filename = hf_hub_download(
+                    model_id,
+                    self.SAFETENSORS_TEMPERATURE_WEIGHTS_NAME,
+                    **hf_hub_download_kwargs,
+                )
+            else:
+                try:
+                    filename = hf_hub_download(
+                        model_id,
+                        self.TEMPERATURE_WEIGHTS_NAME,
+                        **hf_hub_download_kwargs,
+                    )
+                except EntryNotFoundError:
+                    filename = None
+
+        if filename:
+            if use_safetensors:
+                if hasattr(torch.backends, "mps") and (device == torch.device("mps")):
+                    temperature_weights = safe_load_file(filename, device="cpu")
+                else:
+                    temperature_weights = safe_load_file(filename, device=device)
+            else:
+                temperature_weights = torch.load(
+                    filename, map_location=torch.device(device)
+                )
+
+            return temperature_weights
+
+    def load_adapter(self, model_id, adapter_name, **kwargs):
+        load_result = super().load_adapter(model_id, adapter_name, **kwargs)
+
+        hf_hub_download_kwargs, _ = self._split_kwargs(kwargs)
+
+        temperature_weights = self.load_temperature_adapter(
+            model_id, **hf_hub_download_kwargs
+        )
+
+        if not hasattr(self, "temperature_scale"):
+            self.temperature_scale = dict()
+
+        self.temperature_scale[adapter_name] = self.TemperatureScale()
+        if temperature_weights:
+            self.temperature_scale[adapter_name].load_state_dict(temperature_weights)
+
+        return load_result
 
 
 ## Hot patch config/model mapping.
@@ -142,7 +256,7 @@ MODEL_TYPE_TO_PEFT_MODEL_MAPPING["CALIBRATED_CAUSAL_LM"] = (
 
 
 @torch.inference_mode
-def main(model_name=None, max_new_tokens=100, output_path='/workspace/output_ambiguity.csv'):
+def main(model_name=None, max_new_tokens=100, output_path='/workspace/output_ambiguity.csv', use_temp=False):
 
     queries = {}
     outputs = {}
@@ -163,8 +277,9 @@ def main(model_name=None, max_new_tokens=100, output_path='/workspace/output_amb
                     model,
                     f"calibration-tuning/{model.config._name_or_path.split('/')[-1]}-ct-oe",
                     adapter_name="query",
-                    cache_dir=os.environ.get("HF_MODELS_CACHE"),
+                    # cache_dir=os.environ.get("HF_MODELS_CACHE"),
                 )
+                model.peft_config["query"].use_temperature = use_temp
             else:
                 pass
                 # keep at base.
