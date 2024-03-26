@@ -1,6 +1,6 @@
-import os
 import string
 import torch
+from datasets import load_dataset
 
 from .registry import register_dataset
 from .llm_utils import LMText
@@ -105,9 +105,7 @@ def get_snli(
     use_cache=True,
     **_,
 ):
-    from datasets import load_dataset
-
-    dataset = load_dataset("snli", cache_dir=os.environ.get("HF_DATASETS_CACHE", root))
+    dataset = load_dataset("snli")
     if not use_cache:
         dataset.cleanup_cache_files()
 
@@ -158,11 +156,9 @@ def get_anli(
     use_cache=True,
     **_,
 ):
-    from datasets import load_dataset
-
     assert round in [1, 2, 3], "Invalid round value"
 
-    dataset = load_dataset("anli", cache_dir=os.environ.get("HF_DATASETS_CACHE", root))
+    dataset = load_dataset("anli")
     if not use_cache:
         dataset.cleanup_cache_files()
 

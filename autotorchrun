@@ -5,8 +5,9 @@ __NPROC_PER_NODE=${NPROC_PER_NODE:-$(python -c 'import torch; print(torch.cuda.d
 __IP=${IP:-$(hostname)}
 __PORT=${PORT:-$(shuf -i 2000-65000 -n 1)}
 
-torchrun --nnodes=${__NNODES} \
-         --nproc_per_node=${__NPROC_PER_NODE} \
-         --rdzv_endpoint=${__IP}:${__PORT} \
-            "${@}"
-    
+# torchrun --nnodes=${__NNODES} \
+#          --nproc_per_node=${__NPROC_PER_NODE} \
+#          --rdzv_endpoint=${__IP}:${__PORT} \
+#             "${@}"
+
+torchrun --nnodes=1 "${@}"            

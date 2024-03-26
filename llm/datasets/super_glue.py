@@ -1,6 +1,6 @@
-import os
 import string
 import torch
+from datasets import load_dataset
 
 from .registry import register_dataset
 from .llm_utils import LMText
@@ -14,7 +14,6 @@ __all__ = [
 
 
 def get_cb(
-    root=None,
     prompt_style=None,
     train_kshot=0,
     eval_kshot=0,
@@ -24,14 +23,7 @@ def get_cb(
     use_cache=True,
     **_,
 ):
-    from datasets import load_dataset
-
-    dataset = load_dataset(
-        "super_glue",
-        "cb",
-        cache_dir=os.environ.get("HF_DATASETS_CACHE", root),
-        trust_remote_code=True,
-    )
+    dataset = load_dataset("super_glue", "cb", trust_remote_code=True)
     if not use_cache:
         dataset.cleanup_cache_files()
 
@@ -148,7 +140,6 @@ def cb(*args, prompt_style="choice", **kwargs):
 
 
 def get_multirc(
-    root=None,
     prompt_style=None,
     train_kshot=0,
     eval_kshot=0,
@@ -158,14 +149,7 @@ def get_multirc(
     use_cache=True,
     **_,
 ):
-    from datasets import load_dataset
-
-    dataset = load_dataset(
-        "super_glue",
-        "multirc",
-        cache_dir=os.environ.get("HF_DATASETS_CACHE", root),
-        trust_remote_code=True,
-    )
+    dataset = load_dataset("super_glue", "multirc", trust_remote_code=True)
     if not use_cache:
         dataset.cleanup_cache_files()
 
@@ -285,7 +269,6 @@ def multirc(*args, prompt_style="choice", **kwargs):
 
 
 def get_copa(
-    root=None,
     prompt_style=None,
     train_kshot=0,
     eval_kshot=0,
@@ -295,14 +278,7 @@ def get_copa(
     use_cache=True,
     **_,
 ):
-    from datasets import load_dataset
-
-    dataset = load_dataset(
-        "super_glue",
-        "copa",
-        cache_dir=os.environ.get("HF_DATASETS_CACHE", root),
-        trust_remote_code=True,
-    )
+    dataset = load_dataset("super_glue", "copa", trust_remote_code=True)
     if not use_cache:
         dataset.cleanup_cache_files()
 

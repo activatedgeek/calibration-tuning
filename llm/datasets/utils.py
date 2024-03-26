@@ -1,25 +1,5 @@
-import os
-import logging
-from pathlib import Path
 import torch
-from torch.utils.data import Dataset, DataLoader, random_split
-
-
-def get_data_dir(data_dir=None):
-    if data_dir is None:
-        if os.environ.get("DATADIR") is not None:
-            data_dir = os.environ.get("DATADIR")
-            logging.debug(
-                f'Using default data directory from environment "{data_dir}".'
-            )
-        else:
-            home_data_dir = Path().home() / "datasets"
-            data_dir = str(home_data_dir.resolve())
-            logging.debug(f'Using default HOME data directory "{data_dir}".')
-
-    Path(data_dir).mkdir(parents=True, exist_ok=True)
-
-    return data_dir
+from torch.utils.data import DataLoader, random_split
 
 
 def train_test_split(dataset, test_size=0.2, seed=None):

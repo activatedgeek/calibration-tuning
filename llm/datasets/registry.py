@@ -55,15 +55,11 @@ def list_datasets():
 
 def get_data_dir(data_dir=None):
     if data_dir is None:
-        if os.environ.get("DATADIR") is not None:
-            data_dir = os.environ.get("DATADIR")
-            logging.debug(
-                f'Using default data directory from environment "{data_dir}".'
-            )
-        else:
-            home_data_dir = Path().home() / "datasets"
-            data_dir = str(home_data_dir.resolve())
-            logging.debug(f'Using default HOME data directory "{data_dir}".')
+        data_dir = str(
+            Path(os.environ.get("DATADIR", Path.home() / "datasets")).resolve()
+        )
+
+    Path(data_dir).mkdir(parents=True, exist_ok=True)
 
     return data_dir
 

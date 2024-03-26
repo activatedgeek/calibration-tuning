@@ -21,7 +21,6 @@ def get_peft_model_from_checkpoint(
     peft_id_or_dir,
     is_trainable=True,
     adapter_name="default",
-    cache_dir=None,
     **config_args,
 ):
     if os.path.isdir(peft_id_or_dir):
@@ -32,7 +31,6 @@ def get_peft_model_from_checkpoint(
             peft_id_or_dir,
             is_trainable=is_trainable,
             adapter_name=adapter_name,
-            cache_dir=os.environ.get("HF_MODELS_CACHE", cache_dir),
             **config_args,
         )
     else:
@@ -41,7 +39,6 @@ def get_peft_model_from_checkpoint(
             peft_id_or_dir,
             is_trainable=is_trainable,
             adapter_name=adapter_name,
-            cache_dir=os.environ.get("HF_MODELS_CACHE", cache_dir),
             **config_args,
         )
 

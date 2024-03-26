@@ -1,5 +1,3 @@
-import os
-
 from peft import prepare_model_for_kbit_training
 import torch
 from transformers import BitsAndBytesConfig, AutoTokenizer, MistralForCausalLM
@@ -15,14 +13,12 @@ __all__ = ["create_tokenizer", "create_model"]
 def create_tokenizer(
     kind,
     model_dir=None,
-    cache_dir=None,
     padding_side="left",
     model_max_length=8192,
     **kwargs,
 ):
     tokenizer = AutoTokenizer.from_pretrained(
         model_dir or f"mistralai/Mistral-{kind}",
-        cache_dir=os.environ.get("HF_MODELS_CACHE", cache_dir),
         padding_side=padding_side,
         model_max_length=model_max_length,
         use_fast=True,
@@ -39,7 +35,6 @@ def create_model(
     kind,
     torch_dtype=None,
     model_dir=None,
-    cache_dir=None,
     use_cache=False,
     tokenizer=None,
     use_int8=False,
@@ -56,7 +51,6 @@ def create_model(
             if use_int8
             else None
         ),
-        cache_dir=os.environ.get("HF_MODELS_CACHE", cache_dir),
         use_cache=use_cache,
         **kwargs,
     )

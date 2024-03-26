@@ -1,6 +1,6 @@
-import os
 import string
 import torch
+from datasets import load_dataset
 
 from .registry import register_dataset
 from .llm_utils import LMText
@@ -87,7 +87,6 @@ def __format_sample_with_prompt(
 
 
 def get_wsc(
-    root=None,
     subset=None,
     prompt_style=None,
     eval_kshot=0,
@@ -97,14 +96,7 @@ def get_wsc(
     use_cache=True,
     **_,
 ):
-    from datasets import load_dataset
-
-    dataset = load_dataset(
-        "winograd_wsc",
-        subset,
-        cache_dir=os.environ.get("HF_DATASETS_CACHE", root),
-        trust_remote_code=True,
-    )
+    dataset = load_dataset("winograd_wsc", subset, trust_remote_code=True)
     if not use_cache:
         dataset.cleanup_cache_files()
 

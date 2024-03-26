@@ -1,5 +1,3 @@
-import os
-
 from peft import prepare_model_for_kbit_training
 import torch
 from transformers import BitsAndBytesConfig, LlamaTokenizer, LlamaForCausalLM
@@ -11,14 +9,12 @@ from .llm_model_utils import DEFAULT_PAD_TOKEN, resize_token_embeddings
 def create_tokenizer(
     kind,
     model_dir=None,
-    cache_dir=None,
     padding_side="left",
     model_max_length=None,
     **kwargs,
 ):
     tokenizer = LlamaTokenizer.from_pretrained(
         model_dir or f"meta-llama/Llama-2-{kind}-hf",
-        cache_dir=os.environ.get("HF_MODELS_CACHE", cache_dir),
         padding_side=padding_side,
         model_max_length=model_max_length,
         use_fast=True,
@@ -35,7 +31,6 @@ def create_model(
     kind,
     torch_dtype=None,
     model_dir=None,
-    cache_dir=None,
     use_cache=False,
     tokenizer=None,
     use_int8=False,
@@ -52,7 +47,6 @@ def create_model(
             if use_int8
             else None
         ),
-        cache_dir=os.environ.get("HF_MODELS_CACHE", cache_dir),
         use_cache=use_cache,
         **kwargs,
     )

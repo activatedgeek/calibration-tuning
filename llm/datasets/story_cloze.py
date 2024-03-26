@@ -1,6 +1,7 @@
 import os
 import string
 import torch
+from datasets import load_dataset
 
 from .registry import register_dataset
 from .llm_utils import LMText
@@ -87,7 +88,6 @@ def __format_sample_with_prompt(
 
 
 def get_story_cloze(
-    root=None,
     prompt_style=None,
     eval_kshot=0,
     tokenizer=None,
@@ -96,14 +96,11 @@ def get_story_cloze(
     use_cache=True,
     **_,
 ):
-    from datasets import load_dataset
-
-    ## NOTE: needs manual download.
+    ## NOTE: manually place the CSV in data_dir.
     dataset = load_dataset(
         "story_cloze",
         "2018",
-        data_dir=f"{os.environ.get('HF_DATASETS_CACHE', root)}/story_cloze",
-        cache_dir=os.environ.get("HF_DATASETS_CACHE", root),
+        data_dir=f"{os.environ.get('HF_HOME')}/datasets/story_cloze/2018",
         trust_remote_code=True,
     )
     if not use_cache:

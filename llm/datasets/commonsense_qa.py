@@ -1,6 +1,6 @@
-import os
 import string
 import torch
+from datasets import load_dataset
 
 from .registry import register_dataset
 from .llm_utils import LMText
@@ -102,7 +102,6 @@ def __format_sample_with_prompt(
 
 
 def get_commonsense_qa(
-    root=None,
     prompt_style=None,
     train_kshot=0,
     eval_kshot=0,
@@ -112,11 +111,7 @@ def get_commonsense_qa(
     use_cache=True,
     **_,
 ):
-    from datasets import load_dataset
-
-    dataset = load_dataset(
-        "commonsense_qa", cache_dir=os.environ.get("HF_DATASETS_CACHE", root)
-    )
+    dataset = load_dataset("commonsense_qa")
     if not use_cache:
         dataset.cleanup_cache_files()
 
