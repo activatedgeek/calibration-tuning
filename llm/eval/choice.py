@@ -14,7 +14,7 @@ from .third_party.calibration import calibration
 
 
 @torch.inference_mode()
-def evaluate_via_eos(
+def evaluate_choice(
     accelerator,
     model,
     tokenizer,
@@ -143,7 +143,7 @@ def evaluate_via_eos(
 
 
 @torch.inference_mode()
-def evaluate_classifier_via_eos(
+def evaluate_classifier_choice(
     accelerator,
     model,
     tokenizer,
@@ -276,7 +276,7 @@ def evaluate_classifier_via_eos(
 
 
 @torch.inference_mode()
-def evaluate_contextual_calibration_via_eos(
+def evaluate_contextual_calibration_choice(
     accelerator,
     model,
     tokenizer,
@@ -353,7 +353,7 @@ def evaluate_contextual_calibration_via_eos(
 
 
 @torch.inference_mode()
-def evaluate_candidate_via_eos(
+def evaluate_candidate_choice(
     accelerator,
     model,
     tokenizer,

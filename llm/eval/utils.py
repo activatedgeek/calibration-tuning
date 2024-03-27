@@ -3,29 +3,27 @@ from functools import partial
 
 from ..logging import Timer
 from ..datasets import get_dataset, get_loader
-from .eos import (
-    evaluate_contextual_calibration_via_eos,
-    evaluate_candidate_via_eos,
-    evaluate_via_eos,
-    evaluate_classifier_via_eos,
+from .choice import (
+    evaluate_contextual_calibration_choice,
+    evaluate_candidate_choice,
+    evaluate_choice,
+    evaluate_classifier_choice,
 )
 from .oe import (
     evaluate_oe,
     evaluate_classifier_oe,
-    # evaluate_contextual_calibration_oe,
-    evaluate_oe_uncertainty_sampling,
-    # evaluate_verbal_elicitation_oe,
+    evaluate_uncertainty_sampling_oe,
+    # evaluate_verbal_elicitation_oe
 )
 
 EVALUATE_MODE_FN_MAP = {
-    "eos": evaluate_via_eos,
-    "cc_eos": evaluate_contextual_calibration_via_eos,
-    "cand_eos": evaluate_candidate_via_eos,
-    "class_eos": evaluate_classifier_via_eos,
+    "choice": evaluate_choice,
+    "cc_choice": evaluate_contextual_calibration_choice,
+    "cand_choice": evaluate_candidate_choice,
+    "class_choice": evaluate_classifier_choice,
     "oe": evaluate_oe,
-    "us_oe": evaluate_oe_uncertainty_sampling,
+    "us_oe": evaluate_uncertainty_sampling_oe,
     "class_oe": evaluate_classifier_oe,
-    # "cc_oe": evaluate_contextual_calibration_oe,
     # "ve_oe": evaluate_verbal_elicitation_oe,
 }
 
@@ -150,9 +148,9 @@ def evaluate_dataset(
     num_workers=8,
     eval_kshot=None,
     use_cache=True,
-    prompt_style="choice",
+    prompt_style=None,
     log_dir=None,
-    evaluate_fn="eos",
+    evaluate_fn=None,
 ):
     if dataset is not None:
         with accelerator.main_process_first():

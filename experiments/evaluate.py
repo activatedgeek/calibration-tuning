@@ -77,12 +77,12 @@ def main(
         if with_classifier:
             classifier_model = get_classifier_head(
                 model,
-                checkpoint_dir=None if scale_temp == "lora-probe" else query_peft_dir,
+                checkpoint_dir=None if scale_temp == "probe" else query_peft_dir,
                 is_trainable=False,
                 weights_name=ClassificationTuner.WEIGHTS_NAME,
             )
 
-            if scale_temp == "lora-probe":
+            if scale_temp == "probe":
                 temperature_model = get_temperature_head()
 
                 classifier_model = torch.nn.Sequential(
@@ -126,7 +126,7 @@ def main(
         ).to(accelerator.local_process_index)
 
         model.query_temperature_model = temperature_model
-    elif scale_temp == "lora-probe":
+    elif scale_temp == "probe":
         ## @NOTE: Already handled earlier.
         pass
     else:

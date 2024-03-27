@@ -128,7 +128,7 @@ Use `--strategy=fuzzy_gpt-3.5-turbo-1106` for generating labels via GPT 3.5 Turb
 
 ### Training 
 
-Checkpoints will be saved in an auto-generated directory, or can be configured via `--log-dir`.
+Checkpoints will be saved in an auto-generated directory `<train-log-dir>/checkpoint-<step>`, or can be configured via `--log-dir`.
 
 #### CT-Query
 
@@ -151,29 +151,41 @@ torchrun --nnodes=1 --nproc_per_node=auto experiments/classifier_tune.py --datas
 ```
 
 Use `--scale-temp` for temperature scaling of the classifier. 
-Use `--with-lora` to enable trainable LoRA parameters.
+Use `--with-lora` to enable trainable LoRA parameters (`CT-LoRA`).
 
 For other CLI arguments, see the `main` function of [experiments/classifier_tune.py](./experiments/calibration_tune.py).
 
-### Evaluate
+### Evaluation
 
-An example command for evaluation.
+#### CT-Query
 
-```shell
-./autotorchrun experiments/evaluate.py --model_name=llama2_7b --dataset=eval:all
-```
-
-To evaluate for open-ended sequences:
+For open-ended generation evaluations,
 
 ```shell
-./autotorchrun experiments/evaluate.py --model_name=llama2_7b --dataset=mmlu:business_ethics --mode=oe_substring --prompt_style=oe
+torchrun --nnodes=1 --nproc_per_node=auto experiments/evaluate.py --dataset=eval:mmlu --prompt-style=oe --model_name=llama2_13b_chat --query-peft-dir=<train-log-dir>/checkpoint-<step> --mode=oe_fuzzy_gpt-3.5-turbo-1106
 ```
 
-with fuzzy matching (currently on GPT4, so requires setting OPENAI_API_KEY env var):
+For multiple-choice question-answering evaluations,
 
 ```shell
-./autotorchrun experiments/evaluate.py --model_name=llama2_7b --dataset=mmlu:business_ethics --mode=oe_fuzzy_gpt-4-0613 --prompt_style=oe
+torchrun --nnodes=1 --nproc_per_node=auto experiments/evaluate.py --dataset=eval:mmlu --prompt-style=choice --model_name=llama2_13b_chat --query-peft-dir=<train-log-dir>/checkpoint-<step> --mode=choice
 ```
+
+Use `--scale-temp=query` to use temperature scaling of the uncertainty query logits.
+
+#### CT-Probe / CT-LoRA
+
+For open-ended generation evaluations,
+
+```shell
+torchrun --nnodes=1 --nproc_per_node=auto experiments/evaluate.py --dataset=eval:mmlu --prompt-style=oe --model_name=llama2_13b_chat --query-peft-dir=<train-log-dir>/checkpoint-<step> --mode=class_oe --with-classifier
+```
+
+```shell
+torchrun --nnodes=1 --nproc_per_node=auto experiments/evaluate.py --dataset=eval:mmlu --prompt-style=oe --model_name=llama2_13b_chat --query-peft-dir=<train-log-dir>/checkpoint-<step> --mode=class_oe --with-classifier
+```
+
+Use `--scale-temp=probe` to use temperature scaling of the uncertainty query logits.
 
 # LICENSE
 
