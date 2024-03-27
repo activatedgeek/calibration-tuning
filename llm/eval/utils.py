@@ -148,7 +148,6 @@ def evaluate_dataset(
     seed=137,
     batch_size=1,
     num_workers=8,
-    data_dir=None,
     eval_kshot=None,
     use_cache=True,
     prompt_style="choice",
@@ -163,7 +162,6 @@ def evaluate_dataset(
                 _extra_args["eval_kshot"] = eval_kshot
             data_splits = get_dataset(
                 dataset,
-                root=data_dir,
                 tokenizer=tokenizer,
                 seed=seed,
                 num_workers=num_workers,

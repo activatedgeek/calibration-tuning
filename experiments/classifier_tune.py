@@ -13,7 +13,6 @@ def main(
     seed=137,
     log_dir=None,
     dataset=None,
-    data_dir=None,
     prompt_style=None,
     max_token_length=None,
     num_workers=4,
@@ -51,7 +50,6 @@ def main(
     with accelerator.main_process_first():
         train_data, val_data, test_data = get_dataset(
             dataset,
-            root=data_dir,
             seed=seed,
             prompt_style=prompt_style,
             max_token_length=max_token_length,
@@ -107,7 +105,6 @@ def main(
         callbacks=[
             WandbConfigUpdateCallback(
                 dataset=dataset,
-                data_dir=data_dir,
                 prompt_style=prompt_style,
                 max_token_length=max_token_length,
                 model_name=model_name,

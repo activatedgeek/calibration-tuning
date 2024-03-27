@@ -1,25 +1,88 @@
 # LLM Calibration
 
-## Setup
+## HuggingFace Release
 
-Create a new conda environment:
+We release the following calibration-tuned models as [PEFT](https://huggingface.co/docs/peft) adapters via HuggingFace.
+
+<table>
+  <tr>
+    <td rowspan=6 valign="center">Open-Ended Generation</td>
+    <td valign="top">Llama 2 7B</td>
+    <td valign="top"><a href="https://huggingface.co/calibration-tuning/Llama-2-7b-hf-ct-oe" target="_blank"><img src="https://huggingface.co/datasets/huggingface/badges/resolve/main/model-on-hf-md.svg"/></a></td>
+  </tr>
+  <tr>
+    <td valign="top">Llama 2 7B Chat</td>
+    <td valign="top"><a href="https://huggingface.co/calibration-tuning/Llama-2-7b-chat-hf-ct-oe" target="_blank"><img src="https://huggingface.co/datasets/huggingface/badges/resolve/main/model-on-hf-md.svg"/></a></td>
+  </tr>
+  <tr>
+    <td valign="top">Llama 2 13B</td>
+    <td valign="top"><a href="https://huggingface.co/calibration-tuning/Llama-2-13b-hf-ct-oe" target="_blank"><img src="https://huggingface.co/datasets/huggingface/badges/resolve/main/model-on-hf-md.svg"/></a></td>
+  </tr>
+  <tr>
+    <td valign="top">Llama 2 13B Chat</td>
+    <td valign="top"><a href="https://huggingface.co/calibration-tuning/Llama-2-13b-chat-hf-ct-oe" target="_blank"><img src="https://huggingface.co/datasets/huggingface/badges/resolve/main/model-on-hf-md.svg"/></a></td>
+  </tr> 
+  <tr>
+    <td valign="top">Mistral 7B</td>
+    <td valign="top"><a href="https://huggingface.co/calibration-tuning/Mistral-7B-v0.1-ct-oe" target="_blank"><img src="https://huggingface.co/datasets/huggingface/badges/resolve/main/model-on-hf-md.svg"/></a></td>
+  </tr>  
+  <tr>
+    <td valign="top">Mistral 7B Instruct</td>
+    <td valign="top"><a href="https://huggingface.co/calibration-tuning/Mistral-7B-Instruct-v0.2-ct-oe" target="_blank"><img src="https://huggingface.co/datasets/huggingface/badges/resolve/main/model-on-hf-md.svg"/></a></td>
+  </tr>
+  <tr>
+    <td rowspan=6 valign="center">Multiple-Choice Question-Answering</td>
+    <td valign="top">Llama 2 7B</td>
+    <td valign="top"><a href="https://huggingface.co/calibration-tuning/Llama-2-7b-hf-ct-choice" target="_blank"><img src="https://huggingface.co/datasets/huggingface/badges/resolve/main/model-on-hf-md.svg"/></a></td>
+  </tr>
+  <tr>
+    <td valign="top">Llama 2 7B Chat</td>
+    <td valign="top"><a href="https://huggingface.co/calibration-tuning/Llama-2-7b-chat-hf-ct-choice" target="_blank"><img src="https://huggingface.co/datasets/huggingface/badges/resolve/main/model-on-hf-md.svg"/></a></td>
+  </tr>
+  <tr>
+    <td valign="top">Llama 2 13B</td>
+    <td valign="top"><a href="https://huggingface.co/calibration-tuning/Llama-2-13b-hf-ct-choice" target="_blank"><img src="https://huggingface.co/datasets/huggingface/badges/resolve/main/model-on-hf-md.svg"/></a></td>
+  </tr>
+  <tr>
+    <td valign="top">Llama 2 13B Chat</td>
+    <td valign="top"><a href="https://huggingface.co/calibration-tuning/Llama-2-13b-chat-hf-ct-choice" target="_blank"><img src="https://huggingface.co/datasets/huggingface/badges/resolve/main/model-on-hf-md.svg"/></a></td>
+  </tr> 
+  <tr>
+    <td valign="top">Mistral 7B</td>
+    <td valign="top"><a href="https://huggingface.co/calibration-tuning/Mistral-7B-v0.1-ct-choice" target="_blank"><img src="https://huggingface.co/datasets/huggingface/badges/resolve/main/model-on-hf-md.svg"/></a></td>
+  </tr>  
+  <tr>
+    <td valign="top">Mistral 7B Instruct</td>
+    <td valign="top"><a href="https://huggingface.co/calibration-tuning/Mistral-7B-Instruct-v0.2-ct-choice" target="_blank"><img src="https://huggingface.co/datasets/huggingface/badges/resolve/main/model-on-hf-md.svg"/></a></td>
+  </tr>  
+</table>
+
+See [experiments/play.py](./experiments/play.py) for an example script of how to load and use the models.
+
+## Development Setup
+
+Create a new conda environment,
+
 ```shell
 conda env create -f environment.yml -n <env>
 ```
 
-Activate environment:
+Activate environment,
+
 ```shell
 conda activate <env>
 ```
 
-And finally, run:
+And finally run,
+
 ```shell
 pip install -e .
 ```
 
 This will install the [`llm`](./llm) package.
 
-**NOTE**: If a different PyTorch CUDA compilation is required, use extra index repositories. e.g. For CUDA 11.8, run:
+**NOTE**: If a different PyTorch CUDA compilation is required, use extra index repositories. e.g. For CUDA 11.8 run,
+
 ```shell
 pip install --no-cache-dir -U torch torchvision --extra-index-url https://download.pytorch.org/whl/cu118
 ```
@@ -33,7 +96,7 @@ qualify as command line arguments.
 
 - `HF_HOME`: Path to directory where HuggingFace assets (models and datasets) are cached.
 - `OPENAI_API_KEY`: OpenAI API key. Used for labeling a generated dataset and evaluations only.
-- `CUDA_VISIBLE_DEVICES`: Use to limit the GPU visibility used by the scripts.
+- `CUDA_VISIBLE_DEVICES`: Limit the GPU visibility used by the scripts.
 
 ### Dataset Generation
 
@@ -63,15 +126,34 @@ python experiments/generate.py labels --dataset=offline:<outputs-log-dir>/output
 
 Use `--strategy=fuzzy_gpt-3.5-turbo-1106` for generating labels via GPT 3.5 Turbo.
 
-### Calibration-Tune
+### Training 
 
-An example command to run fine-tuning with Llama2-7b:
+Checkpoints will be saved in an auto-generated directory, or can be configured via `--log-dir`.
+
+#### CT-Query
+
+To use the labeled dataset for calibration-tuning (`CT-Query`),
+
 ```shell
-./autotorchrun experiments/calibration_tune.py \
-    --model_name=llama2_7b \
-    --dataset=sub_200k_c \
-    --max-steps=10000
+torchrun --nnodes=1 --nproc_per_node=auto experiments/calibration_tune.py --dataset=offline_noprompt:<labels-log-dir>/labels --model_name=llama2_13b_chat --batch-size=4 --kl-decay=1.0 --max-steps=5000
 ```
+
+Use `--scale-temp` for temperature scaling of the uncertainty query predictions.
+
+For other CLI arguments, see the `main` function of [experiments/calibration_tune.py](./experiments/calibration_tune.py).
+
+#### CT-Probe / CT-LoRA
+
+To use the labeled dataset for training a classifier head (`CT-Probe`),
+
+```shell
+torchrun --nnodes=1 --nproc_per_node=auto experiments/classifier_tune.py --dataset=offline_noprompt:<labels-log-dir>/labels --model_name=llama2_13b_chat --batch-size=4 --max-steps=5000
+```
+
+Use `--scale-temp` for temperature scaling of the classifier. 
+Use `--with-lora` to enable trainable LoRA parameters.
+
+For other CLI arguments, see the `main` function of [experiments/classifier_tune.py](./experiments/calibration_tune.py).
 
 ### Evaluate
 
