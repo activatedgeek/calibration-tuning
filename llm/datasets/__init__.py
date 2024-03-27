@@ -33,6 +33,7 @@ def __setup():
         "combined",
         "commonsense_qa",
         "cosmos_qa",
+        "gsm8k",
         "hellaswag",
         "math_qa",
         "mmlu",
