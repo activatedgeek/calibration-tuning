@@ -100,7 +100,7 @@ def evaluate_oe(
             }
 
             q_generation_outputs = model(**q_generation_inputs)
-            q_logits = q_generation_outputs.logits[..., -1, :]
+            q_logits = q_generation_outputs.logits[..., -1, q_token_vec]
 
             if hasattr(model, "query_temperature_model"):
                 q_logits = model.query_temperature_model(q_logits)
@@ -119,7 +119,7 @@ def evaluate_oe(
     metrics_dict = {}
     for cs in comparison_strategies:
         q_labels = torch.cat(cs_q_labels[cs], dim=0)
-        q_p = torch.cat(cs_q_logits[cs], dim=0)[:, q_token_vec].softmax(dim=-1)
+        q_p = torch.cat(cs_q_logits[cs], dim=0).softmax(dim=-1)
 
         acc = q_labels.float().mean(dim=0)
         q_pred = q_p.argmax(dim=-1)
@@ -577,11 +577,8 @@ def evaluate_uncertainty_sampling_oe(
             greedy_equivalency_labels = torch.cat(cs_q_labels[cs], dim=0)
             counting_p = np.concatenate(cs_us_counting[cs], axis=0)
             likelihood_p = np.concatenate(cs_us_likelihood[cs], axis=0)
-            # q_p = torch.cat(cs_q_logits[cs], dim=0)[:, q_token_vec].softmax(dim=-1)
 
             acc = greedy_equivalency_labels.float().mean(dim=0)
-            # q_pred = q_p.argmax(dim=-1)
-            # q_acc = (q_pred == q_labels).float().mean(dim=0)
 
         ece_counting, _ = calibration(
             np.ones_like(greedy_equivalency_labels.detach().cpu().numpy()),

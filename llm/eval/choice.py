@@ -72,7 +72,7 @@ def evaluate_choice(
 
         q_generation_outputs = model(**q_generation_inputs)
 
-        q_logits = q_generation_outputs.logits[..., -1, :]
+        q_logits = q_generation_outputs.logits[..., -1, q_token_vec]
 
         if hasattr(model, "query_temperature_model"):
             q_logits = model.query_temperature_model(q_logits)
@@ -88,7 +88,7 @@ def evaluate_choice(
     all_labels = torch.cat(all_labels, dim=0)
     all_p = torch.cat(all_logits, dim=0).softmax(dim=-1)
     all_q_labels = torch.cat(all_q_labels, dim=0)
-    all_q_p = torch.cat(all_q_logits, dim=0)[:, q_token_vec].softmax(dim=-1)
+    all_q_p = torch.cat(all_q_logits, dim=0).softmax(dim=-1)
 
     all_pred = all_p.argmax(dim=-1)
     acc = (all_pred == all_labels).float().mean(dim=0)
