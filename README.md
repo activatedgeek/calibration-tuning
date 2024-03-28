@@ -98,6 +98,10 @@ qualify as command line arguments.
 - `OPENAI_API_KEY`: OpenAI API key. Used for labeling a generated dataset and evaluations only.
 - `CUDA_VISIBLE_DEVICES`: Limit the GPU visibility used by the scripts.
 
+**Arguments**:
+
+- `--model-name`: Possible choices are `llama2_7b`, `llama2_7b_chat`, `llama2_13b`, `llama2_13b_chat`, `mistral_7b`, `mistral_7b_instruct`.
+
 ### Dataset Generation
 
 **NOTE**: The Story Cloze dataset (2018 version) requires manual download. See instructions [here](https://cs.rochester.edu/nlp/rocstories/). After getting the CSV file, place it at `${HF_HOME}/datasets/story_cloze/2018`.

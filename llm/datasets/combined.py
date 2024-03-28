@@ -23,7 +23,8 @@ def get_all_datasets_list(dataset_str, prompt_style=None):
                 list(
                     filter(
                         lambda x: not any(
-                            s in x for s in ["all", "sub", "mmlu", "bbmc", "offline"]
+                            s in x
+                            for s in ["all", "sub", "mmlu", "bbmc", "gsm8k", "offline"]
                         ),
                         list_datasets(),
                     )
@@ -44,7 +45,7 @@ def get_all_datasets_list(dataset_str, prompt_style=None):
         bbmc_tasks = [f"bbmc:{task}" for task in get_dataset_attrs("bbmc").get("tasks")]
 
         if sub_dataset == "all":
-            all_datasets_list += mmlu_tasks + bbmc_tasks
+            all_datasets_list += mmlu_tasks + bbmc_tasks + ["gsm8k"]
         elif sub_dataset == "mmlu":
             all_datasets_list += mmlu_tasks
         elif sub_dataset == "bbmc":
