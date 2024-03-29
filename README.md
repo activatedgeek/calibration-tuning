@@ -2,58 +2,70 @@
 
 ## HuggingFace Release
 
-We release the following calibration-tuned models as [PEFT](https://huggingface.co/docs/peft) adapters via HuggingFace.
+We release the following calibration-tuned models as [PEFT](https://huggingface.co/docs/peft) adapters via HuggingFace, along with the datasets used to train them.
 
 <table>
   <tr>
     <td rowspan=6 valign="center">Open-Ended Generation</td>
     <td valign="top">Llama 2 7B</td>
     <td valign="top"><a href="https://huggingface.co/calibration-tuning/Llama-2-7b-hf-ct-oe" target="_blank"><img src="https://huggingface.co/datasets/huggingface/badges/resolve/main/model-on-hf-md.svg"/></a></td>
+    <td valign="top"><a href="https://huggingface.co/datasets/calibration-tuning/Llama-2-7b-hf-20k-oe" target="_blank"><img src="https://huggingface.co/datasets/huggingface/badges/resolve/main/dataset-on-hf-md.svg"/></a></td>
   </tr>
   <tr>
     <td valign="top">Llama 2 7B Chat</td>
     <td valign="top"><a href="https://huggingface.co/calibration-tuning/Llama-2-7b-chat-hf-ct-oe" target="_blank"><img src="https://huggingface.co/datasets/huggingface/badges/resolve/main/model-on-hf-md.svg"/></a></td>
+    <td valign="top"><a href="https://huggingface.co/datasets/calibration-tuning/Llama-2-7b-chat-hf-20k-oe" target="_blank"><img src="https://huggingface.co/datasets/huggingface/badges/resolve/main/dataset-on-hf-md.svg"/></a></td>
   </tr>
   <tr>
     <td valign="top">Llama 2 13B</td>
     <td valign="top"><a href="https://huggingface.co/calibration-tuning/Llama-2-13b-hf-ct-oe" target="_blank"><img src="https://huggingface.co/datasets/huggingface/badges/resolve/main/model-on-hf-md.svg"/></a></td>
+    <td valign="top"><a href="https://huggingface.co/datasets/calibration-tuning/Llama-2-13b-hf-20k-oe" target="_blank"><img src="https://huggingface.co/datasets/huggingface/badges/resolve/main/dataset-on-hf-md.svg"/></a></td>
   </tr>
   <tr>
     <td valign="top">Llama 2 13B Chat</td>
     <td valign="top"><a href="https://huggingface.co/calibration-tuning/Llama-2-13b-chat-hf-ct-oe" target="_blank"><img src="https://huggingface.co/datasets/huggingface/badges/resolve/main/model-on-hf-md.svg"/></a></td>
+    <td valign="top"><a href="https://huggingface.co/datasets/calibration-tuning/Llama-2-13b-chat-hf-20k-oe" target="_blank"><img src="https://huggingface.co/datasets/huggingface/badges/resolve/main/dataset-on-hf-md.svg"/></a></td>
   </tr> 
   <tr>
     <td valign="top">Mistral 7B</td>
     <td valign="top"><a href="https://huggingface.co/calibration-tuning/Mistral-7B-v0.1-ct-oe" target="_blank"><img src="https://huggingface.co/datasets/huggingface/badges/resolve/main/model-on-hf-md.svg"/></a></td>
+    <td valign="top"><a href="https://huggingface.co/datasets/calibration-tuning/Mistral-7B-v0.1-20k-oe" target="_blank"><img src="https://huggingface.co/datasets/huggingface/badges/resolve/main/dataset-on-hf-md.svg"/></a></td>
   </tr>  
   <tr>
     <td valign="top">Mistral 7B Instruct</td>
     <td valign="top"><a href="https://huggingface.co/calibration-tuning/Mistral-7B-Instruct-v0.2-ct-oe" target="_blank"><img src="https://huggingface.co/datasets/huggingface/badges/resolve/main/model-on-hf-md.svg"/></a></td>
+    <td valign="top"><a href="https://huggingface.co/datasets/calibration-tuning/Mistral-7B-Instruct-v0.2-20k-oe" target="_blank"><img src="https://huggingface.co/datasets/huggingface/badges/resolve/main/dataset-on-hf-md.svg"/></a></td>
   </tr>
   <tr>
     <td rowspan=6 valign="center">Multiple-Choice Question-Answering</td>
     <td valign="top">Llama 2 7B</td>
     <td valign="top"><a href="https://huggingface.co/calibration-tuning/Llama-2-7b-hf-ct-choice" target="_blank"><img src="https://huggingface.co/datasets/huggingface/badges/resolve/main/model-on-hf-md.svg"/></a></td>
+    <td valign="top"><a href="https://huggingface.co/datasets/calibration-tuning/Llama-2-7b-hf-20k-choice" target="_blank"><img src="https://huggingface.co/datasets/huggingface/badges/resolve/main/dataset-on-hf-md.svg"/></a></td>
   </tr>
   <tr>
     <td valign="top">Llama 2 7B Chat</td>
     <td valign="top"><a href="https://huggingface.co/calibration-tuning/Llama-2-7b-chat-hf-ct-choice" target="_blank"><img src="https://huggingface.co/datasets/huggingface/badges/resolve/main/model-on-hf-md.svg"/></a></td>
+    <td valign="top"><a href="https://huggingface.co/datasets/calibration-tuning/Llama-2-7b-chat-hf-20k-choice" target="_blank"><img src="https://huggingface.co/datasets/huggingface/badges/resolve/main/dataset-on-hf-md.svg"/></a></td>
   </tr>
   <tr>
     <td valign="top">Llama 2 13B</td>
     <td valign="top"><a href="https://huggingface.co/calibration-tuning/Llama-2-13b-hf-ct-choice" target="_blank"><img src="https://huggingface.co/datasets/huggingface/badges/resolve/main/model-on-hf-md.svg"/></a></td>
+    <td valign="top"><a href="https://huggingface.co/datasets/calibration-tuning/Llama-2-13b-hf-20k-choice" target="_blank"><img src="https://huggingface.co/datasets/huggingface/badges/resolve/main/dataset-on-hf-md.svg"/></a></td>
   </tr>
   <tr>
     <td valign="top">Llama 2 13B Chat</td>
     <td valign="top"><a href="https://huggingface.co/calibration-tuning/Llama-2-13b-chat-hf-ct-choice" target="_blank"><img src="https://huggingface.co/datasets/huggingface/badges/resolve/main/model-on-hf-md.svg"/></a></td>
+    <td valign="top"><a href="https://huggingface.co/datasets/calibration-tuning/Llama-2-13b-chat-hf-20k-choice" target="_blank"><img src="https://huggingface.co/datasets/huggingface/badges/resolve/main/dataset-on-hf-md.svg"/></a></td>
   </tr> 
   <tr>
     <td valign="top">Mistral 7B</td>
     <td valign="top"><a href="https://huggingface.co/calibration-tuning/Mistral-7B-v0.1-ct-choice" target="_blank"><img src="https://huggingface.co/datasets/huggingface/badges/resolve/main/model-on-hf-md.svg"/></a></td>
+    <td valign="top"><a href="https://huggingface.co/datasets/calibration-tuning/Mistral-7B-v0.1-20k-choice" target="_blank"><img src="https://huggingface.co/datasets/huggingface/badges/resolve/main/dataset-on-hf-md.svg"/></a></td>
   </tr>  
   <tr>
     <td valign="top">Mistral 7B Instruct</td>
     <td valign="top"><a href="https://huggingface.co/calibration-tuning/Mistral-7B-Instruct-v0.2-ct-choice" target="_blank"><img src="https://huggingface.co/datasets/huggingface/badges/resolve/main/model-on-hf-md.svg"/></a></td>
+    <td valign="top"><a href="https://huggingface.co/datasets/calibration-tuning/Mistral-7B-Instruct-v0.2-20k-choice" target="_blank"><img src="https://huggingface.co/datasets/huggingface/badges/resolve/main/dataset-on-hf-md.svg"/></a></td>
   </tr>  
 </table>
 
