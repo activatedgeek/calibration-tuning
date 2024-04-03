@@ -109,7 +109,7 @@ def evaluate_oe(
             all_data["evals"][cs]["q_logits"].append(q_logits.detach())
 
             [
-                l.append(v)
+                l.append(v.cpu())
                 for l, v in zip(
                     (cs_q_labels[cs], cs_q_logits[cs]),
                     accelerator.gather_for_metrics((q_labels, q_logits)),
@@ -267,7 +267,7 @@ def evaluate_classifier_oe(
             all_data["evals"][cs]["q_logits"].append(q_logits.detach())
 
             [
-                l.append(v)
+                l.append(v.cpu())
                 for l, v in zip(
                     (cs_q_labels[cs], cs_q_logits[cs]),
                     accelerator.gather_for_metrics((q_labels, q_logits)),

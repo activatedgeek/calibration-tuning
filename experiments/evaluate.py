@@ -7,7 +7,7 @@ import torch
 
 from llm.datasets import get_all_datasets_list
 from llm.eval import evaluate_dataset
-from llm.logging import entrypoint_with_accelerator
+from llm.logging import entrypoint
 from llm.models import get_model
 from llm.models.peft import (
     get_lora_model,
@@ -19,7 +19,7 @@ from llm.models.peft.utils import get_last_checkpoint_path
 from llm.trainer import ClassificationTuner, CalibrationTuner, FineTuner
 
 
-@entrypoint_with_accelerator
+@entrypoint(with_accelerator=True)
 def main(
     accelerator=None,
     seed=137,

@@ -46,6 +46,16 @@ def get_all_datasets_list(dataset_str, prompt_style=None):
 
         if sub_dataset == "all":
             all_datasets_list += mmlu_tasks + bbmc_tasks + ["gsm8k"]
+        elif sub_dataset == "mmlurem":
+            all_datasets_list += [
+                "mmlu:high_school_european_history",
+                "mmlu:high_school_world_history",
+                "mmlu:miscellaneous",
+                "mmlu:moral_scenarios",
+                "mmlu:professional_accounting",
+                "mmlu:professional_law",
+                "mmlu:professional_medicine",
+            ]
         elif sub_dataset == "mmlu":
             all_datasets_list += mmlu_tasks
         elif sub_dataset == "bbmc":

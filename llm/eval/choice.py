@@ -78,7 +78,7 @@ def evaluate_choice(
             q_logits = model.query_temperature_model(q_logits)
 
         [
-            l.append(v)
+            l.append(v.cpu())
             for l, v in zip(
                 (all_labels, all_logits, all_q_labels, all_q_logits),
                 accelerator.gather_for_metrics((labels, logits, q_labels, q_logits)),
@@ -211,7 +211,7 @@ def evaluate_classifier_choice(
         q_logits = model.classifier_model(class_inputs)
 
         [
-            l.append(v)
+            l.append(v.cpu())
             for l, v in zip(
                 (all_labels, all_logits, all_q_labels, all_q_logits),
                 accelerator.gather_for_metrics((labels, logits, q_labels, q_logits)),

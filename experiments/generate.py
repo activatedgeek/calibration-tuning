@@ -5,12 +5,12 @@ from tqdm.auto import tqdm
 from transformers import GenerationConfig
 
 from llm.datasets import get_dataset, get_loader, prepare_uncertainty_query
-from llm.logging import entrypoint_with_accelerator
+from llm.logging import entrypoint
 from llm.models import get_model
 from llm.utils.generate_utils import generate_output
 
 
-@entrypoint_with_accelerator
+@entrypoint(with_accelerator=True)
 def generate_outputs_main(
     accelerator=None,
     seed=137,
@@ -118,7 +118,7 @@ def generate_query_label(
         yield from outputs
 
 
-@entrypoint_with_accelerator
+@entrypoint(with_accelerator=True)
 def generate_labels_main(
     accelerator=None,
     seed=137,
