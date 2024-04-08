@@ -55,13 +55,13 @@ def list_datasets():
 
 def get_data_dir(data_dir=None):
     if data_dir is None:
-        data_dir = str(
-            Path(os.environ.get("DATADIR", Path.home() / "datasets")).resolve()
-        )
+        data_dir = Path(os.environ.get("DATASETS_CACHE", Path.home() / "datasets"))
+    else:
+        data_dir = Path(data_dir)
 
-    Path(data_dir).mkdir(parents=True, exist_ok=True)
+    data_dir.mkdir(parents=True, exist_ok=True)
 
-    return data_dir
+    return str(data_dir.resolve())
 
 
 def get_dataset(dataset, root=None, seed=42, **kwargs):

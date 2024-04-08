@@ -143,29 +143,26 @@ def main(
 
     all_metrics = []
     for dataset in tqdm(all_datasets):
-        try:
-            metrics = evaluate_dataset(
-                accelerator,
-                model,
-                tokenizer,
-                dataset,
-                prompt_style=prompt_style,
-                eval_kshot=eval_kshot,
-                use_cache=use_dataset_cache,
-                train_data=False,
-                seed=seed,
-                batch_size=batch_size,
-                log_dir=log_dir,
-                evaluate_fn=mode,
-            )
+        metrics = evaluate_dataset(
+            accelerator,
+            model,
+            tokenizer,
+            dataset,
+            prompt_style=prompt_style,
+            eval_kshot=eval_kshot,
+            use_cache=use_dataset_cache,
+            train_data=False,
+            seed=seed,
+            batch_size=batch_size,
+            log_dir=log_dir,
+            evaluate_fn=mode,
+        )
 
-            all_metrics += metrics
-            logging.info(
-                {"metrics": wandb.Table(dataframe=pd.DataFrame(all_metrics))},
-                extra=dict(metrics=True),
-            )
-        except torch.cuda.OutOfMemoryError:
-            logging.exception(f"OOM fail for {dataset}.", exc_info=True)
+        all_metrics += metrics
+        logging.info(
+            {"metrics": wandb.Table(dataframe=pd.DataFrame(all_metrics))},
+            extra=dict(metrics=True),
+        )
 
         accelerator.free_memory()
 

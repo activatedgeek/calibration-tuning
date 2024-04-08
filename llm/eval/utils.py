@@ -13,7 +13,7 @@ from .oe import (
     evaluate_oe,
     evaluate_classifier_oe,
     evaluate_uncertainty_sampling_oe,
-    # evaluate_verbal_elicitation_oe
+    evaluate_verbal_elicitation_oe,
 )
 
 EVALUATE_MODE_FN_MAP = {
@@ -24,7 +24,7 @@ EVALUATE_MODE_FN_MAP = {
     "oe": evaluate_oe,
     "us_oe": evaluate_uncertainty_sampling_oe,
     "class_oe": evaluate_classifier_oe,
-    # "ve_oe": evaluate_verbal_elicitation_oe,
+    "ve_oe": evaluate_verbal_elicitation_oe,
 }
 
 VERBAL_ELICITATION_MAP = {
@@ -135,6 +135,16 @@ VERBAL_ELICITATION_MAP = {
 }
 
 
+## HOTFIX: avoid long metrics dump paths.
+def _dataset_log_name(dataset: str):
+    log_name = dataset
+    if log_name.startswith("mmlu_oe_offline"):
+        _, b = log_name.split(":")
+        b = b.split("/")[-1]
+        log_name = f"mmlu:{b}"
+    return log_name
+
+
 def evaluate_dataset(
     accelerator,
     model,
@@ -219,14 +229,14 @@ def evaluate_dataset(
             evaluate_fn = EVALUATE_MODE_FN_MAP["oe"]
         elif "us_oe" == evaluate_fn:
             comparison_strategies = [
-                "substring",
+                # "substring",
                 # "fuzzy_gpt-4-0613",
                 "fuzzy_gpt-3.5-turbo-1106",
             ]
             evaluate_fn = EVALUATE_MODE_FN_MAP["us_oe"]
         elif "cc_oe" == evaluate_fn:
             comparison_strategies = [
-                "substring",
+                # "substring",
                 # "fuzzy_gpt-4-0613",
                 "fuzzy_gpt-3.5-turbo-1106",
             ]
@@ -240,7 +250,7 @@ def evaluate_dataset(
             evaluate_fn = EVALUATE_MODE_FN_MAP["class_oe"]
         elif "oe" == evaluate_fn:
             comparison_strategies = [
-                "substring",
+                # "substring",
                 # "fuzzy_gpt-4-0613",
                 "fuzzy_gpt-3.5-turbo-1106",
             ]
@@ -267,9 +277,9 @@ def evaluate_dataset(
                     accelerator=accelerator,
                 ),
                 comparison_strategies=comparison_strategies,
-                log_dir=f"{log_dir}/metrics/{dataset}/{split_name}",
+                log_dir=f"{log_dir}/metrics/{_dataset_log_name(dataset)}/{split_name}",
             )
-        metrics["dataset"] = dataset
+        metrics["dataset"] = _dataset_log_name(dataset)
         metrics["split"] = split_name
         metrics["ts"] = train_timer.elapsed
 

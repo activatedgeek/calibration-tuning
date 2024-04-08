@@ -55,24 +55,27 @@ def evaluate_oe(
         inputs = [dict(zip(inputs.keys(), vals)) for vals in zip(*inputs.values())]
         targets = [inp.pop("target") for inp in inputs]
 
-        generation_inputs = {
-            k: v.to(accelerator.device) for k, v in collate_fn(inputs).items()
-        }
+        if "output" in inputs[0]:
+            generations = [inp.pop("output") for inp in inputs]
+        else:
+            generation_inputs = {
+                k: v.to(accelerator.device) for k, v in collate_fn(inputs).items()
+            }
 
-        if isinstance(model, PeftModel):
-            model.set_adapter("default")
+            if isinstance(model, PeftModel):
+                model.set_adapter("default")
 
-        generation_outputs = model.generate(
-            **generation_inputs, generation_config=generation_config
-        )
+            generation_outputs = model.generate(
+                **generation_inputs, generation_config=generation_config
+            )
 
-        generations = tokenizer.batch_decode(
-            generation_outputs[:, generation_inputs.get("input_ids").size(-1) :],
-            skip_special_tokens=True,
-            clean_up_tokenization_spaces=False,
-        )
+            generations = tokenizer.batch_decode(
+                generation_outputs[:, generation_inputs.get("input_ids").size(-1) :],
+                skip_special_tokens=True,
+                clean_up_tokenization_spaces=False,
+            )
 
-        generations = sanitize_generations(generations)
+            generations = sanitize_generations(generations)
 
         all_data["rows"].extend(
             [
@@ -85,6 +88,11 @@ def evaluate_oe(
             model.set_adapter("query")
 
         for cs in comparison_strategies:
+            q_labels = (
+                [inp.pop("query_label").item() for inp in inputs]
+                if "query_label" in inputs[0]
+                else None
+            )
             q_inputs, q_labels, q_token_vec = prepare_uncertainty_query(
                 tokenizer,
                 inputs,
@@ -92,6 +100,7 @@ def evaluate_oe(
                 generations,
                 strategy=cs,
                 format=query_format,
+                query_labels=q_labels,
             )
             q_labels = q_labels.to(accelerator.device)
 
@@ -205,24 +214,27 @@ def evaluate_classifier_oe(
         inputs = [dict(zip(inputs.keys(), vals)) for vals in zip(*inputs.values())]
         targets = [inp.pop("target") for inp in inputs]
 
-        generation_inputs = {
-            k: v.to(accelerator.device) for k, v in collate_fn(inputs).items()
-        }
+        if "output" in inputs[0]:
+            generations = [inp.pop("output") for inp in inputs]
+        else:
+            generation_inputs = {
+                k: v.to(accelerator.device) for k, v in collate_fn(inputs).items()
+            }
 
-        if isinstance(model, PeftModel):
-            model.set_adapter("default")
+            if isinstance(model, PeftModel):
+                model.set_adapter("default")
 
-        generation_outputs = model.generate(
-            **generation_inputs, generation_config=generation_config
-        )
+            generation_outputs = model.generate(
+                **generation_inputs, generation_config=generation_config
+            )
 
-        generations = tokenizer.batch_decode(
-            generation_outputs[:, generation_inputs.get("input_ids").size(-1) :],
-            skip_special_tokens=True,
-            clean_up_tokenization_spaces=False,
-        )
+            generations = tokenizer.batch_decode(
+                generation_outputs[:, generation_inputs.get("input_ids").size(-1) :],
+                skip_special_tokens=True,
+                clean_up_tokenization_spaces=False,
+            )
 
-        generations = sanitize_generations(generations)
+            generations = sanitize_generations(generations)
 
         all_data["rows"].extend(
             [
@@ -235,6 +247,11 @@ def evaluate_classifier_oe(
             model.set_adapter("query")
 
         for cs in comparison_strategies:
+            q_labels = (
+                [inp.pop("query_label").item() for inp in inputs]
+                if "query_label" in inputs[0]
+                else None
+            )
             _, q_labels, _ = prepare_uncertainty_query(
                 tokenizer,
                 inputs,
@@ -242,6 +259,7 @@ def evaluate_classifier_oe(
                 generations,
                 strategy=cs,
                 format=query_format,
+                query_labels=q_labels,
             )
             q_labels = q_labels.to(accelerator.device)
 

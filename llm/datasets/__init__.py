@@ -28,7 +28,6 @@ def __setup():
 
     for n in [
         "arc",
-        "bb",
         "boolq",
         "combined",
         "commonsense_qa",
@@ -37,6 +36,7 @@ def __setup():
         "hellaswag",
         "math_qa",
         "mmlu",
+        "mmlu_oe_offline",
         "nli",
         "obqa",
         "offline",

@@ -62,7 +62,9 @@ def setup_log_dir(log_dir=None):
     if accelerator.is_main_process:
         if log_dir is None:
             root_dir = (
-                Path(os.environ.get("LOGDIR", Path.home() / "logs")) / Path.cwd().name
+                Path(os.environ.get("PROJECT_HOME", Path.home()))
+                / Path.cwd().name
+                / "logs"
             )
             dir_name = datetime.today().strftime("%Y-%m-%dT%H-%M-%S")
             if "SLURM_JOB_ID" in os.environ:
