@@ -76,7 +76,7 @@ def main(
 
         if with_classifier:
             classifier_model = get_classifier_head(
-                model,
+                input_size=model.config.hidden_size,
                 checkpoint_dir=None if scale_temp == "probe" else query_peft_dir,
                 is_trainable=False,
                 weights_name=ClassificationTuner.WEIGHTS_NAME,
@@ -106,7 +106,8 @@ def main(
                             f"Loaded temperature-scaled classifier model checkpoint from '{checkpoint_dir}'."
                         )
 
-            model.classifier_model = classifier_model.to(accelerator.device)
+            model.classifier_model = classifier_model.to(model.dtype)
+            model.classifier_model = model.classifier_model.to(accelerator.device)
             model.classifier_model.target_layer = -1
 
     if scale_temp == "logits":

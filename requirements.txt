@@ -4,6 +4,7 @@ datasets
 openai==0.28.0
 peft
 sentencepiece
+sentence-transformers
 torch
 torchvision
 transformers

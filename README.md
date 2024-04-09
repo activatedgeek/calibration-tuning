@@ -73,16 +73,11 @@ See [experiments/play.py](./experiments/play.py) for an example script of how to
 
 ## Development Setup
 
-Create a new conda environment,
+Create a new environment and activate, e.g. with `conda`,
 
 ```shell
-conda env create -f environment.yml -n <env>
-```
-
-Activate environment,
-
-```shell
-conda activate <env>
+conda env create -y -n calibration-tuning python=3.11 pip -c conda-forge
+conda activate calibration-tuning
 ```
 
 And finally run,

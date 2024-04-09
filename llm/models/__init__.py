@@ -16,6 +16,7 @@ def __setup():
         "llama2",
         "mlp",
         "mistral",
+        "mpnet",
     ]:
         import_module(f".{n}", __name__)
 
