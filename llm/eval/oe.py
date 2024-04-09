@@ -10,8 +10,7 @@ from transformers import GenerationConfig
 from sklearn.metrics import roc_auc_score
 
 from ..random import FixedSeed
-from ..datasets import LabeledStringDataCollator, prepare_uncertainty_query
-from ..datasets.llm_utils import DataCollatorForSupervisedDataset
+from ..datasets import LMText, LabeledStringDataCollator, prepare_uncertainty_query
 from ..datasets.llm_utils_oe import (
     grade_oe_preds,
     equivalency_grading,
@@ -137,7 +136,7 @@ def evaluate_oe(
         q_ece, _ = calibration(
             q_labels,
             q_pred,
-            q_p[torch.arange(q_p.size(0)), q_pred],
+            q_p[torch.arange(q_p.size(0)), q_pred].float(),
         )
 
         try:
@@ -243,9 +242,6 @@ def evaluate_classifier_oe(
             ]
         )
 
-        if isinstance(model, PeftModel) and "query" in model.peft_config:
-            model.set_adapter("query")
-
         for cs in comparison_strategies:
             q_labels = (
                 [inp.pop("query_label").item() for inp in inputs]
@@ -263,23 +259,35 @@ def evaluate_classifier_oe(
             )
             q_labels = q_labels.to(accelerator.device)
 
-            class_inputs = {
-                k: v.to(accelerator.device)
-                for k, v in collate_fn(
-                    [{**inp, "target": t} for inp, t in zip(inputs, generations)]
-                ).items()
-            }
+            if hasattr(model, "embedding_model"):
+                class_inputs = [
+                    str(LMText.from_({**inp, "target": t}))
+                    for inp, t in zip(inputs, generations)
+                ]
+                class_inputs = model.embedding_model.encode(
+                    class_inputs, convert_to_tensor=True, show_progress_bar=False
+                )
+                class_inputs = class_inputs.to(model.dtype)
+            else:
+                class_inputs = {
+                    k: v.to(accelerator.device)
+                    for k, v in collate_fn(
+                        [{**inp, "target": t} for inp, t in zip(inputs, generations)]
+                    ).items()
+                }
 
-            if isinstance(model, PeftModel):
-                model.set_adapter("default")
+                if isinstance(model, PeftModel) and "query" in model.peft_config:
+                    model.set_adapter("query")
 
-            with torch.inference_mode():
-                class_outputs = model(**class_inputs, output_hidden_states=True)
+                with torch.inference_mode():
+                    class_outputs = model(**class_inputs, output_hidden_states=True)
 
-            target_layer = model.classifier_model.target_layer
-            class_inputs = class_outputs.hidden_states[target_layer][..., -1, :].clone()
+                target_layer = model.classifier_model.target_layer
+                class_inputs = class_outputs.hidden_states[target_layer][
+                    ..., -1, :
+                ].clone()
 
-            q_logits = model.classifier_model(class_inputs.clone()).to(torch.float32)
+            q_logits = model.classifier_model(class_inputs)
 
             all_data["evals"][cs]["q_labels"].append(q_labels.detach())
             all_data["evals"][cs]["q_logits"].append(q_logits.detach())
@@ -304,7 +312,7 @@ def evaluate_classifier_oe(
         q_ece, _ = calibration(
             q_labels,
             q_pred,
-            q_p[torch.arange(q_p.size(0)), q_pred],
+            q_p[torch.arange(q_p.size(0)), q_pred].float(),
         )
 
         try:

@@ -120,10 +120,8 @@ class EmbeddingTuner(Trainer):
             ]
 
             class_inputs = self.embedding_model.encode(
-                sentences, show_progress_bar=False
+                sentences, convert_to_tensor=True, show_progress_bar=False
             )
-
-            class_inputs = torch.tensor(class_inputs)
 
         return class_inputs.to(self.accelerator.device)
 

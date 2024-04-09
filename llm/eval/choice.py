@@ -6,6 +6,7 @@ from peft import PeftModel
 from sklearn.metrics import roc_auc_score
 
 from ..datasets import (
+    LMText,
     LabeledStringDataCollator,
     get_token_vec,
     prepare_uncertainty_query,
@@ -192,21 +193,31 @@ def evaluate_classifier_choice(
         )
         q_labels = q_labels.to(accelerator.device)
 
-        class_inputs = {
-            k: v.to(accelerator.device)
-            for k, v in collate_fn(
-                [{**inp, "target": t} for inp, t in zip(inputs, predictions)]
-            ).items()
-        }
+        if hasattr(model, "embedding_model"):
+            class_inputs = [
+                str(LMText.from_({**inp, "target": t}))
+                for inp, t in zip(inputs, predictions)
+            ]
+            class_inputs = model.embedding_model.encode(
+                class_inputs, convert_to_tensor=True, show_progress_bar=False
+            )
+            class_inputs = class_inputs.to(model.dtype)
+        else:
+            class_inputs = {
+                k: v.to(accelerator.device)
+                for k, v in collate_fn(
+                    [{**inp, "target": t} for inp, t in zip(inputs, predictions)]
+                ).items()
+            }
 
-        if isinstance(model, PeftModel) and "query" in model.peft_config:
-            model.set_adapter("query")
+            if isinstance(model, PeftModel) and "query" in model.peft_config:
+                model.set_adapter("query")
 
-        with torch.inference_mode():
-            class_outputs = model(**class_inputs, output_hidden_states=True)
+            with torch.inference_mode():
+                class_outputs = model(**class_inputs, output_hidden_states=True)
 
-        target_layer = model.classifier_model.target_layer
-        class_inputs = class_outputs.hidden_states[target_layer][..., -1, :].clone()
+            target_layer = model.classifier_model.target_layer
+            class_inputs = class_outputs.hidden_states[target_layer][..., -1, :].clone()
 
         q_logits = model.classifier_model(class_inputs)
 

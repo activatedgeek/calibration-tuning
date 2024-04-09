@@ -28,6 +28,7 @@ def main(
     prompt_style=None,
     eval_kshot=None,
     use_dataset_cache=True,
+    embedding_model_name=None,
     model_name=None,
     peft_dir=None,
     query_peft_dir=None,
@@ -75,8 +76,15 @@ def main(
         )
 
         if with_classifier:
+            if embedding_model_name is not None:
+                model.embedding_model = get_model(embedding_model_name)
+
             classifier_model = get_classifier_head(
-                input_size=model.config.hidden_size,
+                input_size=(
+                    model.embedding_model.get_sentence_embedding_dimension()
+                    if embedding_model_name
+                    else model.config.hidden_size
+                ),
                 checkpoint_dir=None if scale_temp == "probe" else query_peft_dir,
                 is_trainable=False,
                 weights_name=ClassificationTuner.WEIGHTS_NAME,
