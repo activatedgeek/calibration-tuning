@@ -18,7 +18,7 @@ class use_adapter:
 
 def get_lora_model(
     model,
-    peft_dir=None,
+    peft_id_or_dir=None,
     lora_rank=8,
     lora_alpha=32,
     lora_dropout=0.1,
@@ -26,10 +26,10 @@ def get_lora_model(
     adapter_name="default",
     **config_args,
 ):
-    if peft_dir is not None:
+    if peft_id_or_dir is not None:
         return get_peft_model_from_checkpoint(
             model,
-            peft_dir,
+            peft_id_or_dir,
             is_trainable=is_trainable,
             adapter_name=adapter_name,
             **config_args,

@@ -1,0 +1,12 @@
+black
+fire
+ipywidgets
+jupyterlab
+numpy
+palettable
+pandas
+scikit-learn
+scipy
+seaborn
+tqdm
+wandb

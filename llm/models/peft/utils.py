@@ -1,3 +1,4 @@
+import os
 import logging
 from peft import PeftModel
 from transformers.trainer import (
@@ -16,13 +17,18 @@ def get_last_checkpoint_path(path):
 
 
 def get_peft_model_from_checkpoint(
-    model, peft_dir, is_trainable=True, adapter_name="default", **config_args
+    model,
+    peft_id_or_dir,
+    is_trainable=True,
+    adapter_name="default",
+    **config_args,
 ):
-    peft_dir = get_last_checkpoint_path(peft_dir)
+    if os.path.isdir(peft_id_or_dir):
+        peft_id_or_dir = get_last_checkpoint_path(peft_id_or_dir)
 
     if isinstance(model, PeftModel):
         model.load_adapter(
-            peft_dir,
+            peft_id_or_dir,
             is_trainable=is_trainable,
             adapter_name=adapter_name,
             **config_args,
@@ -30,12 +36,14 @@ def get_peft_model_from_checkpoint(
     else:
         model = PeftModel.from_pretrained(
             model,
-            peft_dir,
+            peft_id_or_dir,
             is_trainable=is_trainable,
             adapter_name=adapter_name,
             **config_args,
         )
 
-    logging.info(f"Loaded PEFT adapter '{adapter_name}' checkpoint from '{peft_dir}'")
+    logging.info(
+        f"Loaded PEFT adapter '{adapter_name}' checkpoint from '{peft_id_or_dir}'"
+    )
 
     return model

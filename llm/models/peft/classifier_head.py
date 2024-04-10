@@ -9,14 +9,14 @@ from .utils import get_last_checkpoint_path
 
 
 def get_classifier_head(
-    model,
+    input_size=None,
     classifier_model_name="mlp_binary",
     checkpoint_dir=None,
     is_trainable=False,
     weights_name="classifier_model.bin",
 ):
     classifier_model = get_model(
-        classifier_model_name, input_size=model.config.hidden_size, output_size=2
+        classifier_model_name, input_size=input_size, output_size=2
     )
 
     if checkpoint_dir is not None:
@@ -38,4 +38,4 @@ def get_classifier_head(
     else:
         classifier_model = classifier_model.eval().requires_grad_(False)
 
-    return classifier_model.to(model.dtype)
+    return classifier_model

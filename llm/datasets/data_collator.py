@@ -4,11 +4,6 @@ import transformers
 from .llm_utils import LMText, IGNORE_LABEL
 
 
-class DictCollator:
-    def __call__(self, instances):
-        return {k: [ins[k] for ins in instances] for k in instances[0].keys()}
-
-
 @dataclass
 class LabeledStringDataCollator:
     tokenizer: transformers.PreTrainedTokenizer

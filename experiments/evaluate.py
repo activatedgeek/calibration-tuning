@@ -5,9 +5,9 @@ import wandb
 import pandas as pd
 import torch
 
-from llm.accelerate import Accelerator
-from llm.logging import entrypoint
 from llm.datasets import get_all_datasets_list
+from llm.eval import evaluate_dataset
+from llm.logging import entrypoint
 from llm.models import get_model
 from llm.models.peft import (
     get_lora_model,
@@ -16,68 +16,53 @@ from llm.models.peft import (
     get_temperature_scale_model,
 )
 from llm.models.peft.utils import get_last_checkpoint_path
-from llm.eval import evaluate_dataset
 from llm.trainer import ClassificationTuner, CalibrationTuner, FineTuner
 
 
+@entrypoint(with_accelerator=True)
 def main(
+    accelerator=None,
     seed=137,
     log_dir=None,
-    eval_kshot=None,
     dataset=None,
-    data_dir=None,
-    batch_size=1,
+    prompt_style=None,
+    eval_kshot=None,
+    use_dataset_cache=True,
+    embedding_model_name=None,
     model_name=None,
-    model_dir=None,
     peft_dir=None,
     query_peft_dir=None,
-    with_classifier=False,
     scale_temp=None,
-    use_dataset_cache=True,
-    prompt_style="choice",
+    with_classifier=False,
     mode=None,
-    int8=False,
+    batch_size=1,
 ):
-    accelerator = Accelerator()
-
-    config = {
-        "seed": seed,
-        "model_name": model_name,
-        "model_dir": model_dir,
-        "peft_dir": peft_dir,
-        "query_peft_dir": query_peft_dir,
-        "eval_kshot": eval_kshot,
-        "prompt_style": prompt_style,
-        "mode": mode,
-        "log_dir": log_dir,
-        "int8": int8,
-        "dataset": dataset,
-        "data_dir": data_dir,
-        "batch_size": batch_size,
-        "scale_temp": scale_temp,
-        "with_classifier": with_classifier,
-    }
+    config = dict(
+        seed=seed,
+        log_dir=log_dir,
+        dataset=dataset,
+        prompt_style=prompt_style,
+        eval_kshot=eval_kshot,
+        use_dataset_cache=use_dataset_cache,
+        model_name=model_name,
+        peft_dir=peft_dir,
+        query_peft_dir=query_peft_dir,
+        scale_temp=scale_temp,
+        with_classifier=with_classifier,
+        mode=mode,
+        batch_size=batch_size,
+    )
     if accelerator.is_main_process:
         wandb.config.update(config)
 
-    tokenizer = get_model(
-        f"{model_name}_tokenizer",
-        model_dir=model_dir,
-    )
-
-    model = get_model(
+    tokenizer, model = get_model(
         model_name,
         device_map={"": accelerator.local_process_index},
-        torch_dtype=torch.bfloat16 if torch.cuda.is_bf16_supported() else torch.float16,
-        model_dir=model_dir,
-        use_cache=False,
-        tokenizer=tokenizer,
-        load_in_8bit=int8,
     )
 
     model = get_lora_model(
         model,
-        peft_dir=peft_dir,
+        peft_id_or_dir=peft_dir,
         is_trainable=False,
         adapter_name="default",
     )
@@ -85,20 +70,27 @@ def main(
     if query_peft_dir:
         model = get_lora_model(
             model,
-            peft_dir=query_peft_dir,
+            peft_id_or_dir=query_peft_dir,
             is_trainable=False,
             adapter_name="query",
         )
 
         if with_classifier:
+            if embedding_model_name is not None:
+                model.embedding_model = get_model(embedding_model_name)
+
             classifier_model = get_classifier_head(
-                model,
-                checkpoint_dir=None if scale_temp == "lora-probe" else query_peft_dir,
+                input_size=(
+                    model.embedding_model.get_sentence_embedding_dimension()
+                    if embedding_model_name
+                    else model.config.hidden_size
+                ),
+                checkpoint_dir=None if scale_temp == "probe" else query_peft_dir,
                 is_trainable=False,
                 weights_name=ClassificationTuner.WEIGHTS_NAME,
             )
 
-            if scale_temp == "lora-probe":
+            if scale_temp == "probe":
                 temperature_model = get_temperature_head()
 
                 classifier_model = torch.nn.Sequential(
@@ -122,7 +114,8 @@ def main(
                             f"Loaded temperature-scaled classifier model checkpoint from '{checkpoint_dir}'."
                         )
 
-            model.classifier_model = classifier_model.to(accelerator.device)
+            model.classifier_model = classifier_model.to(model.dtype)
+            model.classifier_model = model.classifier_model.to(accelerator.device)
             model.classifier_model.target_layer = -1
 
     if scale_temp == "logits":
@@ -142,7 +135,7 @@ def main(
         ).to(accelerator.local_process_index)
 
         model.query_temperature_model = temperature_model
-    elif scale_temp == "lora-probe":
+    elif scale_temp == "probe":
         ## @NOTE: Already handled earlier.
         pass
     else:
@@ -159,30 +152,26 @@ def main(
 
     all_metrics = []
     for dataset in tqdm(all_datasets):
-        try:
-            metrics = evaluate_dataset(
-                accelerator,
-                model,
-                tokenizer,
-                dataset,
-                train_data=False,
-                seed=seed,
-                batch_size=batch_size,
-                data_dir=data_dir,
-                eval_kshot=eval_kshot,
-                use_cache=use_dataset_cache,
-                prompt_style=prompt_style,
-                log_dir=log_dir,
-                evaluate_fn=mode,
-            )
+        metrics = evaluate_dataset(
+            accelerator,
+            model,
+            tokenizer,
+            dataset,
+            prompt_style=prompt_style,
+            eval_kshot=eval_kshot,
+            use_cache=use_dataset_cache,
+            train_data=False,
+            seed=seed,
+            batch_size=batch_size,
+            log_dir=log_dir,
+            evaluate_fn=mode,
+        )
 
-            all_metrics += metrics
-            logging.info(
-                {"metrics": wandb.Table(dataframe=pd.DataFrame(all_metrics))},
-                extra=dict(metrics=True),
-            )
-        except torch.cuda.OutOfMemoryError:
-            logging.exception(f"OOM fail for {dataset}.", exc_info=True)
+        all_metrics += metrics
+        logging.info(
+            {"metrics": wandb.Table(dataframe=pd.DataFrame(all_metrics))},
+            extra=dict(metrics=True),
+        )
 
         accelerator.free_memory()
 
@@ -194,4 +183,4 @@ def main(
 if __name__ == "__main__":
     import fire
 
-    fire.Fire(entrypoint(main))
+    fire.Fire(main)

@@ -1,6 +1,6 @@
-import os
 import string
 import torch
+from datasets import load_dataset
 
 from .registry import register_dataset
 from .llm_utils import LMText
@@ -33,7 +33,7 @@ __TASKS = [
     "high_school_biology",
     "high_school_chemistry",
     "high_school_computer_science",
-    ## "high_school_european_history",
+    "high_school_european_history",
     "high_school_geography",
     "high_school_government_and_politics",
     "high_school_macroeconomics",
@@ -43,7 +43,7 @@ __TASKS = [
     "high_school_psychology",
     "high_school_statistics",
     "high_school_us_history",
-    ## "high_school_world_history",
+    "high_school_world_history",
     "human_aging",
     "human_sexuality",
     "international_law",
@@ -53,15 +53,15 @@ __TASKS = [
     "management",
     "marketing",
     "medical_genetics",
-    ## "miscellaneous",
+    "miscellaneous",
     "moral_disputes",
-    ## "moral_scenarios",
+    "moral_scenarios",
     "nutrition",
     "philosophy",
     "prehistory",
-    ## "professional_accounting",
-    ## "professional_law",
-    ## "professional_medicine",
+    "professional_accounting",
+    "professional_law",
+    "professional_medicine",
     "professional_psychology",
     "public_relations",
     "security_studies",
@@ -162,10 +162,8 @@ def __format_sample_with_prompt(
 
 
 def get_mmlu(
-    root=None,
     instance=None,
     prompt_style=None,
-    train_kshot=0,
     eval_kshot=5,
     tokenizer=None,
     num_workers=8,
@@ -173,14 +171,7 @@ def get_mmlu(
     use_cache=True,
     **_,
 ):
-    from datasets import load_dataset
-
-    dataset = load_dataset(
-        "cais/mmlu",
-        instance,
-        cache_dir=os.environ.get("HF_DATASETS_CACHE", root),
-        trust_remote_code=True,
-    )
+    dataset = load_dataset("cais/mmlu", instance, trust_remote_code=True)
     if not use_cache:
         dataset.cleanup_cache_files()
 

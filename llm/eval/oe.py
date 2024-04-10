@@ -10,15 +10,13 @@ from transformers import GenerationConfig
 from sklearn.metrics import roc_auc_score
 
 from ..random import FixedSeed
-from ..datasets import LabeledStringDataCollator, prepare_uncertainty_query
-from ..datasets.llm_utils import DataCollatorForSupervisedDataset
+from ..datasets import LMText, LabeledStringDataCollator, prepare_uncertainty_query
 from ..datasets.llm_utils_oe import (
     grade_oe_preds,
     equivalency_grading,
     sanitize_generations,
 )
 from .third_party.calibration import calibration
-
 from ..utils.generate_utils import generate_output
 
 
@@ -56,24 +54,27 @@ def evaluate_oe(
         inputs = [dict(zip(inputs.keys(), vals)) for vals in zip(*inputs.values())]
         targets = [inp.pop("target") for inp in inputs]
 
-        generation_inputs = {
-            k: v.to(accelerator.device) for k, v in collate_fn(inputs).items()
-        }
+        if "output" in inputs[0]:
+            generations = [inp.pop("output") for inp in inputs]
+        else:
+            generation_inputs = {
+                k: v.to(accelerator.device) for k, v in collate_fn(inputs).items()
+            }
 
-        if isinstance(model, PeftModel):
-            model.set_adapter("default")
+            if isinstance(model, PeftModel):
+                model.set_adapter("default")
 
-        generation_outputs = model.generate(
-            **generation_inputs, generation_config=generation_config
-        )
+            generation_outputs = model.generate(
+                **generation_inputs, generation_config=generation_config
+            )
 
-        generations = tokenizer.batch_decode(
-            generation_outputs[:, generation_inputs.get("input_ids").size(-1) :],
-            skip_special_tokens=True,
-            clean_up_tokenization_spaces=False,
-        )
+            generations = tokenizer.batch_decode(
+                generation_outputs[:, generation_inputs.get("input_ids").size(-1) :],
+                skip_special_tokens=True,
+                clean_up_tokenization_spaces=False,
+            )
 
-        generations = sanitize_generations(generations)
+            generations = sanitize_generations(generations)
 
         all_data["rows"].extend(
             [
@@ -86,6 +87,11 @@ def evaluate_oe(
             model.set_adapter("query")
 
         for cs in comparison_strategies:
+            q_labels = (
+                [inp.pop("query_label").item() for inp in inputs]
+                if "query_label" in inputs[0]
+                else None
+            )
             q_inputs, q_labels, q_token_vec = prepare_uncertainty_query(
                 tokenizer,
                 inputs,
@@ -93,6 +99,7 @@ def evaluate_oe(
                 generations,
                 strategy=cs,
                 format=query_format,
+                query_labels=q_labels,
             )
             q_labels = q_labels.to(accelerator.device)
 
@@ -101,7 +108,7 @@ def evaluate_oe(
             }
 
             q_generation_outputs = model(**q_generation_inputs)
-            q_logits = q_generation_outputs.logits[..., -1, :]
+            q_logits = q_generation_outputs.logits[..., -1, q_token_vec]
 
             if hasattr(model, "query_temperature_model"):
                 q_logits = model.query_temperature_model(q_logits)
@@ -110,7 +117,7 @@ def evaluate_oe(
             all_data["evals"][cs]["q_logits"].append(q_logits.detach())
 
             [
-                l.append(v)
+                l.append(v.cpu())
                 for l, v in zip(
                     (cs_q_labels[cs], cs_q_logits[cs]),
                     accelerator.gather_for_metrics((q_labels, q_logits)),
@@ -120,7 +127,7 @@ def evaluate_oe(
     metrics_dict = {}
     for cs in comparison_strategies:
         q_labels = torch.cat(cs_q_labels[cs], dim=0)
-        q_p = torch.cat(cs_q_logits[cs], dim=0)[:, q_token_vec].softmax(dim=-1)
+        q_p = torch.cat(cs_q_logits[cs], dim=0).softmax(dim=-1)
 
         acc = q_labels.float().mean(dim=0)
         q_pred = q_p.argmax(dim=-1)
@@ -129,7 +136,7 @@ def evaluate_oe(
         q_ece, _ = calibration(
             q_labels,
             q_pred,
-            q_p[torch.arange(q_p.size(0)), q_pred],
+            q_p[torch.arange(q_p.size(0)), q_pred].float(),
         )
 
         try:
@@ -206,24 +213,27 @@ def evaluate_classifier_oe(
         inputs = [dict(zip(inputs.keys(), vals)) for vals in zip(*inputs.values())]
         targets = [inp.pop("target") for inp in inputs]
 
-        generation_inputs = {
-            k: v.to(accelerator.device) for k, v in collate_fn(inputs).items()
-        }
+        if "output" in inputs[0]:
+            generations = [inp.pop("output") for inp in inputs]
+        else:
+            generation_inputs = {
+                k: v.to(accelerator.device) for k, v in collate_fn(inputs).items()
+            }
 
-        if isinstance(model, PeftModel):
-            model.set_adapter("default")
+            if isinstance(model, PeftModel):
+                model.set_adapter("default")
 
-        generation_outputs = model.generate(
-            **generation_inputs, generation_config=generation_config
-        )
+            generation_outputs = model.generate(
+                **generation_inputs, generation_config=generation_config
+            )
 
-        generations = tokenizer.batch_decode(
-            generation_outputs[:, generation_inputs.get("input_ids").size(-1) :],
-            skip_special_tokens=True,
-            clean_up_tokenization_spaces=False,
-        )
+            generations = tokenizer.batch_decode(
+                generation_outputs[:, generation_inputs.get("input_ids").size(-1) :],
+                skip_special_tokens=True,
+                clean_up_tokenization_spaces=False,
+            )
 
-        generations = sanitize_generations(generations)
+            generations = sanitize_generations(generations)
 
         all_data["rows"].extend(
             [
@@ -232,10 +242,12 @@ def evaluate_classifier_oe(
             ]
         )
 
-        if isinstance(model, PeftModel) and "query" in model.peft_config:
-            model.set_adapter("query")
-
         for cs in comparison_strategies:
+            q_labels = (
+                [inp.pop("query_label").item() for inp in inputs]
+                if "query_label" in inputs[0]
+                else None
+            )
             _, q_labels, _ = prepare_uncertainty_query(
                 tokenizer,
                 inputs,
@@ -243,32 +255,45 @@ def evaluate_classifier_oe(
                 generations,
                 strategy=cs,
                 format=query_format,
+                query_labels=q_labels,
             )
             q_labels = q_labels.to(accelerator.device)
 
-            class_inputs = {
-                k: v.to(accelerator.device)
-                for k, v in collate_fn(
-                    [{**inp, "target": t} for inp, t in zip(inputs, generations)]
-                ).items()
-            }
+            if hasattr(model, "embedding_model"):
+                class_inputs = [
+                    str(LMText.from_({**inp, "target": t}))
+                    for inp, t in zip(inputs, generations)
+                ]
+                class_inputs = model.embedding_model.encode(
+                    class_inputs, convert_to_tensor=True, show_progress_bar=False
+                )
+                class_inputs = class_inputs.to(model.dtype)
+            else:
+                class_inputs = {
+                    k: v.to(accelerator.device)
+                    for k, v in collate_fn(
+                        [{**inp, "target": t} for inp, t in zip(inputs, generations)]
+                    ).items()
+                }
 
-            if isinstance(model, PeftModel):
-                model.set_adapter("default")
+                if isinstance(model, PeftModel) and "query" in model.peft_config:
+                    model.set_adapter("query")
 
-            with torch.inference_mode():
-                class_outputs = model(**class_inputs, output_hidden_states=True)
+                with torch.inference_mode():
+                    class_outputs = model(**class_inputs, output_hidden_states=True)
 
-            target_layer = model.classifier_model.target_layer
-            class_inputs = class_outputs.hidden_states[target_layer][..., -1, :].clone()
+                target_layer = model.classifier_model.target_layer
+                class_inputs = class_outputs.hidden_states[target_layer][
+                    ..., -1, :
+                ].clone()
 
-            q_logits = model.classifier_model(class_inputs.clone()).to(torch.float32)
+            q_logits = model.classifier_model(class_inputs)
 
             all_data["evals"][cs]["q_labels"].append(q_labels.detach())
             all_data["evals"][cs]["q_logits"].append(q_logits.detach())
 
             [
-                l.append(v)
+                l.append(v.cpu())
                 for l, v in zip(
                     (cs_q_labels[cs], cs_q_logits[cs]),
                     accelerator.gather_for_metrics((q_labels, q_logits)),
@@ -287,7 +312,7 @@ def evaluate_classifier_oe(
         q_ece, _ = calibration(
             q_labels,
             q_pred,
-            q_p[torch.arange(q_p.size(0)), q_pred],
+            q_p[torch.arange(q_p.size(0)), q_pred].float(),
         )
 
         try:
@@ -331,7 +356,7 @@ def evaluate_classifier_oe(
 
 
 @torch.inference_mode()
-def evaluate_oe_uncertainty_sampling(
+def evaluate_uncertainty_sampling_oe(
     accelerator,
     model,
     tokenizer,
@@ -578,11 +603,8 @@ def evaluate_oe_uncertainty_sampling(
             greedy_equivalency_labels = torch.cat(cs_q_labels[cs], dim=0)
             counting_p = np.concatenate(cs_us_counting[cs], axis=0)
             likelihood_p = np.concatenate(cs_us_likelihood[cs], axis=0)
-            # q_p = torch.cat(cs_q_logits[cs], dim=0)[:, q_token_vec].softmax(dim=-1)
 
             acc = greedy_equivalency_labels.float().mean(dim=0)
-            # q_pred = q_p.argmax(dim=-1)
-            # q_acc = (q_pred == q_labels).float().mean(dim=0)
 
         ece_counting, _ = calibration(
             np.ones_like(greedy_equivalency_labels.detach().cpu().numpy()),
@@ -627,247 +649,6 @@ def evaluate_oe_uncertainty_sampling(
         )
 
     return metrics_dict
-
-
-# # https://github.com/tonyzhaozh/few-shot-learning/blob/e04d8643be91c2cce63f33e07760ff75d5aa3ad0/run_extraction.py#L144C9-L144C9
-# # Using the hack of contextual calibration for generation tasks from the original paper.
-# # Calibrate first token of generation against first token of ground truth, then greedily decode the rest of the sequence BASED ON THE CALIBRATED TOKEN.
-# # Therefore the first token is the one used for all ece computation/confidence, but the entire sequence matters for accuracy.
-# @torch.inference_mode()
-# def evaluate_contextual_calibration_oe(
-#     accelerator,
-#     model,
-#     tokenizer,
-#     loader,
-#     prompt_style="choice",
-#     query_format="roman_choice",
-#     comparison_strategies=None,
-#     max_new_tokens=30,
-#     **_,
-# ):
-#     """
-#     Assumes all answers are 1 token and end immediately with EOS token.
-#     """
-
-#     assert prompt_style == "oe"
-
-#     device = accelerator.device
-#     collate_fn = DataCollatorForSupervisedDataset(tokenizer)
-
-#     if isinstance(model, PeftModel):
-#         model.set_adapter("default")
-
-#     all_y, all_logits = [], []
-#     all_platt_logits = []
-
-#     for raw_inputs in tqdm(loader, leave=False):
-#         platt_logits = []
-
-#         for cf_str in [
-#             "Question: N/A",
-#             "Question: ",
-#             f"Question: {tokenizer.pad_token}",
-#         ]:
-
-#             calib_inputs = {
-#                 **raw_inputs,
-#                 "context": [cf_str] * len(raw_inputs["context"]),
-#             }
-#             # OE changes: prompt style
-#             calib_inputs = prepare_batch(
-#                 tokenizer, calib_inputs, prompt_style=prompt_style
-#             )
-#             # calib_inputs = prepare_batch(tokenizer, calib_inputs)
-#             calib_inputs = collate_fn(calib_inputs)
-
-#             calib_inputs = {k: v.to(device) for k, v in calib_inputs.items()}
-#             calib_outputs = model(**calib_inputs)
-
-#             # OE changes: extract oe inputs
-
-#             calib_target_start_idx, _, _ = extract_oe_inputs(tokenizer, calib_inputs)
-#             _c_logits = torch.squeeze(
-#                 calib_outputs.logits[:, calib_target_start_idx, :], dim=1
-#             )  # first token only
-
-#             # _, _, _c_logits = extract_qa_exact(
-#             #     tokenizer, calib_inputs, outputs=calib_outputs
-#             # )
-
-#             platt_logits.append(_c_logits)
-
-#         ## Ensemble over context-free strings.
-#         platt_logits = torch.stack(platt_logits).mean(dim=0)
-
-#         # OE changes: prompt style
-#         inputs = prepare_batch(tokenizer, raw_inputs, prompt_style=prompt_style)
-#         inputs = collate_fn(inputs)
-
-#         inputs = {k: v.to(device) for k, v in inputs.items()}
-#         outputs = model(**inputs)
-
-#         # OE changes: extract first token
-#         target_start_idx, _, oe_targets = extract_oe_inputs(tokenizer, inputs)
-#         logits = torch.squeeze(outputs.logits[:, target_start_idx, :], dim=1)
-#         y = oe_targets[:, 0]
-#         # _, y, logits = extract_qa_exact(tokenizer, inputs, outputs=outputs)
-
-#         [
-#             l.append(v)
-#             for l, v in zip(
-#                 (all_y, all_logits, all_platt_logits),
-#                 accelerator.gather_for_metrics((y, logits, platt_logits)),
-#             )
-#         ]
-
-#     all_y, all_logits, all_platt_logits = [
-#         torch.cat(l, dim=0) for l in (all_y, all_logits, all_platt_logits)
-#     ]
-
-#     all_p = all_logits.softmax(dim=-1)
-#     all_y_hat = all_p.argmax(dim=-1)
-#     acc = (all_y == all_y_hat).float().mean()
-#     logits_ece, _ = calibration(
-#         all_y, all_y_hat, all_p[torch.arange(all_p.size(0)), all_y_hat]
-#     )
-
-#     all_cal_logits = all_logits - all_platt_logits
-#     all_cal_p = all_cal_logits.softmax(dim=-1)
-#     all_cal_y_hat = all_cal_p.argmax(dim=-1)
-#     cal_acc = (all_y == all_cal_y_hat).float().mean()
-#     cal_ece, _ = calibration(
-#         all_y, all_y_hat, all_cal_p[torch.arange(all_cal_p.size(0)), all_cal_y_hat]
-#     )
-
-#     return_dict = {
-#         "N": all_y.size(0),
-#         # OE Change: acc -> first_token_acc
-#         "first_token_acc": acc.item(),
-#         "logits_ece": logits_ece,
-#         # OE Change: acc -> first token acc
-#         "cal_first_token_acc": cal_acc.item(),
-#         "cal_ece": cal_ece,
-#     }
-
-#     # CHANGE FOR OE
-#     # generate the entire remainder of the sequence for each element
-
-#     # all_oe_inputs = []
-#     all_acc = {c: [] for c in comparison_strategies}
-#     all_oe_target_strings, all_output_strings, all_question_strings = [], [], []
-
-#     all_cal_p_index = 0
-
-#     for inputs in tqdm(loader, leave=False):
-
-#         inputs = prepare_batch(tokenizer, inputs, prompt_style=prompt_style)
-#         inputs = collate_fn(inputs)
-
-#         # extract first token
-#         first_token = all_cal_p[
-#             all_cal_p_index : all_cal_p_index + len(inputs["input_ids"])
-#         ]
-#         all_cal_p_index += len(inputs["input_ids"])
-
-#         target_start_idx, oe_inputs_base, oe_targets = extract_oe_inputs(
-#             tokenizer, inputs
-#         )
-
-#         oe_inputs = collate_fn(oe_inputs_base)
-#         oe_inputs = {k: v.to(device) for k, v in oe_inputs.items()}
-
-#         oe_inputs_extended = collate_fn(oe_inputs_base)
-#         oe_inputs_extended = {k: v.to(device) for k, v in oe_inputs_extended.items()}
-
-#         # add the calibrated first token
-#         oe_inputs_extended["input_ids"] = torch.cat(
-#             [
-#                 oe_inputs_extended["input_ids"],
-#                 first_token.argmax(dim=-1).unsqueeze(dim=1).to(device),
-#             ],
-#             dim=-1,
-#         )
-#         oe_inputs_extended["attention_mask"] = torch.cat(
-#             [
-#                 oe_inputs_extended["attention_mask"],
-#                 torch.ones(oe_inputs_extended["attention_mask"].shape[0], 1).to(device),
-#             ],
-#             dim=-1,
-#         )
-
-#         # import pdb; pdb.set_trace()
-
-#         if isinstance(model, PeftModel):
-#             model.set_adapter("default")
-
-#         # generate 30 - 1 more tokens
-#         outputs = model.generate(
-#             **oe_inputs_extended, max_new_tokens=max_new_tokens - 1
-#         )
-
-#         # convert those new tokens to the generated strings
-#         output_strings = tokenizer.batch_decode(
-#             outputs[..., target_start_idx:],
-#             skip_special_tokens=True,
-#             clean_up_tokenization_spaces=False,
-#         )
-
-#         # these are the ground truth strings for this batch
-#         oe_target_strings = tokenizer.batch_decode(
-#             oe_targets, skip_special_tokens=True, clean_up_tokenization_spaces=False
-#         )
-
-#         question_strings = tokenizer.batch_decode(
-#             oe_inputs["input_ids"],
-#             skip_special_tokens=True,
-#             clean_up_tokenization_spaces=False,
-#         )
-
-#         # prepare the calibration query with open ended text
-#         # the calculation of the accuracy is done within this function
-#         for c in comparison_strategies:
-#             _, _, acc = prepare_oe_calibration_query(
-#                 tokenizer,
-#                 oe_target_strings,
-#                 output_strings,
-#                 question_strings,
-#                 format=query_format,
-#                 comparison_strategy=c,
-#             )
-
-#             acc = acc.to(device)
-
-#             [
-#                 l.append(v)
-#                 for l, v in zip(
-#                     (all_acc[c]),
-#                     accelerator.gather_for_metrics((acc)),
-#                 )
-#             ]
-
-#         [
-#             l.append(v)
-#             for l, v in zip(
-#                 (all_oe_target_strings, all_output_strings, all_question_strings),
-#                 accelerator.gather_for_metrics(
-#                     (oe_target_strings, output_strings, question_strings)
-#                 ),
-#             )
-#         ]
-
-#     for c in comparison_strategies:
-#         all_acc_c = np.array([e.cpu().numpy() for e in all_acc[c]]).flatten()
-#         return_dict[f"{c}_acc"] = np.sum(all_acc_c) / len(all_acc_c)
-
-#         c_ece, _ = calibration(
-#             np.ones_like(all_acc_c),
-#             all_acc_c,
-#             all_cal_p[torch.arange(all_cal_p.size(0)), all_cal_y_hat].cpu().numpy(),
-#         )
-
-#         return_dict[f"{c}_ece"] = c_ece
-
-#     return return_dict
 
 
 VERBAL_ELICITATION_UNC_QUERIES = {

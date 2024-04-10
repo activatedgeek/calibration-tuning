@@ -3,30 +3,28 @@ from functools import partial
 
 from ..logging import Timer
 from ..datasets import get_dataset, get_loader
-from .eos import (
-    evaluate_contextual_calibration_via_eos,
-    evaluate_candidate_via_eos,
-    evaluate_via_eos,
-    evaluate_classifier_via_eos,
+from .choice import (
+    evaluate_contextual_calibration_choice,
+    evaluate_candidate_choice,
+    evaluate_choice,
+    evaluate_classifier_choice,
 )
 from .oe import (
     evaluate_oe,
     evaluate_classifier_oe,
-    # evaluate_contextual_calibration_oe,
-    evaluate_oe_uncertainty_sampling,
-    # evaluate_verbal_elicitation_oe,
+    evaluate_uncertainty_sampling_oe,
+    evaluate_verbal_elicitation_oe,
 )
 
 EVALUATE_MODE_FN_MAP = {
-    "eos": evaluate_via_eos,
-    "cc_eos": evaluate_contextual_calibration_via_eos,
-    "cand_eos": evaluate_candidate_via_eos,
-    "class_eos": evaluate_classifier_via_eos,
+    "choice": evaluate_choice,
+    "cc_choice": evaluate_contextual_calibration_choice,
+    "cand_choice": evaluate_candidate_choice,
+    "class_choice": evaluate_classifier_choice,
     "oe": evaluate_oe,
-    "us_oe": evaluate_oe_uncertainty_sampling,
+    "us_oe": evaluate_uncertainty_sampling_oe,
     "class_oe": evaluate_classifier_oe,
-    # "cc_oe": evaluate_contextual_calibration_oe,
-    # "ve_oe": evaluate_verbal_elicitation_oe,
+    "ve_oe": evaluate_verbal_elicitation_oe,
 }
 
 VERBAL_ELICITATION_MAP = {
@@ -137,6 +135,16 @@ VERBAL_ELICITATION_MAP = {
 }
 
 
+## HOTFIX: avoid long metrics dump paths.
+def _dataset_log_name(dataset: str):
+    log_name = dataset
+    if log_name.startswith("mmlu_oe_offline"):
+        _, b = log_name.split(":")
+        b = b.split("/")[-1]
+        log_name = f"mmlu:{b}"
+    return log_name
+
+
 def evaluate_dataset(
     accelerator,
     model,
@@ -148,12 +156,11 @@ def evaluate_dataset(
     seed=137,
     batch_size=1,
     num_workers=8,
-    data_dir=None,
     eval_kshot=None,
     use_cache=True,
-    prompt_style="choice",
+    prompt_style=None,
     log_dir=None,
-    evaluate_fn="eos",
+    evaluate_fn=None,
 ):
     if dataset is not None:
         with accelerator.main_process_first():
@@ -163,7 +170,6 @@ def evaluate_dataset(
                 _extra_args["eval_kshot"] = eval_kshot
             data_splits = get_dataset(
                 dataset,
-                root=data_dir,
                 tokenizer=tokenizer,
                 seed=seed,
                 num_workers=num_workers,
@@ -223,14 +229,14 @@ def evaluate_dataset(
             evaluate_fn = EVALUATE_MODE_FN_MAP["oe"]
         elif "us_oe" == evaluate_fn:
             comparison_strategies = [
-                "substring",
+                # "substring",
                 # "fuzzy_gpt-4-0613",
                 "fuzzy_gpt-3.5-turbo-1106",
             ]
             evaluate_fn = EVALUATE_MODE_FN_MAP["us_oe"]
         elif "cc_oe" == evaluate_fn:
             comparison_strategies = [
-                "substring",
+                # "substring",
                 # "fuzzy_gpt-4-0613",
                 "fuzzy_gpt-3.5-turbo-1106",
             ]
@@ -244,7 +250,7 @@ def evaluate_dataset(
             evaluate_fn = EVALUATE_MODE_FN_MAP["class_oe"]
         elif "oe" == evaluate_fn:
             comparison_strategies = [
-                "substring",
+                # "substring",
                 # "fuzzy_gpt-4-0613",
                 "fuzzy_gpt-3.5-turbo-1106",
             ]
@@ -271,9 +277,9 @@ def evaluate_dataset(
                     accelerator=accelerator,
                 ),
                 comparison_strategies=comparison_strategies,
-                log_dir=f"{log_dir}/metrics/{dataset}/{split_name}",
+                log_dir=f"{log_dir}/metrics/{_dataset_log_name(dataset)}/{split_name}",
             )
-        metrics["dataset"] = dataset
+        metrics["dataset"] = _dataset_log_name(dataset)
         metrics["split"] = split_name
         metrics["ts"] = train_timer.elapsed
 

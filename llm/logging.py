@@ -5,7 +5,7 @@ import logging.config
 import os
 import wandb
 
-from .accelerate import Accelerator, AcceleratorState
+from .distributed import Accelerator, AcceleratorState
 
 
 class Timer:
@@ -62,7 +62,9 @@ def setup_log_dir(log_dir=None):
     if accelerator.is_main_process:
         if log_dir is None:
             root_dir = (
-                Path(os.environ.get("LOGDIR", Path.home() / "logs")) / Path.cwd().name
+                Path(os.environ.get("PROJECT_HOME", Path.home()))
+                / Path.cwd().name
+                / "logs"
             )
             dir_name = datetime.today().strftime("%Y-%m-%dT%H-%M-%S")
             if "SLURM_JOB_ID" in os.environ:
@@ -183,34 +185,46 @@ def setup_wandb(log_dir):
     return wandb_kwargs
 
 
-def entrypoint(main):
-    def _wrapped_main(log_dir=None, **kwargs):
-        log_dir = setup_logging(log_dir=log_dir)
+def entrypoint(main=None, with_accelerator=False, with_logging=True, with_wandb=True):
+    def _decorator(f):
+        def _wrapped_entrypoint(deepspeed_config=None, log_dir=None, **kwargs):
+            accelerator = Accelerator(deepspeed_config=deepspeed_config)
 
-        wandb_kwargs = setup_wandb(log_dir)
+            def _wrapped_f(**f_kwargs):
+                if with_logging:
+                    nonlocal log_dir
 
-        kwargs = {**wandb_kwargs, **kwargs, "log_dir": log_dir}
+                    log_dir = setup_logging(log_dir=log_dir)
+                    f_kwargs.update(dict(log_dir=log_dir))
 
-        return main(**kwargs)
+                if with_wandb:
+                    wandb_kwargs = setup_wandb(log_dir)
+                    f_kwargs = {**wandb_kwargs, **f_kwargs}
 
-    def _wrapped_entrypoint(**kwargs):
-        accelerator = Accelerator()
+                if with_accelerator:
+                    f_kwargs.update(dict(accelerator=accelerator))
 
-        if "WANDB_SWEEP_ID" in os.environ:
-            if accelerator.is_main_process:
-                wandb.agent(
-                    os.environ.get("WANDB_SWEEP_ID"),
-                    project=os.environ.get("WANDB_PROJECT", Path().cwd().name),
-                    entity=os.environ.get("WANDB_ENTITY"),
-                    function=lambda **agent_kwargs: _wrapped_main(
-                        **agent_kwargs,
-                        **kwargs,
-                    ),
-                    count=1,
-                )
+                return f(**f_kwargs)
+
+            if with_wandb and "WANDB_SWEEP_ID" in os.environ:
+                if accelerator.is_main_process:
+                    wandb.agent(
+                        os.environ.get("WANDB_SWEEP_ID"),
+                        project=os.environ.get("WANDB_PROJECT", Path().cwd().name),
+                        entity=os.environ.get("WANDB_ENTITY"),
+                        function=lambda **agent_kwargs: _wrapped_f(
+                            **agent_kwargs,
+                            **kwargs,
+                        ),
+                        count=1,
+                    )
+                else:
+                    _wrapped_f(**kwargs)
             else:
-                _wrapped_main(**kwargs)
-        else:
-            _wrapped_main(**kwargs)
+                _wrapped_f(**kwargs)
 
-    return _wrapped_entrypoint
+        return _wrapped_entrypoint
+
+    if main:
+        return _decorator(main)
+    return _decorator

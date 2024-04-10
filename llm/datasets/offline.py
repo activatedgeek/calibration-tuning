@@ -35,12 +35,7 @@ def get_offline(
         if os.path.isdir(f"{root}/{split_name}"):
             data_files[split_name] = glob.glob(f"{root}/{split_name}/*.csv")
 
-    dataset = load_dataset(
-        "csv",
-        data_files=data_files,
-        cache_dir=os.environ.get("HF_DATASETS_CACHE", root),
-        features=features,
-    )
+    dataset = load_dataset("csv", data_files=data_files, features=features)
     if not use_cache:
         dataset.cleanup_cache_files()
 

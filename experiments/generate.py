@@ -1,97 +1,54 @@
 import os
 import wandb
 import pandas as pd
-import torch
 from tqdm.auto import tqdm
 from transformers import GenerationConfig
 
-import multiprocess.context as ctx
-
-## @HOTFIX: for hanging processes in dataset map.
-ctx._force_start_method("spawn")
-
-from llm.accelerate import Accelerator
-from llm.datasets import get_dataset, get_loader
-from llm.models import get_model
-from llm.models.peft import get_lora_model
+from llm.datasets import get_dataset, get_loader, prepare_uncertainty_query
 from llm.logging import entrypoint
-
-from llm.datasets import prepare_uncertainty_query
-
+from llm.models import get_model
 from llm.utils.generate_utils import generate_output
 
 
+@entrypoint(with_accelerator=True)
 def generate_outputs_main(
+    accelerator=None,
     seed=137,
     log_dir=None,
     dataset=None,
-    data_dir=None,
-    batch_size=1,
-    model_name=None,
-    model_dir=None,
-    peft_dir=None,
-    lora_rank=8,
-    lora_alpha=32,
-    lora_dropout=0.1,
-    use_dataset_cache=True,
     prompt_style=None,
     kshot=0,
+    use_dataset_cache=True,
+    batch_size=1,
+    model_name=None,
     max_new_tokens=30,
-    int8=False,
 ):
-    accelerator = Accelerator()
-
     config = {
         "seed": seed,
-        "model_name": model_name,
-        "model_dir": model_dir,
-        "peft_dir": peft_dir,
-        "lora_rank": lora_rank,
-        "lora_alpha": lora_alpha,
-        "lora_dropout": lora_dropout,
-        "prompt_style": prompt_style,
-        "max_new_tokens": max_new_tokens,
         "log_dir": log_dir,
-        "int8": int8,
+        "dataset": dataset,
+        "prompt_style": prompt_style,
+        "kshot": kshot,
+        "batch_size": batch_size,
+        "model_name": model_name,
+        "max_new_tokens": max_new_tokens,
     }
     if accelerator.is_main_process:
         wandb.config.update(config)
 
-    tokenizer = get_model(
-        f"{model_name}_tokenizer",
-        model_dir=model_dir,
-    )
-
-    model = get_model(
-        model_name,
-        device_map={"": accelerator.local_process_index},
-        torch_dtype=torch.bfloat16 if torch.cuda.is_bf16_supported() else torch.float16,
-        model_dir=model_dir,
-        use_cache=False,
-        tokenizer=tokenizer,
-        load_in_8bit=int8,
-    )
-
-    if peft_dir is not None:
-        model = get_lora_model(
-            model,
-            peft_dir=peft_dir,
-            lora_rank=lora_rank,
-            lora_alpha=lora_alpha,
-            lora_dropout=lora_dropout,
-            is_trainable=False,
-            adapter_name="default",
-        )
+    tokenizer, model = get_model(model_name, device_map="auto")
 
     model.eval()
 
+    ## @HOTFIX: for hanging processes in dataset map.
+    # import multiprocess.context as ctx
+    # ctx._force_start_method("spawn")
     with accelerator.main_process_first():
         data_splits = get_dataset(
             dataset,
-            root=data_dir,
             tokenizer=tokenizer,
             seed=seed,
-            num_workers=16,  # os.cpu_count() // 2,
+            num_workers=8,
             use_cache=use_dataset_cache,
             prompt_style=prompt_style,
             train_kshot=kshot,
@@ -161,56 +118,45 @@ def generate_query_label(
         yield from outputs
 
 
+@entrypoint(with_accelerator=True)
 def generate_labels_main(
+    accelerator=None,
     seed=137,
     log_dir=None,
     dataset=None,
-    data_dir=None,
-    num_workers=8,
+    use_dataset_cache=True,
     batch_size=1,
     model_name=None,
-    model_dir=None,
-    peft_dir=None,
-    lora_rank=8,
-    lora_alpha=32,
-    lora_dropout=0.1,
-    use_dataset_cache=True,
-    strategy="substring",  ## fuzzy_gpt-3.5-turbo-1106
+    strategy=None,  ## substring / fuzzy_gpt-3.5-turbo-1106
 ):
-    accelerator = Accelerator()
-
     config = {
         "seed": seed,
-        "model_name": model_name,
-        "model_dir": model_dir,
-        "peft_dir": peft_dir,
-        "lora_rank": lora_rank,
-        "lora_alpha": lora_alpha,
-        "lora_dropout": lora_dropout,
         "log_dir": log_dir,
+        "dataset": dataset,
+        "batch_size": batch_size,
+        "model_name": model_name,
         "strategy": strategy,
     }
     if accelerator.is_main_process:
         wandb.config.update(config)
 
-    tokenizer = get_model(
-        f"{model_name}_tokenizer",
-        model_dir=model_dir,
-    )
+    tokenizer = get_model(f"{model_name}_tokenizer")
 
     with accelerator.main_process_first():
         data_splits = get_dataset(
             dataset,
-            root=data_dir,
             tokenizer=tokenizer,
             seed=seed,
-            num_workers=num_workers,
+            num_workers=8,
             use_cache=use_dataset_cache,
         )
-        data_splits = list(filter(lambda x: x is not None, data_splits))
-        data_split_names = ["train", "validation", "test"][: len(data_splits)]
+        data_splits = [
+            (s, ds)
+            for s, ds in zip(["train", "validation", "test"], data_splits)
+            if ds is not None
+        ]
 
-    for data, split in zip(data_splits, data_split_names):
+    for split_name, data in data_splits:
         loader = get_loader(
             data,
             batch_size=batch_size,
@@ -225,7 +171,7 @@ def generate_labels_main(
             strategy=strategy,
         )
 
-        csv_path = f"{log_dir}/labels/{split}"
+        csv_path = f"{log_dir}/labels/{split_name}"
         with accelerator.main_process_first():
             if accelerator.is_main_process:
                 os.makedirs(csv_path)
@@ -240,7 +186,7 @@ if __name__ == "__main__":
 
     fire.Fire(
         dict(
-            outputs=entrypoint(generate_outputs_main),
-            labels=entrypoint(generate_labels_main),
+            outputs=generate_outputs_main,
+            labels=generate_labels_main,
         )
     )
