@@ -173,7 +173,7 @@ For other CLI arguments, see the `main` function of [experiments/classifier_tune
 For open-ended generation evaluations,
 
 ```shell
-torchrun --nnodes=1 --nproc_per_node=auto experiments/evaluate.py --dataset=eval:mmlu --prompt-style=oe --model_name=llama2_13b_chat --query-peft-dir=<train-log-dir>/checkpoint-<step> --mode=oe_fuzzy_gpt-3.5-turbo-1106
+torchrun --nnodes=1 --nproc_per_node=auto experiments/evaluate.py --dataset=eval:mmlu --prompt-style=oe --model_name=llama2_13b_chat --query-peft-dir=<train-log-dir>/checkpoint-<step> --mode=oe
 ```
 
 For multiple-choice question-answering evaluations,
