@@ -32,9 +32,7 @@ def get_mmlu_oe_offline(
         dataset.cleanup_cache_files()
 
     def _check(sample):
-        if sample["output"] is None:
-            sample["output"] = ""
-        return sample
+        return {k: "" if v is None else v for k, v in sample.items()}
 
     dataset = dataset.map(_check, num_proc=num_workers)
 

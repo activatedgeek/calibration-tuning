@@ -18,6 +18,7 @@ from llm.datasets import (
 from llm.logging import entrypoint
 from llm.models import get_model
 from llm.utils.generate_utils import generate_output
+from llm.eval.utils import _dataset_log_name
 
 
 @entrypoint(with_accelerator=True)
@@ -264,7 +265,9 @@ def generate_embeddings_main(
 
             all_embeddings = torch.cat(all_embeddings, dim=0).numpy()
 
-            save_dir = Path(log_dir) / "embeddings" / split_name
+            save_dir = (
+                Path(log_dir) / "embeddings" / _dataset_log_name(dataset) / split_name
+            )
             save_dir.mkdir(parents=True)
 
             np.save(save_dir / "embedding.npy", all_embeddings)

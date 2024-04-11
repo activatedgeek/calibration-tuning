@@ -70,6 +70,7 @@ class EmbeddingTuner(Trainer):
         return super()._wrap_model(*args, **kwargs)
 
     def prepare_inputs(self, model, inputs):
+        embeddings = inputs.pop("embedding", None)
         inputs = [dict(zip(inputs.keys(), vals)) for vals in zip(*inputs.values())]
         targets = [inp.pop("target") for inp in inputs]
 
@@ -108,11 +109,11 @@ class EmbeddingTuner(Trainer):
 
         q_labels = q_labels.to(self.accelerator.device)
 
-        return inputs, targets, predictions, q_labels
+        return inputs, targets, predictions, q_labels, embeddings
 
-    def prepare_class_inputs(self, inputs, predictions):
-        if "embedding" in inputs[0]:
-            class_inputs = torch.cat([i.pop("embedding") for i in inputs], dim=0)
+    def prepare_class_inputs(self, inputs, predictions, embeddings):
+        if isinstance(embeddings, torch.Tensor):
+            class_inputs = embeddings
         else:
             sentences = [
                 str(LMText.from_({**i, "target": p}))
@@ -121,14 +122,16 @@ class EmbeddingTuner(Trainer):
 
             class_inputs = self.embedding_model.encode(
                 sentences, convert_to_tensor=True, show_progress_bar=False
-            )
+            ).to(self.accelerator.device)
 
-        return class_inputs.to(self.accelerator.device)
+        return class_inputs
 
     def compute_loss(self, model, inputs, return_outputs=False):
-        inputs, _, predictions, class_labels = self.prepare_inputs(model, inputs)
+        inputs, _, predictions, class_labels, embeddings = self.prepare_inputs(
+            model, inputs
+        )
 
-        class_inputs = self.prepare_class_inputs(inputs, predictions)
+        class_inputs = self.prepare_class_inputs(inputs, predictions, embeddings)
 
         class_logits = self.classifier_model(class_inputs)
 
@@ -152,11 +155,11 @@ class EmbeddingTuner(Trainer):
         all_labels, all_logits = [], []
 
         for inputs in tqdm(eval_dataloader, leave=False):
-            inputs, _, predictions, class_labels = self.prepare_inputs(
+            inputs, _, predictions, class_labels, embeddings = self.prepare_inputs(
                 self.model, inputs
             )
 
-            class_inputs = self.prepare_class_inputs(inputs, predictions)
+            class_inputs = self.prepare_class_inputs(inputs, predictions, embeddings)
 
             class_logits = self.classifier_model(class_inputs)
 

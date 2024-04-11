@@ -40,17 +40,21 @@ def oai_gpt4_tokenizer(*_, **kwargs):
 
 
 class OpenAIEmbeddingModel:
-    def __init__(self, model, dimension=1536, retries=100):
+    def __init__(self, model, dimension=1536, retries=10):
         client = OpenAI()
         self.retries = retries
+        self.d = dimension
         self.model = partial(
             client.embeddings.create,
             model=model,
             encoding_format="float",
-            dimensions=dimension,
+            dimensions=self.d,
         )
 
-    def __call__(self, texts, **_):
+    def get_sentence_embedding_dimension(self):
+        return self.d
+
+    def encode(self, texts, **_):
         response = None
 
         __retries_left = int(self.retries)
@@ -66,8 +70,11 @@ class OpenAIEmbeddingModel:
         embeddings = np.array([d.embedding for d in response.data])
         return embeddings
 
+    def __call__(self, *args, **kwargs):
+        return self.encode(*args, **kwargs)
 
-def get_openai_embedding_model(model, dimension=1536, retries=100, **_):
+
+def get_openai_embedding_model(model, dimension=1536, retries=10, **_):
     return OpenAIEmbeddingModel(model, dimension=dimension, retries=retries)
 
 
