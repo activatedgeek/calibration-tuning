@@ -38,19 +38,23 @@ def create_model(
     use_cache=False,
     tokenizer=None,
     use_int8=False,
+    use_int4=False,
     **kwargs,
 ):
+    quantization_config = None
+    if use_int8 or use_int4:
+        from transformers import BitsAndBytesConfig
+
+        quantization_config = BitsAndBytesConfig(
+            load_in_4bit=use_int4,
+            load_in_8bit=use_int8,
+        )
+
     model = MistralForCausalLM.from_pretrained(
         model_dir or f"mistralai/Mistral-{kind}",
         torch_dtype=torch_dtype
         or (torch.bfloat16 if torch.cuda.is_bf16_supported() else torch.float16),
-        quantization_config=(
-            BitsAndBytesConfig(
-                load_in_8bit=True,
-            )
-            if use_int8
-            else None
-        ),
+        quantization_config=quantization_config,
         use_cache=use_cache,
         **kwargs,
     )

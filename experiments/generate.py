@@ -1,10 +1,20 @@
+import logging
+from pathlib import Path
 import os
 import wandb
 import pandas as pd
 from tqdm.auto import tqdm
+import numpy as np
+import torch
 from transformers import GenerationConfig
 
-from llm.datasets import get_dataset, get_loader, prepare_uncertainty_query
+from llm.datasets import (
+    get_all_datasets_list,
+    get_dataset,
+    get_loader,
+    prepare_uncertainty_query,
+    LMText,
+)
 from llm.logging import entrypoint
 from llm.models import get_model
 from llm.utils.generate_utils import generate_output
@@ -181,6 +191,86 @@ def generate_labels_main(
         )
 
 
+@entrypoint(with_accelerator=True)
+def generate_embeddings_main(
+    accelerator=None,
+    seed=137,
+    log_dir=None,
+    dataset=None,
+    use_dataset_cache=True,
+    batch_size=1,
+    model_name=None,
+):
+    config = {
+        "seed": seed,
+        "log_dir": log_dir,
+        "dataset": dataset,
+        "batch_size": batch_size,
+        "model_name": model_name,
+    }
+    if accelerator.is_main_process:
+        wandb.config.update(config)
+
+    embedding_model = get_model(model_name)
+
+    if dataset.startswith("eval"):
+        all_datasets = get_all_datasets_list(dataset)
+    else:
+        assert dataset is not None, "Missing dataset."
+        all_datasets = [dataset]
+
+    for dataset in tqdm(all_datasets):
+        with accelerator.main_process_first():
+            data_splits = get_dataset(
+                dataset,
+                seed=seed,
+                num_workers=8,
+                use_cache=use_dataset_cache,
+            )
+            data_splits = [
+                (s, ds)
+                for s, ds in zip(["train", "validation", "test"], data_splits)
+                if ds is not None
+            ]
+
+        for split_name, data in tqdm(data_splits, leave=False):
+            loader = get_loader(
+                data,
+                batch_size=batch_size,
+                pin_memory=True,
+                accelerator=accelerator,
+            )
+
+            all_embeddings = []
+
+            for inputs in tqdm(loader, leave=False):
+                inputs = [
+                    dict(zip(inputs.keys(), vals)) for vals in zip(*inputs.values())
+                ]
+                outputs = [inp.pop("output") for inp in inputs]
+                targets = [inp.pop("target") for inp in inputs]
+                query_labels = [inp.pop("query_label") for inp in inputs]
+
+                texts = [
+                    str(LMText.from_({**i, "target": o}))
+                    for i, o in zip(inputs, outputs)
+                ]
+
+                # embeddings = np.random.randn(len(inputs), 100)
+                embeddings = embedding_model(texts)
+                embeddings = torch.tensor(embeddings).float()
+
+                all_embeddings.append(accelerator.gather_for_metrics(embeddings))
+
+            all_embeddings = torch.cat(all_embeddings, dim=0).numpy()
+
+            save_dir = Path(log_dir) / "embeddings" / split_name
+            save_dir.mkdir(parents=True)
+
+            np.save(save_dir / "embedding.npy", all_embeddings)
+            logging.info(f"Saved embeddings to '{save_dir}'.")
+
+
 if __name__ == "__main__":
     import fire
 
@@ -188,5 +278,6 @@ if __name__ == "__main__":
         dict(
             outputs=generate_outputs_main,
             labels=generate_labels_main,
+            embeds=generate_embeddings_main,
         )
     )

@@ -17,6 +17,7 @@ def __setup():
         "mlp",
         "mistral",
         "mpnet",
+        "openai",
     ]:
         import_module(f".{n}", __name__)
 

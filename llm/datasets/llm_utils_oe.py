@@ -1,6 +1,5 @@
 from concurrent.futures import ThreadPoolExecutor
-from openai import ChatCompletion
-from openai.error import RateLimitError, APIError, Timeout, ServiceUnavailableError
+from openai import OpenAI, APIError
 import torch
 import logging
 import time
@@ -8,12 +7,13 @@ import time
 from .llm_utils import LMText, get_token_vec
 
 
-def openai_query(system_prompt, prompt, openai_model_name="gpt-4-1106-preview"):
-    # openai.api_requestor.TIMEOUT_SECS = 50
+def openai_query(system_prompt, prompt, openai_model_name="gpt-3.5-turbo"):
+    client = OpenAI()
+
     sampled_response = None
     while sampled_response is None:
         try:
-            response = ChatCompletion.create(
+            response = client.chat.completions.create(
                 model=openai_model_name,
                 messages=[
                     {"role": "system", "content": system_prompt},
@@ -21,8 +21,8 @@ def openai_query(system_prompt, prompt, openai_model_name="gpt-4-1106-preview"):
                 ],
             )
             sampled_response = response["choices"][0]["message"]["content"]
-        except (RateLimitError, APIError, Timeout, ServiceUnavailableError) as e:
-            logging.info(f"Possible OpenAI rate limit: {e}")
+        except APIError:
+            logging.exception("OpenAI API Error.", exc_info=True)
             time.sleep(1)
     return sampled_response
 
