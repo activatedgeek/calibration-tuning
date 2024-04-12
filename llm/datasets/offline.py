@@ -18,14 +18,12 @@ def get_offline(
     eval_kshot=0,
     **_,
 ):
-
     features = Features(
         {
             "context": Value("string"),
             "target": Value("string"),
             "target_prompt": Value("string"),
             "prompt": Value("string"),
-            # "source_dataset": Value("string"),
             "output": Value("string"),
             "query_label": Value("int32"),
         }
