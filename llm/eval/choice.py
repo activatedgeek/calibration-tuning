@@ -159,6 +159,7 @@ def evaluate_classifier_choice(
     all_q_labels, all_q_logits = [], []
 
     for inputs in tqdm(loader):
+        embeddings = inputs.pop("embedding", None)
         inputs = [dict(zip(inputs.keys(), vals)) for vals in zip(*inputs.values())]
         targets = [inp.pop("target") for inp in inputs]
 
@@ -193,7 +194,9 @@ def evaluate_classifier_choice(
         )
         q_labels = q_labels.to(accelerator.device)
 
-        if hasattr(model, "embedding_model"):
+        if isinstance(embeddings, torch.Tensor):
+            class_inputs = embeddings.to(model.dtype)
+        elif hasattr(model, "embedding_model"):
             class_inputs = [
                 str(LMText.from_({**inp, "target": t}))
                 for inp, t in zip(inputs, predictions)
