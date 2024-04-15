@@ -71,6 +71,7 @@ class ClassificationTuner(Trainer):
         return super()._wrap_model(*args, **kwargs)
 
     def prepare_inputs(self, model, inputs):
+        inputs.pop("embedding", None)
         inputs = [dict(zip(inputs.keys(), vals)) for vals in zip(*inputs.values())]
         targets = [inp.pop("target") for inp in inputs]
 

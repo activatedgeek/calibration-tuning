@@ -14,7 +14,11 @@ class LabeledStringDataCollator:
         return dict(
             padding=True,
             truncation=True,
-            max_length=tokenizer.model_max_length,
+            max_length=(
+                tokenizer.model_max_length
+                if hasattr(tokenizer, "model_max_length")
+                else None
+            ),
             return_tensors="pt",
             return_length=True,
         )

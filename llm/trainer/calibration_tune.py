@@ -187,6 +187,7 @@ class CalibrationTuner(Trainer):
         return loss
 
     def compute_loss(self, model, inputs, return_outputs=False, return_metrics=False):
+        inputs.pop("embedding", None)
         inputs = [dict(zip(inputs.keys(), vals)) for vals in zip(*inputs.values())]
         targets = [inp.pop("target") for inp in inputs]
 

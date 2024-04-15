@@ -67,56 +67,55 @@ def main(
         adapter_name="default",
     )
 
-    if query_peft_dir:
-        model = get_lora_model(
-            model,
-            peft_id_or_dir=query_peft_dir,
+    model = get_lora_model(
+        model,
+        peft_id_or_dir=query_peft_dir,
+        is_trainable=False,
+        adapter_name="query",
+    )
+
+    if with_classifier:
+        if embedding_model_name is not None:
+            model.embedding_model = get_model(embedding_model_name)
+
+        classifier_model = get_classifier_head(
+            input_size=(
+                model.embedding_model.get_sentence_embedding_dimension()
+                if embedding_model_name
+                else model.config.hidden_size
+            ),
+            checkpoint_dir=None if scale_temp == "probe" else query_peft_dir,
             is_trainable=False,
-            adapter_name="query",
+            weights_name=ClassificationTuner.WEIGHTS_NAME,
         )
 
-        if with_classifier:
-            if embedding_model_name is not None:
-                model.embedding_model = get_model(embedding_model_name)
+        if scale_temp == "probe":
+            temperature_model = get_temperature_head()
 
-            classifier_model = get_classifier_head(
-                input_size=(
-                    model.embedding_model.get_sentence_embedding_dimension()
-                    if embedding_model_name
-                    else model.config.hidden_size
-                ),
-                checkpoint_dir=None if scale_temp == "probe" else query_peft_dir,
-                is_trainable=False,
-                weights_name=ClassificationTuner.WEIGHTS_NAME,
+            classifier_model = torch.nn.Sequential(
+                classifier_model,
+                temperature_model,
             )
 
-            if scale_temp == "probe":
-                temperature_model = get_temperature_head()
+            if query_peft_dir is not None:
+                checkpoint_dir = get_last_checkpoint_path(query_peft_dir)
 
-                classifier_model = torch.nn.Sequential(
-                    classifier_model,
-                    temperature_model,
-                )
-
-                if query_peft_dir is not None:
-                    checkpoint_dir = get_last_checkpoint_path(query_peft_dir)
-
-                    if os.path.isfile(
-                        f"{checkpoint_dir}/{ClassificationTuner.WEIGHTS_NAME}"
-                    ):
-                        classifier_model.load_state_dict(
-                            torch.load(
-                                f"{checkpoint_dir}/{ClassificationTuner.WEIGHTS_NAME}"
-                            )
+                if os.path.isfile(
+                    f"{checkpoint_dir}/{ClassificationTuner.WEIGHTS_NAME}"
+                ):
+                    classifier_model.load_state_dict(
+                        torch.load(
+                            f"{checkpoint_dir}/{ClassificationTuner.WEIGHTS_NAME}"
                         )
+                    )
 
-                        logging.info(
-                            f"Loaded temperature-scaled classifier model checkpoint from '{checkpoint_dir}'."
-                        )
+                    logging.info(
+                        f"Loaded temperature-scaled classifier model checkpoint from '{checkpoint_dir}'."
+                    )
 
-            model.classifier_model = classifier_model.to(model.dtype)
-            model.classifier_model = model.classifier_model.to(accelerator.device)
-            model.classifier_model.target_layer = -1
+        model.classifier_model = classifier_model.to(model.dtype)
+        model.classifier_model = model.classifier_model.to(accelerator.device)
+        model.classifier_model.target_layer = -1
 
     if scale_temp == "logits":
         ## @NOTE: Only for fine-tuned models.

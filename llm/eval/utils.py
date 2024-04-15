@@ -142,6 +142,10 @@ def _dataset_log_name(dataset: str):
         _, b = log_name.split(":")
         b = b.split("/")[-1]
         log_name = f"mmlu:{b}"
+    elif log_name.startswith("offline"):
+        _, b = log_name.split(":")
+        b = b.split("/")[-1]
+        log_name = f"offline"
     return log_name
 
 

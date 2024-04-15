@@ -51,6 +51,7 @@ def evaluate_oe(
     }
 
     for inputs in tqdm(loader):
+        inputs.pop("embedding", None)
         inputs = [dict(zip(inputs.keys(), vals)) for vals in zip(*inputs.values())]
         targets = [inp.pop("target") for inp in inputs]
 
@@ -210,6 +211,7 @@ def evaluate_classifier_oe(
     }
 
     for inputs in tqdm(loader):
+        embeddings = inputs.pop("embedding", None)
         inputs = [dict(zip(inputs.keys(), vals)) for vals in zip(*inputs.values())]
         targets = [inp.pop("target") for inp in inputs]
 
@@ -260,14 +262,17 @@ def evaluate_classifier_oe(
             q_labels = q_labels.to(accelerator.device)
 
             if hasattr(model, "embedding_model"):
-                class_inputs = [
-                    str(LMText.from_({**inp, "target": t}))
-                    for inp, t in zip(inputs, generations)
-                ]
-                class_inputs = model.embedding_model.encode(
-                    class_inputs, convert_to_tensor=True, show_progress_bar=False
-                )
-                class_inputs = class_inputs.to(model.dtype)
+                if isinstance(embeddings, torch.Tensor):
+                    class_inputs = embeddings.to(model.dtype)
+                else:
+                    class_inputs = [
+                        str(LMText.from_({**inp, "target": t}))
+                        for inp, t in zip(inputs, generations)
+                    ]
+                    class_inputs = model.embedding_model.encode(
+                        class_inputs, convert_to_tensor=True, show_progress_bar=False
+                    )
+                    class_inputs = class_inputs.to(model.dtype)
             else:
                 class_inputs = {
                     k: v.to(accelerator.device)

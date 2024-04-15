@@ -1,5 +1,6 @@
 import os
 import glob
+import numpy as np
 from datasets import load_dataset, Features, Value
 
 from .registry import register_dataset
@@ -23,25 +24,44 @@ def get_mmlu_oe_offline(
     )
 
     data_files = {}
-    for split_name in ["validation", "test"]:
+    embeddings = {}
+    for split_name in ["train", "validation", "test"]:
         if os.path.isdir(f"{root}/{split_name}"):
             data_files[split_name] = glob.glob(f"{root}/{split_name}/*.csv")
+
+        if os.path.isfile(f"{root}/{split_name}/embedding.npy"):
+            embeddings[split_name] = np.load(f"{root}/{split_name}/embedding.npy")
 
     dataset = load_dataset("csv", data_files=data_files, features=features)
     if not use_cache:
         dataset.cleanup_cache_files()
 
-    def _check(sample):
-        if sample["output"] is None:
-            sample["output"] = ""
-        return sample
+    def _replace_none(x):
+        return {k: "" if v is None else v for k, v in x.items()}
 
-    dataset = dataset.map(_check, num_proc=num_workers)
+    data_splits = {
+        split: dataset[split]
+        .map(
+            lambda _, idx: {"embedding": embeddings[split][idx]},
+            with_indices=True,
+            num_proc=num_workers,
+        )
+        .map(
+            _replace_none,
+            num_proc=num_workers,
+        )
+        for split in data_files.keys()
+    }
+    data_splits = {
+        split: ds.with_format("np", columns=["embedding"], output_all_columns=True)
+        for split, ds in data_splits.items()
+    }
 
-    val_data = dataset.pop("validation")
-    test_data = dataset.pop("test")
+    train_data = data_splits.pop("train", None)
+    val_data = data_splits.pop("validation", None)
+    test_data = data_splits.pop("test", None)
 
-    return None, val_data, test_data
+    return train_data, val_data, test_data
 
 
 @register_dataset

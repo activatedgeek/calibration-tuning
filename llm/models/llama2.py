@@ -1,6 +1,6 @@
 from peft import prepare_model_for_kbit_training
 import torch
-from transformers import BitsAndBytesConfig, LlamaTokenizer, LlamaForCausalLM
+from transformers import LlamaTokenizer, LlamaForCausalLM
 
 from .registry import register_model
 from .llm_model_utils import DEFAULT_PAD_TOKEN, resize_token_embeddings
@@ -34,19 +34,23 @@ def create_model(
     use_cache=False,
     tokenizer=None,
     use_int8=False,
+    use_int4=False,
     **kwargs,
 ):
+    quantization_config = None
+    if use_int8 or use_int4:
+        from transformers import BitsAndBytesConfig
+
+        quantization_config = BitsAndBytesConfig(
+            load_in_4bit=use_int4,
+            load_in_8bit=use_int8,
+        )
+
     model = LlamaForCausalLM.from_pretrained(
         model_dir or f"meta-llama/Llama-2-{kind}-hf",
         torch_dtype=torch_dtype
         or (torch.bfloat16 if torch.cuda.is_bf16_supported() else torch.float16),
-        quantization_config=(
-            BitsAndBytesConfig(
-                load_in_8bit=True,
-            )
-            if use_int8
-            else None
-        ),
+        quantization_config=quantization_config,
         use_cache=use_cache,
         **kwargs,
     )
