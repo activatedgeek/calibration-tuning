@@ -4,8 +4,7 @@ import numpy as np
 from datasets import load_dataset, Features, Value
 
 from .registry import register_dataset
-from .llm_utils import LMText
-from .data_collator import LabeledStringDataCollator
+from .llm_utils import LMText, LabeledStringDataCollator
 
 
 def get_offline(

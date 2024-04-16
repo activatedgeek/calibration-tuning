@@ -47,17 +47,12 @@ def generate_outputs_main(
     if accelerator.is_main_process:
         wandb.config.update(config)
 
-    tokenizer, model = get_model(model_name, device_map="auto")
-
-    model.eval()
-
     ## @HOTFIX: for hanging processes in dataset map.
     # import multiprocess.context as ctx
     # ctx._force_start_method("spawn")
     with accelerator.main_process_first():
         data_splits = get_dataset(
             dataset,
-            tokenizer=tokenizer,
             seed=seed,
             num_workers=8,
             use_cache=use_dataset_cache,
@@ -70,6 +65,9 @@ def generate_outputs_main(
             for s, ds in zip(["train", "validation", "test"], data_splits)
             if ds is not None
         ]
+
+    tokenizer, model = get_model(model_name, device_map="auto")
+    model.eval()
 
     generation_config = GenerationConfig(
         pad_token_id=tokenizer.pad_token_id,
