@@ -1,10 +1,23 @@
+import logging
 import os
 import glob
 import numpy as np
-from datasets import load_dataset, Features, Value
+from datasets import load_dataset, Features, Value, DatasetDict
 
-from .registry import register_dataset
-from .llm_utils import LMText, LabeledStringDataCollator
+from .registry import register_dataset, get_dataset_attrs
+from .llm_data_utils import LMText, LabeledStringDataCollator
+
+
+CSV_DATASET_FEATURES = Features(
+    {
+        "context": Value("string"),
+        "target": Value("string"),
+        "target_prompt": Value("string"),
+        "prompt": Value("string"),
+        "output": Value("string"),
+        "query_label": Value("int32"),
+    }
+)
 
 
 def get_offline(
@@ -17,17 +30,6 @@ def get_offline(
     eval_kshot=0,
     **_,
 ):
-    features = Features(
-        {
-            "context": Value("string"),
-            "target": Value("string"),
-            "target_prompt": Value("string"),
-            "prompt": Value("string"),
-            "output": Value("string"),
-            "query_label": Value("int32"),
-        }
-    )
-
     data_files = {}
     embeddings = {}
     for split_name in ["train", "validation", "test"]:
@@ -37,44 +39,43 @@ def get_offline(
             if os.path.isfile(f"{root}/{split_name}/embedding.npy"):
                 embeddings[split_name] = np.load(f"{root}/{split_name}/embedding.npy")
 
-    dataset = load_dataset("csv", data_files=data_files, features=features)
+    dataset = load_dataset("csv", data_files=data_files, features=CSV_DATASET_FEATURES)
     if not use_cache:
         dataset.cleanup_cache_files()
 
-    def _replace_none(x):
-        return {k: "" if v is None else v for k, v in x.items()}
+    dataset = dataset.map(
+        lambda x: {k: "" if v is None else v for k, v in x.items()},
+        num_proc=num_workers,
+    )
 
-    data_splits = {
-        split: dataset[split]
-        .map(
-            lambda _, idx: {"embedding": embeddings[split][idx]},
-            with_indices=True,
-            num_proc=num_workers,
+    if len(set(dataset.keys()) - set(embeddings.keys())) == 0:
+        dataset = DatasetDict(
+            {
+                split: dataset[split].map(
+                    lambda _, idx: {"embedding": embeddings[split][idx]},
+                    with_indices=True,
+                    num_proc=num_workers,
+                )
+                for split in data_files.keys()
+            }
         )
-        .map(
-            _replace_none,
-            num_proc=num_workers,
+        dataset = dataset.with_format(
+            "np", columns=["embedding"], output_all_columns=True
         )
-        for split in data_files.keys()
-    }
-    data_splits = {
-        split: ds.with_format("np", columns=["embedding"], output_all_columns=True)
-        for split, ds in data_splits.items()
-    }
 
-    data_kshot = {
+    prompt_kshot = {
         "train": train_kshot,
         "validation": eval_kshot,
         "test": eval_kshot,
     }
 
     data_splits = {
-        k: (
+        split: (
             ds.remove_columns([c for c in ["prompt"] if c in ds.column_names])
-            if data_kshot[k] == 0
+            if prompt_kshot[split] == 0
             else ds
         )
-        for k, ds in data_splits.items()
+        for split, ds in dataset.items()
     }
 
     if max_token_length is not None:
@@ -100,20 +101,49 @@ def get_offline(
 
 
 @register_dataset
-def offline(*args, root=None, dataset_str=None, max_token_length=None, **kwargs):
-    if len(dataset_str.split(":")) == 2:
-        root = dataset_str.split(":")[1]
+def offline(
+    *args,
+    root=None,
+    dataset_str=None,
+    prompt_style=None,
+    train_kshot=0,
+    eval_kshot=0,
+    **kwargs,
+):
+    _, name = dataset_str.split(":")
+    root = f"{root}/offline/{name}-{prompt_style}"
 
     return get_offline(
-        *args,
-        **kwargs,
-        root=root,
-        max_token_length=max_token_length,
+        *args, root=root, train_kshot=train_kshot, eval_kshot=eval_kshot, **kwargs
     )
 
 
-@register_dataset
-def offline_noprompt(*args, **kwargs):
-    kwargs.pop("train_kshot", None)
-    kwargs.pop("eval_kshot", None)
-    return offline(*args, **kwargs, train_kshot=0, eval_kshot=0)
+@register_dataset(attrs=get_dataset_attrs("mmlu"))
+def mmlu_offline(
+    *args,
+    root=None,
+    dataset_str=None,
+    prompt_style=None,
+    eval_kshot=5,
+    **kwargs,
+):
+    try:
+        _, name, task = dataset_str.split(":")
+
+        assert task in get_dataset_attrs("mmlu").get("tasks")
+    except ValueError:
+        logging.exception(
+            f'Dataset string should be formatted as "mmlu_offline:<name>:<task>" (Got {dataset_str})',
+            exc_info=True,
+        )
+        raise
+    except AssertionError:
+        logging.exception(
+            f'Task not found. Dataset string should be formatted as "mmlu_offline:<name>:<task>" (Got {dataset_str})',
+            exc_info=True,
+        )
+        raise
+
+    root = f"{root}/mmlu_offline/{prompt_style}/{name}/{task}"
+
+    return get_offline(*args, root=root, eval_kshot=eval_kshot, **kwargs)

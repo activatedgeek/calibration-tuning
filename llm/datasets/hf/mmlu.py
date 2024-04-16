@@ -1,9 +1,10 @@
+import logging
 import string
 import numpy as np
 from datasets import load_dataset
 
 from ..registry import register_dataset
-from ..llm_utils import LMText, PromptFormat
+from ..llm_data_utils import LMText, PromptFormat
 
 
 __TASKS = [
@@ -185,10 +186,21 @@ def get_mmlu(
 
 @register_dataset(attrs=dict(tasks=__TASKS, eval=True))
 def mmlu(*args, dataset_str=None, **kwargs):
-    _, task = dataset_str.split(":")
+    try:
+        _, task = dataset_str.split(":")
 
-    assert (
-        task in __TASKS
-    ), f'Dataset string should be formatted as "mmlu:<task>" (Got {dataset_str}). "{task}" task not found.'
+        assert task in __TASKS
+    except ValueError:
+        logging.exception(
+            f'Dataset string should be formatted as "mmlu:<task>" (Got {dataset_str})',
+            exc_info=True,
+        )
+        raise
+    except AssertionError:
+        logging.exception(
+            f'Task not found. Dataset string should be formatted as "mmlu:<task>" (Got {dataset_str})',
+            exc_info=True,
+        )
+        raise
 
     return get_mmlu(*args, **kwargs, task=task)

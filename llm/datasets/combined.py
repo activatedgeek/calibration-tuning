@@ -3,7 +3,7 @@ from datasets import concatenate_datasets
 
 from .registry import get_dataset, list_datasets, register_dataset, get_dataset_attrs
 from ..random import FixedSeed
-from .llm_utils import LMText, LabeledStringDataCollator
+from .llm_data_utils import LMText, LabeledStringDataCollator
 
 
 def get_all_datasets_list(dataset_str, prompt_style=None):
@@ -44,43 +44,16 @@ def get_all_datasets_list(dataset_str, prompt_style=None):
             all_datasets_list = [
                 f"mmlu:{task}" for task in get_dataset_attrs("mmlu").get("tasks")
             ] + ["gsm8k"]
-        elif sub_dataset.startswith("mmlu_oe_offline"):
-            use_rem = len(sub_dataset.split("_rem")) == 2
-            sub_dataset = "".join(sub_dataset.split("_rem"))
+        elif sub_dataset == "mmlu":
             all_datasets_list = [
                 f"{sub_dataset}/{task}"
-                for task in (
-                    [
-                        "high_school_european_history",
-                        "high_school_world_history",
-                        "miscellaneous",
-                        "moral_scenarios",
-                        "professional_accounting",
-                        "professional_law",
-                        "professional_medicine",
-                    ]
-                    if use_rem
-                    else get_dataset_attrs("mmlu").get("tasks")
-                )
+                for task in get_dataset_attrs(sub_dataset).get("tasks")
             ]
-        elif sub_dataset.startswith("mmlu"):
-            use_rem = len(sub_dataset.split("_rem")) == 2
-            sub_dataset = "".join(sub_dataset.split("_rem"))
+        elif sub_dataset.startswith("mmlu_offline:"):
+            sub_dataset, name = sub_dataset.split(":")
             all_datasets_list = [
-                f"{sub_dataset}:{task}"
-                for task in (
-                    [
-                        "high_school_european_history",
-                        "high_school_world_history",
-                        "miscellaneous",
-                        "moral_scenarios",
-                        "professional_accounting",
-                        "professional_law",
-                        "professional_medicine",
-                    ]
-                    if use_rem
-                    else get_dataset_attrs("mmlu").get("tasks")
-                )
+                f"{sub_dataset}:{name}:{task}"
+                for task in get_dataset_attrs(sub_dataset).get("tasks")
             ]
         else:
             raise NotImplementedError

@@ -77,22 +77,25 @@ def generate_outputs_main(
     )
 
     for split_name, data in data_splits:
-        loader = get_loader(
-            data,
-            batch_size=batch_size,
-            pin_memory=True,
-            accelerator=accelerator,
-        )
-
         with accelerator.main_process_first():
             if accelerator.is_main_process:
                 os.makedirs(f"{log_dir}/outputs/{split_name}")
+
+        # import pandas as pd
+        # pd.DataFrame([data[i] for i in tqdm(range(len(data)))]).to_csv(
+        #     f"{log_dir}/outputs/{split_name}/rows.csv", index=False
+        # )
 
         generate_output(
             accelerator,
             model,
             tokenizer,
-            loader,
+            get_loader(
+                data,
+                batch_size=batch_size,
+                pin_memory=True,
+                accelerator=accelerator,
+            ),
             generation_config=generation_config,
             log_dir=f"{log_dir}/outputs/{split_name}",
         )

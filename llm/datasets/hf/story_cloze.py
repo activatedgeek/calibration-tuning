@@ -1,10 +1,11 @@
 import os
 import string
+from pathlib import Path
 import numpy as np
 from datasets import load_dataset
 
 from ..registry import register_dataset
-from ..llm_utils import LMText, PromptFormat
+from ..llm_data_utils import LMText, PromptFormat
 
 
 def format_sample(sample, format, with_query_label=False, seed=None):
@@ -118,7 +119,7 @@ def get_story_cloze(
         "story_cloze",
         "2018",
         ## NOTE: manually place the CSV in data_dir.
-        data_dir=f"{os.environ.get('HF_HOME')}/datasets/story_cloze/2018",
+        data_dir=f"{os.environ.get('HF_HOME', Path.home() / 'huggingface')}/datasets/story_cloze/2018",
         trust_remote_code=True,
     )
     if not use_cache:

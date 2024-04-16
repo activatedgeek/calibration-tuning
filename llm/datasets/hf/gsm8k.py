@@ -2,7 +2,7 @@ import numpy as np
 from datasets import load_dataset
 
 from ..registry import register_dataset
-from ..llm_utils import LMText, PromptFormat
+from ..llm_data_utils import LMText, PromptFormat
 
 
 def format_sample(sample, format):

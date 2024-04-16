@@ -1,7 +1,7 @@
 from datasets import load_dataset, DatasetDict
 
 from ..registry import register_dataset
-from ..llm_utils import PromptFormat
+from ..llm_data_utils import PromptFormat
 from .snli import format_sample, format_sample_prompt
 
 

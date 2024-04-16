@@ -4,7 +4,7 @@ import torch
 import logging
 import time
 
-from .llm_utils import LMText, get_token_vec
+from .llm_data_utils import LMText, get_token_vec
 
 
 def openai_query(system_prompt, prompt, openai_model_name="gpt-3.5-turbo"):
