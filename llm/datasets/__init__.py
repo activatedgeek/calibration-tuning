@@ -2,9 +2,13 @@ from .registry import register_dataset, get_dataset, get_dataset_attrs, list_dat
 from .utils import get_loader, get_num_workers
 from .combined import get_all_datasets_list
 
-from .llm_utils import IGNORE_LABEL, get_token_vec, LMText
+from .llm_data_utils import (
+    IGNORE_LABEL,
+    get_token_vec,
+    LMText,
+    LabeledStringDataCollator,
+)
 from .llm_utils_oe import prepare_uncertainty_query
-from .data_collator import LabeledStringDataCollator
 
 
 __all__ = [
@@ -27,28 +31,9 @@ def __setup():
     from importlib import import_module
 
     for n in [
-        "arc",
-        "boolq",
         "combined",
-        "commonsense_qa",
-        "cosmos_qa",
-        "gsm8k",
-        "hellaswag",
-        "math_qa",
-        "mmlu",
-        "mmlu_oe_offline",
-        "nli",
-        "obqa",
+        "hf",
         "offline",
-        "piqa",
-        "sciq",
-        "siqa",
-        "story_cloze",
-        "super_glue",
-        "trec",
-        "truthful_qa",
-        "winogrande",
-        "wsc",
     ]:
         import_module(f".{n}", __name__)
 

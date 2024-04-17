@@ -47,17 +47,12 @@ def generate_outputs_main(
     if accelerator.is_main_process:
         wandb.config.update(config)
 
-    tokenizer, model = get_model(model_name, device_map="auto")
-
-    model.eval()
-
     ## @HOTFIX: for hanging processes in dataset map.
     # import multiprocess.context as ctx
     # ctx._force_start_method("spawn")
     with accelerator.main_process_first():
         data_splits = get_dataset(
             dataset,
-            tokenizer=tokenizer,
             seed=seed,
             num_workers=8,
             use_cache=use_dataset_cache,
@@ -71,6 +66,9 @@ def generate_outputs_main(
             if ds is not None
         ]
 
+    tokenizer, model = get_model(model_name, device_map="auto")
+    model.eval()
+
     generation_config = GenerationConfig(
         pad_token_id=tokenizer.pad_token_id,
         bos_token_id=tokenizer.bos_token_id,
@@ -79,22 +77,25 @@ def generate_outputs_main(
     )
 
     for split_name, data in data_splits:
-        loader = get_loader(
-            data,
-            batch_size=batch_size,
-            pin_memory=True,
-            accelerator=accelerator,
-        )
-
         with accelerator.main_process_first():
             if accelerator.is_main_process:
                 os.makedirs(f"{log_dir}/outputs/{split_name}")
+
+        # import pandas as pd
+        # pd.DataFrame([data[i] for i in tqdm(range(len(data)))]).to_csv(
+        #     f"{log_dir}/outputs/{split_name}/rows.csv", index=False
+        # )
 
         generate_output(
             accelerator,
             model,
             tokenizer,
-            loader,
+            get_loader(
+                data,
+                batch_size=batch_size,
+                pin_memory=True,
+                accelerator=accelerator,
+            ),
             generation_config=generation_config,
             log_dir=f"{log_dir}/outputs/{split_name}",
         )

@@ -55,7 +55,11 @@ def list_datasets():
 
 def get_data_dir(data_dir=None):
     if data_dir is None:
-        data_dir = Path(os.environ.get("DATASETS_CACHE", Path.home() / "datasets"))
+        data_dir = (
+            Path(os.environ.get("PROJECT_HOME", Path.home()))
+            / Path.cwd().name
+            / "datasets"
+        )
     else:
         data_dir = Path(data_dir)
 
