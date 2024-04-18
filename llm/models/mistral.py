@@ -18,7 +18,7 @@ def create_tokenizer(
     **kwargs,
 ):
     tokenizer = AutoTokenizer.from_pretrained(
-        model_dir or f"mistralai/Mistral-{kind}",
+        model_dir or f"mistralai/{kind}",
         padding_side=padding_side,
         model_max_length=model_max_length,
         use_fast=True,
@@ -42,7 +42,7 @@ def create_model(
     **kwargs,
 ):
     quantization_config = None
-    if use_int8 or use_int4:
+    if use_int4 or use_int8:
         from transformers import BitsAndBytesConfig
 
         quantization_config = BitsAndBytesConfig(
@@ -51,7 +51,7 @@ def create_model(
         )
 
     model = MistralForCausalLM.from_pretrained(
-        model_dir or f"mistralai/Mistral-{kind}",
+        model_dir or f"mistralai/{kind}",
         torch_dtype=torch_dtype
         or (torch.bfloat16 if torch.cuda.is_bf16_supported() else torch.float16),
         quantization_config=quantization_config,
@@ -63,7 +63,7 @@ def create_model(
 
     resize_token_embeddings(tokenizer, model)
 
-    if use_int8:
+    if use_int4 or use_int8:
         model = prepare_model_for_kbit_training(model, use_gradient_checkpointing=False)
 
     return model
@@ -77,19 +77,39 @@ def create_tokenizer_and_model(kind, tokenizer_args=None, **kwargs):
 
 @register_model
 def mistral_7b_tokenizer(**kwargs):
-    return create_tokenizer("7B-v0.1", **kwargs)
+    return create_tokenizer("Mistral-7B-v0.1", **kwargs)
 
 
 @register_model
 def mistral_7b(**kwargs):
-    return create_tokenizer_and_model("7B-v0.1", **kwargs)
+    return create_tokenizer_and_model("Mistral-7B-v0.1", **kwargs)
 
 
 @register_model
 def mistral_7b_instruct_tokenizer(**kwargs):
-    return create_tokenizer("7B-Instruct-v0.2", **kwargs)
+    return create_tokenizer("Mistral-7B-Instruct-v0.2", **kwargs)
 
 
 @register_model
 def mistral_7b_instruct(**kwargs):
-    return create_tokenizer_and_model("7B-Instruct-v0.2", **kwargs)
+    return create_tokenizer_and_model("Mistral-7B-Instruct-v0.2", **kwargs)
+
+
+@register_model
+def mixtral_8x22b_tokenizer(**kwargs):
+    return create_tokenizer("Mixtral-8x22B-v0.1", **kwargs)
+
+
+@register_model
+def mixtral_8x22b(**kwargs):
+    return create_tokenizer_and_model("Mixtral-8x22B-v0.1", **kwargs)
+
+
+@register_model
+def mixtral_8x22b_instruct_tokenizer(**kwargs):
+    return create_tokenizer("Mixtral-8x22B-Instruct-v0.1", **kwargs)
+
+
+@register_model
+def mixtral_8x22b_instruct(**kwargs):
+    return create_tokenizer_and_model("Mixtral-8x22B-Instruct-v0.1", **kwargs)
