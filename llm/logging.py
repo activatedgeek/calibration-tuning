@@ -61,11 +61,14 @@ def setup_log_dir(log_dir=None):
 
     if accelerator.is_main_process:
         if log_dir is None:
+            log_dir_name = datetime.today().strftime("%Y-%m-%dT%H-%M-%S")
+            if "JOB_ID" in os.environ:
+                log_dir_name = os.environ.get("JOB_ID") + "-" + log_dir_name
             log_dir = (
                 Path(os.environ.get("PROJECT_HOME", Path.home()))
                 / Path.cwd().name
                 / "logs"
-                / datetime.today().strftime("%Y-%m-%dT%H-%M-%S")
+                / log_dir_name
             )
         else:
             log_dir = Path(log_dir)
