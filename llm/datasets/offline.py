@@ -1,6 +1,7 @@
 import logging
 import os
 import glob
+from enum import Enum
 import numpy as np
 from datasets import load_dataset, Features, Value, DatasetDict
 
@@ -20,12 +21,21 @@ CSV_DATASET_FEATURES = Features(
 )
 
 
+class DatasetSizeRatio(float, Enum):
+    XXS = 0.01
+    XS = 0.1
+    SM = 0.25
+    MD = 0.5
+
+
 def get_offline(
+    seed=None,
     root=None,
     num_workers=8,
     use_cache=True,
     tokenizer=None,
     max_token_length=None,
+    train_ratio=None,
     train_kshot=0,
     eval_kshot=0,
     **_,
@@ -94,6 +104,13 @@ def get_offline(
         }
 
     train_data = data_splits.pop("train", None)
+    if train_data is not None and train_ratio is not None:
+        n_train = len(train_data)
+        idxs = np.random.default_rng(seed=seed).choice(
+            range(n_train), int(DatasetSizeRatio(train_ratio) * n_train)
+        )
+        train_data = train_data.select(idxs)
+
     val_data = data_splits.pop("validation", None)
     test_data = data_splits.pop("test", None)
 
@@ -101,31 +118,48 @@ def get_offline(
 
 
 @register_dataset
-def offline(
-    *args,
-    root=None,
-    dataset_str=None,
-    prompt_style=None,
-    train_kshot=0,
-    eval_kshot=0,
-    **kwargs,
-):
-    _, name = dataset_str.split(":")
+def offline(*args, root=None, dataset_str=None, prompt_style=None, **kwargs):
+    try:
+        _, name = dataset_str.split(":")
+    except ValueError:
+        logging.exception(
+            f'Dataset string should be formatted as "offline:<name>" (Got {dataset_str})',
+            exc_info=True,
+        )
+        raise
+
     root = f"{root}/offline/{name}-{prompt_style}"
 
-    return get_offline(
-        *args, root=root, train_kshot=train_kshot, eval_kshot=eval_kshot, **kwargs
-    )
+    return get_offline(*args, root=root, **kwargs)
+
+
+@register_dataset
+def offline_xxs(*args, **kwargs):
+    kwargs.pop("train_ratio", None)
+    return offline(*args, train_ratio=DatasetSizeRatio.XXS, **kwargs)
+
+
+@register_dataset
+def offline_xs(*args, **kwargs):
+    kwargs.pop("train_ratio", None)
+    return offline(*args, train_ratio=DatasetSizeRatio.XS, **kwargs)
+
+
+@register_dataset
+def offline_sm(*args, **kwargs):
+    kwargs.pop("train_ratio", None)
+    return offline(*args, train_ratio=DatasetSizeRatio.SM, **kwargs)
+
+
+@register_dataset
+def offline_md(*args, **kwargs):
+    kwargs.pop("train_ratio", None)
+    return offline(*args, train_ratio=DatasetSizeRatio.MD, **kwargs)
 
 
 @register_dataset(attrs=get_dataset_attrs("mmlu"))
 def mmlu_offline(
-    *args,
-    root=None,
-    dataset_str=None,
-    prompt_style=None,
-    eval_kshot=5,
-    **kwargs,
+    *args, root=None, dataset_str=None, prompt_style=None, eval_kshot=5, **kwargs
 ):
     try:
         _, name, task = dataset_str.split(":")
