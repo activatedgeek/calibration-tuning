@@ -1,4 +1,4 @@
-from llm.datasets import get_dataset
+from llm.datasets import get_dataset, LMText, LabeledStringDataCollator
 from llm.distributed import AcceleratorState
 from llm.logging import entrypoint
 from llm.models import get_model
@@ -52,7 +52,6 @@ def main(
             dataset,
             seed=seed,
             prompt_style=prompt_style,
-            max_token_length=max_token_length,
             num_workers=num_workers,
             use_cache=use_dataset_cache,
         )
@@ -64,6 +63,20 @@ def main(
         device_map={"": accelerator.local_process_index},
         use_int8=int8,
     )
+
+    if max_token_length is not None:
+        tokenizer_args = LabeledStringDataCollator.get_tokenizer_args(tokenizer)
+
+        def token_length_filter(instance):
+            f_instance = {k: v for k, v in instance.items() if "embedding" not in k}
+            inputs = tokenizer(
+                [str(LMText.from_(f_instance))],
+                **tokenizer_args,
+            )
+            return inputs.get("input_ids").size(-1) <= max_token_length
+
+        train_data = train_data.filter(token_length_filter, num_proc=num_workers)
+        val_data = val_data.filter(token_length_filter, num_proc=num_workers)
 
     model = get_lora_model(
         model,

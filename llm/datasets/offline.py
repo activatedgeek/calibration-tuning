@@ -6,7 +6,6 @@ import numpy as np
 from datasets import load_dataset, Features, Value, DatasetDict
 
 from .registry import register_dataset, get_dataset_attrs
-from .llm_data_utils import LMText, LabeledStringDataCollator
 
 
 CSV_DATASET_FEATURES = Features(
@@ -33,9 +32,7 @@ def get_offline(
     root=None,
     num_workers=8,
     use_cache=True,
-    tokenizer=None,
-    max_token_length=None,
-    train_ratio=None,
+    data_ratio=None,
     train_kshot=0,
     eval_kshot=0,
     **_,
@@ -61,56 +58,47 @@ def get_offline(
     if len(set(dataset.keys()) - set(embeddings.keys())) == 0:
         dataset = DatasetDict(
             {
-                split: dataset[split].map(
+                split: ds.map(
                     lambda _, idx: {"embedding": embeddings[split][idx]},
                     with_indices=True,
                     num_proc=num_workers,
                 )
-                for split in data_files.keys()
+                for split, ds in dataset.items()
             }
         )
         dataset = dataset.with_format(
             "np", columns=["embedding"], output_all_columns=True
         )
 
+    if data_ratio is not None:
+        data_ratio = DatasetSizeRatio(data_ratio)
+
+        def sub_sample(data):
+            N = len(data)
+            idxs = np.random.default_rng(seed=seed).choice(
+                range(N), int(data_ratio * N)
+            )
+            return data.select(idxs)
+
+        dataset = DatasetDict({split: sub_sample(ds) for split, ds in dataset.items()})
+
     prompt_kshot = {
         "train": train_kshot,
         "validation": eval_kshot,
         "test": eval_kshot,
     }
-
-    data_splits = {
-        split: (
-            ds.remove_columns([c for c in ["prompt"] if c in ds.column_names])
-            if prompt_kshot[split] == 0
-            else ds
-        )
-        for split, ds in dataset.items()
-    }
-
-    if max_token_length is not None:
-        tokenizer_args = LabeledStringDataCollator.get_tokenizer_args(tokenizer)
-
-        def token_length_filter(instance):
-            inputs = tokenizer(
-                [str(LMText.from_(instance))],
-                **tokenizer_args,
+    data_splits = DatasetDict(
+        {
+            split: (
+                ds.remove_columns([c for c in ["prompt"] if c in ds.column_names])
+                if prompt_kshot[split] == 0
+                else ds
             )
-            return inputs.get("input_ids").size(-1) <= max_token_length
-
-        data_splits = {
-            k: ds.filter(token_length_filter, num_proc=num_workers)
-            for k, ds in data_splits.items()
+            for split, ds in dataset.items()
         }
+    )
 
     train_data = data_splits.pop("train", None)
-    if train_data is not None and train_ratio is not None:
-        n_train = len(train_data)
-        idxs = np.random.default_rng(seed=seed).choice(
-            range(n_train), int(DatasetSizeRatio(train_ratio) * n_train)
-        )
-        train_data = train_data.select(idxs)
-
     val_data = data_splits.pop("validation", None)
     test_data = data_splits.pop("test", None)
 
@@ -135,26 +123,26 @@ def offline(*args, root=None, dataset_str=None, prompt_style=None, **kwargs):
 
 @register_dataset
 def offline_xxs(*args, **kwargs):
-    kwargs.pop("train_ratio", None)
-    return offline(*args, train_ratio=DatasetSizeRatio.XXS, **kwargs)
+    kwargs.pop("data_ratio", None)
+    return offline(*args, data_ratio=DatasetSizeRatio.XXS, **kwargs)
 
 
 @register_dataset
 def offline_xs(*args, **kwargs):
-    kwargs.pop("train_ratio", None)
-    return offline(*args, train_ratio=DatasetSizeRatio.XS, **kwargs)
+    kwargs.pop("data_ratio", None)
+    return offline(*args, data_ratio=DatasetSizeRatio.XS, **kwargs)
 
 
 @register_dataset
 def offline_sm(*args, **kwargs):
-    kwargs.pop("train_ratio", None)
-    return offline(*args, train_ratio=DatasetSizeRatio.SM, **kwargs)
+    kwargs.pop("data_ratio", None)
+    return offline(*args, data_ratio=DatasetSizeRatio.SM, **kwargs)
 
 
 @register_dataset
 def offline_md(*args, **kwargs):
-    kwargs.pop("train_ratio", None)
-    return offline(*args, train_ratio=DatasetSizeRatio.MD, **kwargs)
+    kwargs.pop("data_ratio", None)
+    return offline(*args, data_ratio=DatasetSizeRatio.MD, **kwargs)
 
 
 @register_dataset(attrs=get_dataset_attrs("mmlu"))
