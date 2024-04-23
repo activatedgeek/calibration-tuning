@@ -76,7 +76,7 @@ See [experiments/play.py](./experiments/play.py) for an example script of how to
 Create a new environment and activate, e.g. with `conda`,
 
 ```shell
-conda env create -y -n calibration-tuning python=3.11 pip -c conda-forge
+conda create -y -n calibration-tuning python=3.11 pip -c conda-forge
 conda activate calibration-tuning
 ```
 
