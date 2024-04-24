@@ -33,6 +33,7 @@ def __setup():
     for n in [
         "combined",
         "hf",
+        "modiste",
         "offline",
     ]:
         import_module(f".{n}", __name__)

@@ -55,6 +55,11 @@ def get_all_datasets_list(dataset_str, prompt_style=None):
                 f"{sub_dataset}:{name}:{task}"
                 for task in get_dataset_attrs(sub_dataset).get("tasks")
             ]
+        elif sub_dataset == "modiste":
+            all_datasets_list = [
+                f"{sub_dataset}:{task}"
+                for task in get_dataset_attrs(sub_dataset).get("tasks")
+            ]
         else:
             raise NotImplementedError
 
