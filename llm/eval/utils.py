@@ -140,6 +140,7 @@ def evaluate_dataset(
     model,
     tokenizer,
     dataset,
+    data_dir=None,
     train_data=None,
     val_data=None,
     test_data=None,
@@ -160,6 +161,7 @@ def evaluate_dataset(
                 _extra_args["eval_kshot"] = eval_kshot
             data_splits = get_dataset(
                 dataset,
+                root=data_dir,
                 tokenizer=tokenizer,
                 seed=seed,
                 num_workers=num_workers,

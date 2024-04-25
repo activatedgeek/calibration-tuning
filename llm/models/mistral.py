@@ -1,6 +1,6 @@
 from peft import prepare_model_for_kbit_training
 import torch
-from transformers import BitsAndBytesConfig, AutoTokenizer, MistralForCausalLM
+from transformers import AutoTokenizer, MistralForCausalLM
 
 
 from .registry import register_model
