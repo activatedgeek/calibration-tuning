@@ -20,7 +20,7 @@ def openai_query(system_prompt, prompt, openai_model_name="gpt-3.5-turbo"):
                     {"role": "user", "content": prompt},
                 ],
             )
-            sampled_response = response["choices"][0]["message"]["content"]
+            sampled_response = response.choices[0].message.content
         except APIError:
             logging.exception("OpenAI API Error.", exc_info=True)
             time.sleep(1)
