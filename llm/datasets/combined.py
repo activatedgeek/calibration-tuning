@@ -139,8 +139,11 @@ def get_all(
     complement=False,
     **kwargs,
 ):
+    dataset_names = get_all_datasets_list("all:train", prompt_style=prompt_style)
+    dataset_names = [k for k in dataset_names if k != 'modiste']
+
     tr, vl, _ = get_combined_dataset(
-        all_dataset_names=get_all_datasets_list("all:train", prompt_style=prompt_style),
+        all_dataset_names=dataset_names,
         *args,
         **kwargs,
         prompt_style=prompt_style,

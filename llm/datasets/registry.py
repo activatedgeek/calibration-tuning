@@ -70,7 +70,7 @@ def get_data_dir(data_dir=None):
 
 def get_dataset(dataset, root=None, seed=42, **kwargs):
     dataset_fn = get_dataset_fn(dataset.split(":")[0])
-
+    
     root = get_data_dir(data_dir=root)
 
     train_data, val_data, test_data = dataset_fn(

@@ -1,8 +1,9 @@
 from peft import prepare_model_for_kbit_training
 import torch
 from transformers import (
+    AutoTokenizer,
     PreTrainedTokenizerFast, 
-    LlamaForCausalLM
+    LlamaForCausalLM,
 )
 
 from .registry import register_model
@@ -16,12 +17,13 @@ def create_tokenizer(
     model_max_length=None,
     **kwargs,
 ):
-    tokenizer = PreTrainedTokenizerFast.from_pretrained(
+    tokenizer = AutoTokenizer.from_pretrained(
         model_dir or f"meta-llama/Meta-Llama-3-{kind}",
         padding_side=padding_side,
-        model_max_length=model_max_length,
+        model_max_length=8192,
         use_fast=True,
         legacy=False,
+        use_auth_token=True,
         **kwargs,
     )
 
