@@ -134,6 +134,19 @@ VERBAL_ELICITATION_MAP = {
     },
 }
 
+## HOTFIX: avoid long metrics dump paths.
+def _dataset_log_name(dataset: str):
+    log_name = dataset
+    if log_name.startswith("mmlu_oe_offline"):
+        _, b = log_name.split(":")
+        b = b.split("/")[-1]
+        log_name = f"mmlu:{b}"
+    elif log_name.startswith("offline"):
+        _, b = log_name.split(":")
+        b = b.split("/")[-1]
+        log_name = f"offline"
+    return log_name
+
 
 def evaluate_dataset(
     accelerator,
