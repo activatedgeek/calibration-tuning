@@ -27,6 +27,7 @@ def generate_outputs_main(
     seed=137,
     log_dir=None,
     dataset=None,
+    data_dir=None,
     prompt_style=None,
     kshot=0,
     use_dataset_cache=True,
@@ -53,6 +54,7 @@ def generate_outputs_main(
     with accelerator.main_process_first():
         data_splits = get_dataset(
             dataset,
+            root=data_dir,
             seed=seed,
             num_workers=8,
             use_cache=use_dataset_cache,
@@ -136,6 +138,9 @@ def generate_labels_main(
     seed=137,
     log_dir=None,
     dataset=None,
+    data_dir=None,
+    prompt_style=None,
+    kshot=0,
     use_dataset_cache=True,
     batch_size=1,
     model_name=None,
@@ -145,6 +150,7 @@ def generate_labels_main(
         "seed": seed,
         "log_dir": log_dir,
         "dataset": dataset,
+        "prompt_style": prompt_style,
         "batch_size": batch_size,
         "model_name": model_name,
         "strategy": strategy,
@@ -157,10 +163,13 @@ def generate_labels_main(
     with accelerator.main_process_first():
         data_splits = get_dataset(
             dataset,
-            tokenizer=tokenizer,
+            root=data_dir,
             seed=seed,
             num_workers=8,
             use_cache=use_dataset_cache,
+            prompt_style=prompt_style,
+            train_kshot=kshot,
+            eval_kshot=kshot,
         )
         data_splits = [
             (s, ds)
@@ -199,6 +208,7 @@ def generate_embeddings_main(
     seed=137,
     log_dir=None,
     dataset=None,
+    data_dir=None,
     use_dataset_cache=True,
     batch_size=1,
     model_name=None,
@@ -225,6 +235,7 @@ def generate_embeddings_main(
         with accelerator.main_process_first():
             data_splits = get_dataset(
                 dataset,
+                root=data_dir,
                 seed=seed,
                 num_workers=8,
                 use_cache=use_dataset_cache,

@@ -146,7 +146,7 @@ Checkpoints will be saved in an auto-generated directory `<train-log-dir>/checkp
 To use the labeled dataset for calibration-tuning (`CT-Query`),
 
 ```shell
-torchrun --nnodes=1 --nproc_per_node=auto experiments/calibration_tune.py --dataset=offline_noprompt:<labels-log-dir>/labels --model_name=llama2_13b_chat --batch-size=4 --kl-decay=1.0 --max-steps=5000
+torchrun --nnodes=1 --nproc_per_node=auto experiments/calibration_tune.py --dataset=offline:<labels-log-dir>/labels --model_name=llama2_13b_chat --batch-size=4 --kl-decay=1.0 --max-steps=5000
 ```
 
 Use `--scale-temp` for temperature scaling of the uncertainty query predictions.
@@ -158,7 +158,7 @@ For other CLI arguments, see the `main` function of [experiments/calibration_tun
 To use the labeled dataset for training a classifier head (`CT-Probe`),
 
 ```shell
-torchrun --nnodes=1 --nproc_per_node=auto experiments/classifier_tune.py --dataset=offline_noprompt:<labels-log-dir>/labels --model_name=llama2_13b_chat --batch-size=4 --max-steps=5000
+torchrun --nnodes=1 --nproc_per_node=auto experiments/classifier_tune.py --dataset=offline:<labels-log-dir>/labels --model_name=llama2_13b_chat --batch-size=4 --max-steps=5000
 ```
 
 Use `--scale-temp` for temperature scaling of the classifier. 
