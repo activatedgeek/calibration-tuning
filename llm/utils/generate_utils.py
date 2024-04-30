@@ -6,6 +6,21 @@ from peft import PeftModel
 
 from llm.datasets import LabeledStringDataCollator
 
+def wrapped_generate_output(model, generation_inputs, generation_config):
+    while True:
+        try:
+            generation_outputs = model.generate(
+                **generation_inputs, generation_config=generation_config
+            )
+            return generation_outputs
+        except Exception as e:
+            generation_outputs = []
+            new_bs = max(1, generation_inputs["input_ids"].size(0) // 2)
+            for i in range(0, generation_inputs["input_ids"].size(0), new_bs):
+                inputs = {k: v[i : i + new_bs] for k, v in generation_inputs.items()}
+                _outputs = wrapped_generate_output(model, inputs, generation_config)
+                generation_outputs.append(_outputs)
+            return torch.cat(generation_outputs, dim=0)
 
 def generate_output(
     accelerator,
@@ -31,9 +46,9 @@ def generate_output(
 
         if isinstance(model, PeftModel):
             model.set_adapter("default")
-
-        generation_outputs = model.generate(
-            **generation_inputs, generation_config=generation_config
+        
+        generation_outputs = wrapped_generate_output(
+            model, generation_inputs, generation_config
         )
 
         generations = tokenizer.batch_decode(
