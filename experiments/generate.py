@@ -18,7 +18,6 @@ from llm.datasets import (
 from llm.logging import entrypoint
 from llm.models import get_model
 from llm.utils.generate_utils import generate_output
-from llm.eval.utils import _dataset_log_name
 
 
 @entrypoint(with_accelerator=True)
@@ -209,6 +208,8 @@ def generate_embeddings_main(
     log_dir=None,
     dataset=None,
     data_dir=None,
+    prompt_style=None,
+    kshot=0,
     use_dataset_cache=True,
     batch_size=1,
     model_name=None,
@@ -217,13 +218,15 @@ def generate_embeddings_main(
         "seed": seed,
         "log_dir": log_dir,
         "dataset": dataset,
+        "prompt_style": prompt_style,
+        "kshot": kshot,
         "batch_size": batch_size,
         "model_name": model_name,
     }
     if accelerator.is_main_process:
         wandb.config.update(config)
 
-    embedding_model = get_model(model_name)
+    embedding_model = get_model(model_name, device_map="auto")
 
     if dataset.startswith("eval"):
         all_datasets = get_all_datasets_list(dataset)
@@ -239,6 +242,10 @@ def generate_embeddings_main(
                 seed=seed,
                 num_workers=8,
                 use_cache=use_dataset_cache,
+                prompt_style=prompt_style,
+                train_kshot=kshot,
+                eval_kshot=kshot,
+                load_embeddings=False,
             )
             data_splits = [
                 (s, ds)
@@ -271,15 +278,14 @@ def generate_embeddings_main(
 
                 # embeddings = np.random.randn(len(inputs), 100)
                 embeddings = embedding_model(texts)
-                embeddings = torch.tensor(embeddings).float()
+                if not isinstance(embeddings, torch.Tensor):
+                    embeddings = torch.tensor(embeddings).float()
 
                 all_embeddings.append(accelerator.gather_for_metrics(embeddings))
 
-            all_embeddings = torch.cat(all_embeddings, dim=0).numpy()
+            all_embeddings = torch.cat(all_embeddings, dim=0).cpu().numpy()
 
-            save_dir = (
-                Path(log_dir) / "embeddings" / _dataset_log_name(dataset) / split_name
-            )
+            save_dir = Path(log_dir) / "embeddings" / dataset / split_name
             save_dir.mkdir(parents=True)
 
             np.save(save_dir / "embedding.npy", all_embeddings)
