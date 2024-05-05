@@ -35,6 +35,7 @@ def get_offline(
     data_ratio=None,
     train_kshot=0,
     eval_kshot=0,
+    load_embeddings=True,
     **_,
 ):
     data_files = {}
@@ -55,7 +56,7 @@ def get_offline(
         num_proc=num_workers,
     )
 
-    if len(set(dataset.keys()) - set(embeddings.keys())) == 0:
+    if load_embeddings and len(set(dataset.keys()) - set(embeddings.keys())) == 0:
         dataset = DatasetDict(
             {
                 split: ds.map(
