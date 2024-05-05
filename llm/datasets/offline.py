@@ -107,6 +107,9 @@ def get_offline(
 
 @register_dataset
 def offline(*args, root=None, dataset_str=None, prompt_style=None, **kwargs):
+    print(root)
+    print(dataset_str)
+    
     try:
         _, name = dataset_str.split(":")
     except ValueError:
@@ -116,7 +119,11 @@ def offline(*args, root=None, dataset_str=None, prompt_style=None, **kwargs):
         )
         raise
 
-    root = f"{root}/offline/{name}-{prompt_style}"
+    root = f"{root}/offline/{name}"
+    # if prompt_style:
+    #     root = root + f"-{prompt_style}"
+
+    print(root)
 
     return get_offline(*args, root=root, **kwargs)
 

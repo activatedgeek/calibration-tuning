@@ -58,7 +58,7 @@ def main(
 
     tokenizer, model = get_model(
         model_name,
-        device_map={"": accelerator.local_process_index},
+        device_map="auto",
     )
 
     model = get_lora_model(

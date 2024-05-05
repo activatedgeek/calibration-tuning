@@ -232,6 +232,12 @@ def evaluate_dataset(
             assert evaluate_fn[:3] == "oe_"
             comparison_strategies = [evaluate_fn[3:]]  # clip oe_
             evaluate_fn = EVALUATE_MODE_FN_MAP["oe"]
+        elif "vrbal" == evaluate_fn:
+            comparison_strategies = [
+                "fuzzy_gpt-3.5-turbo-1106",
+            ]
+            evaluate_fn = EVALUATE_MODE_FN_MAP["ve_oe"]
+            evaluate_fn = partial(evaluate_fn, None)
         elif "us_oe" == evaluate_fn:
             comparison_strategies = [
                 # "substring",
