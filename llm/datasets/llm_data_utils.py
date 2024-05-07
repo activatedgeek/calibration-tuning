@@ -71,6 +71,7 @@ def get_token_vec(tokenizer, format="roman_choice"):
 
     return _create_vec(raw_strings)
 
+LLAMA_3_SYS_PROMPT = "You are an expert who responds with concise, correct answers. Directly state the answer without phrases like 'the correct answer is'"
 
 @dataclass
 class LabeledStringDataCollator:
@@ -94,10 +95,27 @@ class LabeledStringDataCollator:
     def __call__(self, instances):
         tokenizer_args = self.get_tokenizer_args(self.tokenizer)
 
-        inputs = self.tokenizer(
-            [str(LMText.from_(instance)) for instance in instances],
-            **tokenizer_args,
-        )
+        prompts = [str(LMText.from_(instance)) for instance in instances]
+
+        if self.tokenizer.name_or_path and \
+            ('Llama-3' in self.tokenizer.name_or_path) and \
+            ('Instruct' in self.tokenizer.name_or_path):
+            msgs = [
+                [
+                    {"role": "system", "content": LLAMA_3_SYS_PROMPT},
+                    {"role": "user", "content": p}
+                ] for p in prompts
+            ]
+
+            prompts = [
+                self.tokenizer.apply_chat_template(
+                    m, 
+                    tokenize=False, 
+                    add_generation_prompt=True
+                ) for m in msgs
+            ]
+            
+        inputs = self.tokenizer(prompts, **tokenizer_args)
         input_lengths = inputs.pop("length")
 
         if self.target_name in instances[0]:

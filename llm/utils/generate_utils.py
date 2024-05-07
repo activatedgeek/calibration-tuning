@@ -6,11 +6,18 @@ from peft import PeftModel
 
 from llm.datasets import LabeledStringDataCollator
 
-def wrapped_generate_output(model, generation_inputs, generation_config):
+
+def wrapped_generate_output(model, tokenizer, generation_inputs, generation_config):
     while True:
         try:
+            terminators = [
+                tokenizer.eos_token_id,
+                tokenizer.convert_tokens_to_ids("<|eot_id|>")
+            ]
             generation_outputs = model.generate(
-                **generation_inputs, generation_config=generation_config
+                **generation_inputs, 
+                eos_token_id=terminators,
+                generation_config=generation_config
             )
             return generation_outputs
         except Exception as e:
@@ -48,7 +55,7 @@ def generate_output(
             model.set_adapter("default")
         
         generation_outputs = wrapped_generate_output(
-            model, generation_inputs, generation_config
+            model, tokenizer, generation_inputs, generation_config
         )
 
         generations = tokenizer.batch_decode(
@@ -56,6 +63,9 @@ def generate_output(
             skip_special_tokens=True,
             clean_up_tokenization_spaces=False,
         )
+        
+        # for x in generations:
+        #     print(x)
 
         outputs = [
             {**inp, "target": tgt, "output": gen}
