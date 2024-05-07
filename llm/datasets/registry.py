@@ -1,18 +1,17 @@
+from enum import Enum
 import os
 import logging
 from functools import wraps
 from pathlib import Path
 
 
-__all__ = [
-    "register_dataset",
-    "get_dataset",
-    "get_dataset_attrs",
-]
-
-
 __func_map = dict()
 __attr_map = dict()
+
+
+class DatasetTag(str, Enum):
+    TRAIN_ONLY = "train_only"
+    EVAL_ONLY = "eval_only"
 
 
 def register_dataset(function=None, attrs=None, **d_kwargs):
@@ -27,7 +26,7 @@ def register_dataset(function=None, attrs=None, **d_kwargs):
         ), f'Duplicate registration for "{_wrapper.__name__}"'
 
         __func_map[_wrapper.__name__] = _wrapper
-        __attr_map[_wrapper.__name__] = attrs
+        __attr_map[_wrapper.__name__] = attrs or dict()
         return _wrapper
 
     if function:
@@ -35,22 +34,23 @@ def register_dataset(function=None, attrs=None, **d_kwargs):
     return _decorator
 
 
-def get_dataset_fn(name):
-    if name not in __func_map:
-        raise ValueError(f'Dataset "{name}" not found.')
-
-    return __func_map[name]
+dataset_key = lambda d: d.split(":")[0]
 
 
 def get_dataset_attrs(name):
-    if name not in __attr_map:
-        raise ValueError(f'Dataset "{name}" attributes not found.')
+    key = dataset_key(name)
+    if key not in __attr_map:
+        raise ValueError(f'Dataset "{key}" not found.')
 
-    return __attr_map[name]
+    return __attr_map[key]
 
 
-def list_datasets():
-    return list(__func_map.keys())
+def get_dataset_fn(name):
+    key = dataset_key(name)
+    if key not in __func_map:
+        raise ValueError(f'Dataset "{key}" not found.')
+
+    return __func_map[key]
 
 
 def get_data_dir(data_dir=None):
@@ -69,14 +69,18 @@ def get_data_dir(data_dir=None):
 
 
 def get_dataset(dataset, root=None, seed=42, **kwargs):
-    dataset_fn = get_dataset_fn(dataset.split(":")[0])
+    dataset_fn = get_dataset_fn(dataset)
 
     root = get_data_dir(data_dir=root)
+
+    if get_dataset_attrs(dataset).get("collection", False):
+        return dataset_fn(root=root, dataset_str=dataset)
 
     train_data, val_data, test_data = dataset_fn(
         root=root,
         seed=seed,
-        **{**kwargs, "dataset_str": dataset},
+        dataset_str=dataset,
+        **kwargs,
     )
 
     info_str = " / ".join(
@@ -91,3 +95,11 @@ def get_dataset(dataset, root=None, seed=42, **kwargs):
     logging.info(f'Loaded "{dataset}"; {info_str}')
 
     return train_data, val_data, test_data
+
+
+def list_datasets():
+    return [
+        dname
+        for dname in __func_map.keys()
+        if not get_dataset_attrs(dname).get("unlisted", False)
+    ]

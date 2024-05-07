@@ -3,7 +3,7 @@ import string
 import numpy as np
 from datasets import load_dataset
 
-from ..registry import register_dataset
+from ..registry import register_dataset, DatasetTag
 from ..llm_data_utils import LMText, PromptFormat
 
 
@@ -184,7 +184,7 @@ def get_mmlu(
     return train_data, val_data, test_data
 
 
-@register_dataset(attrs=dict(tasks=__TASKS, eval=True))
+@register_dataset(attrs=dict(tasks=__TASKS, tags=[DatasetTag.EVAL_ONLY]))
 def mmlu(*args, dataset_str=None, **kwargs):
     try:
         _, task = dataset_str.split(":")
@@ -193,14 +193,17 @@ def mmlu(*args, dataset_str=None, **kwargs):
     except ValueError:
         logging.exception(
             f'Dataset string should be formatted as "mmlu:<task>" (Got {dataset_str})',
-            exc_info=True,
         )
         raise
     except AssertionError:
         logging.exception(
             f'Task not found. Dataset string should be formatted as "mmlu:<task>" (Got {dataset_str})',
-            exc_info=True,
         )
         raise
 
     return get_mmlu(*args, **kwargs, task=task)
+
+
+@register_dataset(attrs=dict(unlisted=True, collection=True))
+def mmlu_all(*args, **kwargs):
+    return [f"mmlu:{task}" for task in __TASKS]

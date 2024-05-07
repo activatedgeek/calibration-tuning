@@ -1,6 +1,5 @@
 from .registry import register_dataset, get_dataset, get_dataset_attrs, list_datasets
 from .utils import get_loader, get_num_workers
-from .combined import get_all_datasets_list
 
 from .llm_data_utils import (
     IGNORE_LABEL,
@@ -18,7 +17,6 @@ __all__ = [
     "list_datasets",
     "get_loader",
     "get_num_workers",
-    "get_all_datasets_list",
     "IGNORE_LABEL",
     "LabeledStringDataCollator",
     "get_token_vec",
@@ -31,9 +29,7 @@ def __setup():
     from importlib import import_module
 
     for n in [
-        "combined",
         "hf",
-        "modiste",
         "offline",
     ]:
         import_module(f".{n}", __name__)

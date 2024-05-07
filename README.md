@@ -107,7 +107,7 @@ qualify as command line arguments.
 
 **Arguments**:
 
-- `--model-name`: Possible choices are `llama2_7b`, `llama2_7b_chat`, `llama2_13b`, `llama2_13b_chat`, `mistral_7b`, `mistral_7b_instruct`.
+- `--model-name`: Possible choices are `llama2:7b`, `llama2:7b-chat`, `llama2:13b`, `llama2:13b-chat`, `mistral:7b`, `mistral:7b-instruct`.
 
 ### Dataset Generation
 
@@ -118,13 +118,13 @@ To create a CSV dataset of open-ended generations at `<outputs-log-dir>/outputs`
 `<outputs-log-dir>` is auto-generated or can be explicitly specified using `--log-dir` argument.
 
 ```shell
-python experiments/generate.py outputs --dataset=all_20k_uniform --prompt-style=oe --model-name=llama2_13b_chat --max-new-tokens=30 --batch-size=16 --kshot=1
+python experiments/generate.py outputs --dataset=all_20k_uniform --prompt-style=oe --model-name=llama2:13b-chat --max-new-tokens=30 --batch-size=16 --kshot=1
 ```
 
 For multiple-choice generations,
 
 ```shell
-python experiments/generate.py outputs --dataset=all_20k_uniform --prompt-style=choice --model-name=llama2_13b_chat --max-new-tokens=1 --batch-size=16
+python experiments/generate.py outputs --dataset=all_20k_uniform --prompt-style=choice --model-name=llama2:13b-chat --max-new-tokens=1 --batch-size=16
 ```
 
 #### Uncertainty Query Label Generation
@@ -132,7 +132,7 @@ python experiments/generate.py outputs --dataset=all_20k_uniform --prompt-style=
 To generate the dataset with uncertainty query labels at `<labels-log-dir>/labels` (auto-generated or specified via `--log-dir`), 
 
 ```shell
-python experiments/generate.py labels --dataset=offline:<outputs-log-dir>/outputs --model-name=llama2_13b_chat --strategy=substring --batch-size=16
+python experiments/generate.py labels --dataset=offline:<outputs-log-dir>/outputs --model-name=llama2:13b-chat --strategy=substring --batch-size=16
 ```
 
 Use `--strategy=fuzzy_gpt-3.5-turbo-1106` for generating labels via GPT 3.5 Turbo.
@@ -146,7 +146,7 @@ Checkpoints will be saved in an auto-generated directory `<train-log-dir>/checkp
 To use the labeled dataset for calibration-tuning (`CT-Query`),
 
 ```shell
-torchrun --nnodes=1 --nproc_per_node=auto experiments/calibration_tune.py --dataset=offline:<labels-log-dir>/labels --model_name=llama2_13b_chat --batch-size=4 --kl-decay=1.0 --max-steps=5000
+torchrun --nnodes=1 --nproc_per_node=auto experiments/calibration_tune.py --dataset=offline:<labels-log-dir>/labels --model-name=llama2:13b-chat --batch-size=4 --kl-decay=1.0 --max-steps=5000
 ```
 
 Use `--scale-temp` for temperature scaling of the uncertainty query predictions.
@@ -158,7 +158,7 @@ For other CLI arguments, see the `main` function of [experiments/calibration_tun
 To use the labeled dataset for training a classifier head (`CT-Probe`),
 
 ```shell
-torchrun --nnodes=1 --nproc_per_node=auto experiments/classifier_tune.py --dataset=offline:<labels-log-dir>/labels --model_name=llama2_13b_chat --batch-size=4 --max-steps=5000
+torchrun --nnodes=1 --nproc_per_node=auto experiments/classifier_tune.py --dataset=offline:<labels-log-dir>/labels --model-name=llama2:13b-chat --batch-size=4 --max-steps=5000
 ```
 
 Use `--scale-temp` for temperature scaling of the classifier. 
@@ -173,13 +173,13 @@ For other CLI arguments, see the `main` function of [experiments/classifier_tune
 For open-ended generation evaluations,
 
 ```shell
-torchrun --nnodes=1 --nproc_per_node=auto experiments/evaluate.py --dataset=eval:mmlu --prompt-style=oe --model_name=llama2_13b_chat --query-peft-dir=<train-log-dir>/checkpoint-<step> --mode=oe
+torchrun --nnodes=1 --nproc_per_node=auto experiments/evaluate.py --dataset=eval:mmlu --prompt-style=oe --model-name=llama2:13b-chat --query-peft-dir=<train-log-dir>/checkpoint-<step> --mode=oe
 ```
 
 For multiple-choice question-answering evaluations,
 
 ```shell
-torchrun --nnodes=1 --nproc_per_node=auto experiments/evaluate.py --dataset=eval:mmlu --prompt-style=choice --model_name=llama2_13b_chat --query-peft-dir=<train-log-dir>/checkpoint-<step> --mode=choice
+torchrun --nnodes=1 --nproc_per_node=auto experiments/evaluate.py --dataset=eval:mmlu --prompt-style=choice --model-name=llama2:13b-chat --query-peft-dir=<train-log-dir>/checkpoint-<step> --mode=choice
 ```
 
 Use `--scale-temp=query` to use temperature scaling of the uncertainty query logits.
@@ -189,11 +189,11 @@ Use `--scale-temp=query` to use temperature scaling of the uncertainty query log
 For open-ended generation evaluations,
 
 ```shell
-torchrun --nnodes=1 --nproc_per_node=auto experiments/evaluate.py --dataset=eval:mmlu --prompt-style=oe --model_name=llama2_13b_chat --query-peft-dir=<train-log-dir>/checkpoint-<step> --mode=class_oe --with-classifier
+torchrun --nnodes=1 --nproc_per_node=auto experiments/evaluate.py --dataset=eval:mmlu --prompt-style=oe --model-name=llama2:13b-chat --query-peft-dir=<train-log-dir>/checkpoint-<step> --mode=class_oe --with-classifier
 ```
 
 ```shell
-torchrun --nnodes=1 --nproc_per_node=auto experiments/evaluate.py --dataset=eval:mmlu --prompt-style=oe --model_name=llama2_13b_chat --query-peft-dir=<train-log-dir>/checkpoint-<step> --mode=class_oe --with-classifier
+torchrun --nnodes=1 --nproc_per_node=auto experiments/evaluate.py --dataset=eval:mmlu --prompt-style=oe --model-name=llama2:13b-chat --query-peft-dir=<train-log-dir>/checkpoint-<step> --mode=class_oe --with-classifier
 ```
 
 Use `--scale-temp=probe` to use temperature scaling of the uncertainty query logits.

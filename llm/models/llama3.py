@@ -1,64 +1,48 @@
+import logging
+
 from .registry import register_model
 from .llama2 import create_tokenizer, create_tokenizer_and_model, create_embed_model
 
 TOKENIZER_ARGS = dict(model_max_length=8192)
 
 
-@register_model(**TOKENIZER_ARGS)
-def llama3_8b_tokenizer(**kwargs):
-    return create_tokenizer("Meta-Llama-3-8B", **kwargs)
+__HF_MODEL_MAP = {
+    "8b": "Meta-Llama-3-8B",
+    "8b-instruct": "Meta-Llama-3-8B-Instruct",
+    "70b": "Meta-Llama-3-70B",
+    "70b-instruct": "Meta-Llama-3-70B-Instruct",
+}
 
 
-@register_model(tokenizer_args=TOKENIZER_ARGS)
-def llama3_8b(**kwargs):
-    return create_tokenizer_and_model("Meta-Llama-3-8B", **kwargs)
+def __get_model_hf_id(model_str):
+    try:
+        _, kind = model_str.split(":")
 
+        assert kind in __HF_MODEL_MAP.keys()
+    except ValueError:
+        logging.exception(
+            f'Model string should be formatted as "llama3:<kind>" (Got {model_str})',
+        )
+        raise
+    except AssertionError:
+        logging.exception(
+            f'Model not found. Model string should be formatted as "llama3:<kind>" (Got {model_str})',
+        )
+        raise
 
-@register_model(tokenizer_args=TOKENIZER_ARGS)
-def llama3_8b_embed(**kwargs):
-    return create_embed_model("Meta-Llama-3-8B", **kwargs)
-
-
-@register_model(**TOKENIZER_ARGS)
-def llama3_8b_instruct_tokenizer(**kwargs):
-    return create_tokenizer("Meta-Llama-3-8B-Instruct", **kwargs)
-
-
-@register_model(tokenizer_args=TOKENIZER_ARGS)
-def llama3_8b_instruct(**kwargs):
-    return create_tokenizer_and_model("Meta-Llama-3-8B-Instruct", **kwargs)
-
-
-@register_model(tokenizer_args=TOKENIZER_ARGS)
-def llama3_8b_instruct_embed(**kwargs):
-    return create_embed_model("Meta-Llama-3-8B-Instruct", **kwargs)
+    return __HF_MODEL_MAP[kind]
 
 
 @register_model(**TOKENIZER_ARGS)
-def llama3_70b_tokenizer(**kwargs):
-    return create_tokenizer("Meta-Llama-3-70B", **kwargs)
+def llama3_tokenizer(*, model_str=None, **kwargs):
+    return create_tokenizer(__get_model_hf_id(model_str), **kwargs)
 
 
 @register_model(tokenizer_args=TOKENIZER_ARGS)
-def llama3_70b(**kwargs):
-    return create_tokenizer_and_model("Meta-Llama-3-70B", **kwargs)
+def llama3(*, model_str=None, **kwargs):
+    return create_tokenizer_and_model(__get_model_hf_id(model_str), **kwargs)
 
 
 @register_model(tokenizer_args=TOKENIZER_ARGS)
-def llama3_70b_embed(**kwargs):
-    return create_embed_model("Meta-Llama-3-70B", **kwargs)
-
-
-@register_model(**TOKENIZER_ARGS)
-def llama3_70b_instruct_tokenizer(**kwargs):
-    return create_tokenizer("Meta-Llama-3-70B-Instruct", **kwargs)
-
-
-@register_model(tokenizer_args=TOKENIZER_ARGS)
-def llama3_70b_instruct(**kwargs):
-    return create_tokenizer_and_model("Meta-Llama-3-70B-Instruct", **kwargs)
-
-
-@register_model(tokenizer_args=TOKENIZER_ARGS)
-def llama3_70b_instruct_embed(**kwargs):
-    return create_embed_model("Meta-Llama-3-70B-Instruct", **kwargs)
+def llama3_embed(*, model_str=None, **kwargs):
+    return create_embed_model(__get_model_hf_id(model_str), **kwargs)

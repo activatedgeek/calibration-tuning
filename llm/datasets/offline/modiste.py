@@ -3,18 +3,16 @@ import json
 from pathlib import Path
 from datasets import Dataset, Value
 
-from ..registry import register_dataset
+from ..registry import register_dataset, DatasetTag
 from ..llm_data_utils import LMText
 
 
-__ATTRS = dict(
-    tasks=[
-        "elementary_mathematics",
-        "high_school_biology",
-        "us_foreign_policy",
-        "high_school_computer_science",
-    ]
-)
+__TASKS = [
+    "elementary_mathematics",
+    "high_school_biology",
+    "us_foreign_policy",
+    "high_school_computer_science",
+]
 
 
 def format_sample(sample):
@@ -58,18 +56,28 @@ def get_modiste(root=None, task=None, num_workers=8, use_cache=True, **_):
     return None, None, dataset
 
 
-@register_dataset(attrs=__ATTRS)
-def mmlu_modiste(*args, root=None, dataset_str=None, **kwargs):
+@register_dataset(attrs=dict(tasks=__TASKS, tags=[DatasetTag.EVAL_ONLY]))
+def modiste_mmlu(*args, root=None, dataset_str=None, **kwargs):
     root = Path(root) / "modiste"
 
     try:
         _, task = dataset_str.split(":")
+
+        assert task in __TASKS
     except ValueError:
         logging.exception(
-            f'Dataset string should be formatted as "modiste:<task>" (Got {dataset_str})',
+            f'Dataset string should be formatted as "modiste_mmlu:<task>" (Got {dataset_str})',
+        )
+        raise
+    except AssertionError:
+        logging.exception(
+            f'Task not found. Dataset string should be formatted as "modiste_mmlu:<task>" (Got {dataset_str})',
         )
         raise
 
-    assert task in __ATTRS["tasks"], f'"{task}" not found.'
-
     return get_modiste(*args, root=root, task=task, **kwargs)
+
+
+@register_dataset(attrs=dict(unlisted=True, collection=True))
+def modiste_mmlu_all(*args, **kwargs):
+    return [f"modiste_mmlu:{task}" for task in __TASKS]

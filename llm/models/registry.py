@@ -2,13 +2,6 @@ import logging
 from functools import wraps
 
 
-__all__ = [
-    "register_model",
-    "get_model",
-    "get_model_attrs",
-]
-
-
 __func_map = dict()
 __attr_map = dict()
 
@@ -25,7 +18,7 @@ def register_model(function=None, attrs=None, **d_kwargs):
         ), f'Duplicate registration for "{_wrapper.__name__}"'
 
         __func_map[_wrapper.__name__] = _wrapper
-        __attr_map[_wrapper.__name__] = attrs
+        __attr_map[_wrapper.__name__] = attrs or dict()
         return _wrapper
 
     if function:
@@ -33,29 +26,38 @@ def register_model(function=None, attrs=None, **d_kwargs):
     return _decorator
 
 
-def get_model_fn(name):
-    if name not in __func_map:
-        raise ValueError(f'Model "{name}" not found.')
-
-    return __func_map[name]
+model_key = lambda m: m.split(":")[0]
 
 
 def get_model_attrs(name):
-    if name not in __attr_map:
-        raise ValueError(f'Model "{name}" attributes not found.')
+    key = model_key(name)
+    if key not in __attr_map:
+        raise ValueError(f'Model "{key}" not found.')
 
-    return __attr_map[name]
+    return __attr_map[key]
 
 
-def list_models():
-    return list(__func_map.keys())
+def get_model_fn(name):
+    key = model_key(name)
+    if key not in __func_map:
+        raise ValueError(f'Model "{key}" not found.')
+
+    return __func_map[key]
 
 
 def get_model(model_name, **kwargs):
     model_fn = get_model_fn(model_name)
 
-    model = model_fn(**kwargs)
+    model = model_fn(model_str=model_name, **kwargs)
 
     logging.info(f'Loaded "{model_name}".')
 
     return model
+
+
+def list_models():
+    return [
+        model_name
+        for model_name in __func_map.keys()
+        if not get_model_attrs(model_name).get("unlisted", False)
+    ]

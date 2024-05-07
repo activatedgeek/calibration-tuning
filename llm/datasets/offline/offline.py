@@ -5,7 +5,7 @@ from enum import Enum
 import numpy as np
 from datasets import load_dataset, Features, Value, DatasetDict
 
-from .registry import register_dataset, get_dataset_attrs
+from ..registry import register_dataset
 
 
 CSV_DATASET_FEATURES = Features(
@@ -106,74 +106,40 @@ def get_offline(
     return train_data, val_data, test_data
 
 
-@register_dataset
+@register_dataset(attrs=dict(unlisted=True))
 def offline(*args, root=None, dataset_str=None, prompt_style=None, **kwargs):
-    print(root)
-    print(dataset_str)
-    
     try:
         _, name = dataset_str.split(":")
     except ValueError:
         logging.exception(
             f'Dataset string should be formatted as "offline:<name>" (Got {dataset_str})',
-            exc_info=True,
         )
         raise
 
-    root = f"{root}/offline/{name}"
-    # if prompt_style:
-    #     root = root + f"-{prompt_style}"
-
-    print(root)
+    root = f"{root}/offline/{name}-{prompt_style}"
 
     return get_offline(*args, root=root, **kwargs)
 
 
-@register_dataset
+@register_dataset(attrs=dict(unlisted=True))
 def offline_xxs(*args, **kwargs):
     kwargs.pop("data_ratio", None)
     return offline(*args, data_ratio=DatasetSizeRatio.XXS, **kwargs)
 
 
-@register_dataset
+@register_dataset(attrs=dict(unlisted=True))
 def offline_xs(*args, **kwargs):
     kwargs.pop("data_ratio", None)
     return offline(*args, data_ratio=DatasetSizeRatio.XS, **kwargs)
 
 
-@register_dataset
+@register_dataset(attrs=dict(unlisted=True))
 def offline_sm(*args, **kwargs):
     kwargs.pop("data_ratio", None)
     return offline(*args, data_ratio=DatasetSizeRatio.SM, **kwargs)
 
 
-@register_dataset
+@register_dataset(attrs=dict(unlisted=True))
 def offline_md(*args, **kwargs):
     kwargs.pop("data_ratio", None)
     return offline(*args, data_ratio=DatasetSizeRatio.MD, **kwargs)
-
-
-@register_dataset(attrs=get_dataset_attrs("mmlu"))
-def mmlu_offline(
-    *args, root=None, dataset_str=None, prompt_style=None, eval_kshot=5, **kwargs
-):
-    try:
-        _, name, task = dataset_str.split(":")
-
-        assert task in get_dataset_attrs("mmlu").get("tasks")
-    except ValueError:
-        logging.exception(
-            f'Dataset string should be formatted as "mmlu_offline:<name>:<task>" (Got {dataset_str})',
-            exc_info=True,
-        )
-        raise
-    except AssertionError:
-        logging.exception(
-            f'Task not found. Dataset string should be formatted as "mmlu_offline:<name>:<task>" (Got {dataset_str})',
-            exc_info=True,
-        )
-        raise
-
-    root = f"{root}/mmlu_offline/{prompt_style}/{name}/{task}"
-
-    return get_offline(*args, root=root, eval_kshot=eval_kshot, **kwargs)

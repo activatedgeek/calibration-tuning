@@ -1,3 +1,4 @@
+import logging
 from peft import prepare_model_for_kbit_training
 import torch
 from transformers import AutoTokenizer, MistralForCausalLM
@@ -7,7 +8,34 @@ from .registry import register_model
 from .llm_model_utils import DEFAULT_PAD_TOKEN, resize_token_embeddings
 
 
-__all__ = ["create_tokenizer", "create_model"]
+__MISTRAL_HF_MODEL_MAP = {
+    "7b": "Mistral-7B-v0.1",
+    "7b-instruct": "Mistral-7B-Instruct-v0.2",
+}
+
+__MIXTRAL_HF_MODEL_MAP = {
+    "8x22b": "Mixtral-8x22B-v0.1",
+    "8x22b-instruct": "Mixtral-8x22B-Instruct-v0.1",
+}
+
+
+def __get_model_hf_id(model_str, model_map):
+    try:
+        model_name, kind = model_str.split(":")
+
+        assert kind in model_map.keys()
+    except ValueError:
+        logging.exception(
+            f'Model string should be formatted as "{model_name}:<kind>" (Got {model_str})',
+        )
+        raise
+    except AssertionError:
+        logging.exception(
+            f'Model not found. Model string should be formatted as "{model_name}:<kind>" (Got {model_str})',
+        )
+        raise
+
+    return model_map[kind]
 
 
 def create_tokenizer(
@@ -76,40 +104,28 @@ def create_tokenizer_and_model(kind, tokenizer_args=None, **kwargs):
 
 
 @register_model
-def mistral_7b_tokenizer(**kwargs):
-    return create_tokenizer("Mistral-7B-v0.1", **kwargs)
+def mistral_tokenizer(*, model_str=None, **kwargs):
+    return create_tokenizer(
+        __get_model_hf_id(model_str, __MISTRAL_HF_MODEL_MAP), **kwargs
+    )
 
 
 @register_model
-def mistral_7b(**kwargs):
-    return create_tokenizer_and_model("Mistral-7B-v0.1", **kwargs)
+def mistral(*, model_str=None, **kwargs):
+    return create_tokenizer_and_model(
+        __get_model_hf_id(model_str, __MISTRAL_HF_MODEL_MAP), **kwargs
+    )
 
 
 @register_model
-def mistral_7b_instruct_tokenizer(**kwargs):
-    return create_tokenizer("Mistral-7B-Instruct-v0.2", **kwargs)
+def mixtral_tokenizer(*, model_str=None, **kwargs):
+    return create_tokenizer(
+        __get_model_hf_id(model_str, __MIXTRAL_HF_MODEL_MAP), **kwargs
+    )
 
 
 @register_model
-def mistral_7b_instruct(**kwargs):
-    return create_tokenizer_and_model("Mistral-7B-Instruct-v0.2", **kwargs)
-
-
-@register_model
-def mixtral_8x22b_tokenizer(**kwargs):
-    return create_tokenizer("Mixtral-8x22B-v0.1", **kwargs)
-
-
-@register_model
-def mixtral_8x22b(**kwargs):
-    return create_tokenizer_and_model("Mixtral-8x22B-v0.1", **kwargs)
-
-
-@register_model
-def mixtral_8x22b_instruct_tokenizer(**kwargs):
-    return create_tokenizer("Mixtral-8x22B-Instruct-v0.1", **kwargs)
-
-
-@register_model
-def mixtral_8x22b_instruct(**kwargs):
-    return create_tokenizer_and_model("Mixtral-8x22B-Instruct-v0.1", **kwargs)
+def mixtral(*, model_str=None, **kwargs):
+    return create_tokenizer_and_model(
+        __get_model_hf_id(model_str, __MIXTRAL_HF_MODEL_MAP), **kwargs
+    )
