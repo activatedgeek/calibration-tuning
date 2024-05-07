@@ -5,7 +5,7 @@ import wandb
 import pandas as pd
 import torch
 
-from llm.datasets import get_all_datasets_list
+from llm.datasets import get_dataset_attrs, get_dataset
 from llm.eval import evaluate_dataset
 from llm.logging import entrypoint
 from llm.models import get_model
@@ -144,8 +144,8 @@ def main(
 
     model.eval()
 
-    if dataset.startswith("eval"):
-        all_datasets = get_all_datasets_list(dataset)
+    if get_dataset_attrs(dataset).get("collection", False):
+        all_datasets = get_dataset(dataset)
     else:
         assert dataset is not None, "Missing dataset."
         all_datasets = [dataset]

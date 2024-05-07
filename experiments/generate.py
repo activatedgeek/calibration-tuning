@@ -9,7 +9,7 @@ import torch
 from transformers import GenerationConfig
 
 from llm.datasets import (
-    get_all_datasets_list,
+    get_dataset_attrs,
     get_dataset,
     get_loader,
     prepare_uncertainty_query,
@@ -157,7 +157,9 @@ def generate_labels_main(
     if accelerator.is_main_process:
         wandb.config.update(config)
 
-    tokenizer = get_model(f"{model_name}_tokenizer")
+    tokenizer, model = get_model(model_name)
+
+    del model
 
     with accelerator.main_process_first():
         data_splits = get_dataset(
@@ -228,10 +230,9 @@ def generate_embeddings_main(
 
     embedding_model = get_model(model_name, device_map="auto")
 
-    if dataset.startswith("eval"):
-        all_datasets = get_all_datasets_list(dataset)
+    if get_dataset_attrs(dataset).get("collection", False):
+        all_datasets = get_dataset(dataset)
     else:
-        assert dataset is not None, "Missing dataset."
         all_datasets = [dataset]
 
     for dataset in tqdm(all_datasets):

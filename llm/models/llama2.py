@@ -1,3 +1,4 @@
+import logging
 from peft import prepare_model_for_kbit_training
 import torch
 from transformers import AutoTokenizer, LlamaForCausalLM
@@ -5,6 +6,35 @@ from transformers import AutoTokenizer, LlamaForCausalLM
 from ..datasets import LabeledStringDataCollator
 from .registry import register_model
 from .llm_model_utils import DEFAULT_PAD_TOKEN, resize_token_embeddings
+
+
+__HF_MODEL_MAP = {
+    "7b": "Llama-2-7b-hf",
+    "7b-chat": "Llama-2-7b-chat-hf",
+    "13b": "Llama-2-13b-hf",
+    "13b-chat": "Llama-2-13b-chat-hf",
+    "70b": "Llama-2-70b-hf",
+    "70b-chat": "Llama-2-70b-chat-hf",
+}
+
+
+def __get_model_hf_id(model_str):
+    try:
+        _, kind = model_str.split(":")
+
+        assert kind in __HF_MODEL_MAP.keys()
+    except ValueError:
+        logging.exception(
+            f'Model string should be formatted as "llama2:<kind>" (Got {model_str})',
+        )
+        raise
+    except AssertionError:
+        logging.exception(
+            f'Model not found. Model string should be formatted as "llama2:<kind>" (Got {model_str})',
+        )
+        raise
+
+    return __HF_MODEL_MAP[kind]
 
 
 def create_tokenizer(
@@ -98,65 +128,15 @@ def create_embed_model(kind, **kwargs):
 
 
 @register_model
-def llama2_7b_tokenizer(**kwargs):
-    return create_tokenizer("Llama-2-7b-hf", **kwargs)
+def llama2_tokenizer(*, model_str=None, **kwargs):
+    return create_tokenizer(__get_model_hf_id(model_str), **kwargs)
 
 
 @register_model
-def llama2_7b(**kwargs):
-    return create_tokenizer_and_model("Llama-2-7b-hf", **kwargs)
+def llama2(*, model_str=None, **kwargs):
+    return create_tokenizer_and_model(__get_model_hf_id(model_str), **kwargs)
 
 
 @register_model
-def llama2_7b_embed(**kwargs):
-    return create_embed_model("Llama-2-7b-hf", **kwargs)
-
-
-@register_model
-def llama2_7b_chat_tokenizer(**kwargs):
-    return create_tokenizer("Llama-2-7b-chat-hf", **kwargs)
-
-
-@register_model
-def llama2_7b_chat(**kwargs):
-    return create_tokenizer_and_model("Llama-2-7b-chat-hf", **kwargs)
-
-
-@register_model
-def llama2_13b_tokenizer(**kwargs):
-    return create_tokenizer("Llama-2-13b-hf", **kwargs)
-
-
-@register_model
-def llama2_13b(**kwargs):
-    return create_tokenizer_and_model("Llama-2-13b-hf", **kwargs)
-
-
-@register_model
-def llama2_13b_chat_tokenizer(**kwargs):
-    return create_tokenizer("Llama-2-13b-chat-hf", **kwargs)
-
-
-@register_model
-def llama2_13b_chat(**kwargs):
-    return create_tokenizer_and_model("Llama-2-13b-chat-hf", **kwargs)
-
-
-@register_model
-def llama2_70b_tokenizer(**kwargs):
-    return create_tokenizer("Llama-2-70b-hf", **kwargs)
-
-
-@register_model
-def llama2_70b(**kwargs):
-    return create_tokenizer_and_model("Llama-2-70b-hf", **kwargs)
-
-
-@register_model
-def llama2_70b_chat_tokenizer(**kwargs):
-    return create_tokenizer("Llama-2-70b-chat-hf", **kwargs)
-
-
-@register_model
-def llama2_70b_chat(**kwargs):
-    return create_tokenizer_and_model("Llama-2-70b-chat-hf", **kwargs)
+def llama2_embed(*, model_str=None, **kwargs):
+    return create_embed_model(__get_model_hf_id(model_str), **kwargs)

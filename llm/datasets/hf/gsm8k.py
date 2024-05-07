@@ -1,7 +1,7 @@
 import numpy as np
 from datasets import load_dataset
 
-from ..registry import register_dataset
+from ..registry import register_dataset, DatasetTag
 from ..llm_data_utils import LMText, PromptFormat
 
 
@@ -97,6 +97,6 @@ def get_gsm8k(
     return train_data, val_data, test_data
 
 
-@register_dataset(attrs=dict(eval=True))
+@register_dataset(attrs=dict(tags=[DatasetTag.EVAL_ONLY]))
 def gsm8k(*args, **kwargs):
     return get_gsm8k(*args, **kwargs)

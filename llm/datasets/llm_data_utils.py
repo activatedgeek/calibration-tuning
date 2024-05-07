@@ -1,4 +1,5 @@
 from enum import Enum
+import dataclasses
 from dataclasses import dataclass, asdict as dataclassasdict
 import torch
 import transformers
@@ -46,6 +47,11 @@ class LMText:
             instance, dict
         ), f"Could not convert instance to dict. Found {type(instance)}"
 
+        instance = {
+            k: v
+            for k, v in instance.items()
+            if k in set(f.name for f in dataclasses.fields(LMText))
+        }
         return LMText(**instance)
 
 

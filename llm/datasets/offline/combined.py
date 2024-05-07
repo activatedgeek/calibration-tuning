@@ -1,69 +1,30 @@
 import numpy as np
 from datasets import concatenate_datasets
 
-from .registry import get_dataset, list_datasets, register_dataset, get_dataset_attrs
-from ..random import FixedSeed
-from .llm_data_utils import LMText, LabeledStringDataCollator
+from ..registry import (
+    get_dataset,
+    list_datasets,
+    register_dataset,
+    get_dataset_attrs,
+    DatasetTag,
+)
+from ...random import FixedSeed
+from ..llm_data_utils import PromptFormat, LMText, LabeledStringDataCollator
 
 
-def get_all_datasets_list(dataset_str, prompt_style=None):
-    dataset, sub_dataset = dataset_str.split(":", 1)
+def __get_train_dataset_names(format=None):
+    format = PromptFormat(format)
 
-    assert dataset in [
-        "all",
-        "eval",
-    ], f"Format strings as <all|eval>:<split>, found {dataset_str}"
+    dataset_names = [
+        dname
+        for dname in sorted(list_datasets())
+        if DatasetTag.EVAL_ONLY not in get_dataset_attrs(dname).get("tags", [])
+    ]
 
-    all_datasets_list = []
+    if format == PromptFormat.OE:
+        dataset_names = list(set(dataset_names) - set(["hellaswag"]))
 
-    if dataset == "all":
-        if sub_dataset == "train":
-            all_datasets_list += sorted(
-                list(
-                    filter(
-                        lambda x: not any(
-                            s in x
-                            for s in ["all", "sub", "mmlu", "bbmc", "gsm8k", "offline"]
-                        ),
-                        list_datasets(),
-                    )
-                )
-            )
-            ## Skip datasets for oe.
-            if prompt_style == "oe":
-                all_datasets_list = list(
-                    filter(
-                        lambda x: not any(s in x for s in ["hellaswag"]),
-                        all_datasets_list,
-                    )
-                )
-        else:
-            raise NotImplementedError
-    elif dataset == "eval":
-        if sub_dataset == "all":
-            all_datasets_list = [
-                f"mmlu:{task}" for task in get_dataset_attrs("mmlu").get("tasks")
-            ] + ["gsm8k"]
-        elif sub_dataset == "mmlu":
-            all_datasets_list = [
-                f"{sub_dataset}/{task}"
-                for task in get_dataset_attrs(sub_dataset).get("tasks")
-            ]
-        elif sub_dataset.startswith("mmlu_offline:"):
-            sub_dataset, name = sub_dataset.split(":")
-            all_datasets_list = [
-                f"{sub_dataset}:{name}:{task}"
-                for task in get_dataset_attrs(sub_dataset).get("tasks")
-            ]
-        elif sub_dataset == "modiste":
-            all_datasets_list = [
-                f"{sub_dataset}:{task}"
-                for task in get_dataset_attrs(sub_dataset).get("tasks")
-            ]
-        else:
-            raise NotImplementedError
-
-    return all_datasets_list
+    return dataset_names
 
 
 def get_combined_dataset(
@@ -139,8 +100,7 @@ def get_all(
     complement=False,
     **kwargs,
 ):
-    dataset_names = get_all_datasets_list("all:train", prompt_style=prompt_style)
-    dataset_names = [k for k in dataset_names if k != 'modiste']
+    dataset_names = __get_train_dataset_names(format=prompt_style)
 
     tr, vl, _ = get_combined_dataset(
         all_dataset_names=dataset_names,
@@ -177,7 +137,7 @@ def get_all(
     return tr, vl, None
 
 
-@register_dataset
+@register_dataset(attrs=dict(unlisted=True))
 def all_20k_uniform(
     *args, max_n=20_000, max_val_n=2_000, max_token_length=None, **kwargs
 ):
@@ -191,14 +151,14 @@ def all_20k_uniform(
     )
 
 
-@register_dataset
+@register_dataset(attrs=dict(unlisted=True))
 def all_20k_uniform_h(*args, **kwargs):
     return all_20k_uniform(*args, with_query_label=True, **kwargs)
 
 
 def all_200k_c(*args, max_n=200_000, prompt_style="choice", **kwargs):
     tr, _, _ = get_combined_dataset(
-        all_dataset_names=get_all_datasets_list("all:train", prompt_style=prompt_style),
+        all_dataset_names=__get_train_dataset_names(format=prompt_style),
         *args,
         **kwargs,
         prompt_style=prompt_style,
@@ -211,7 +171,7 @@ def all_200k_c(*args, max_n=200_000, prompt_style="choice", **kwargs):
 def sub_200k(
     *args, seed=None, max_n=200_000, max_val_n=2_000, prompt_style="choice", **kwargs
 ):
-    all_dataset_names = get_all_datasets_list("all:train", prompt_style=prompt_style)
+    all_dataset_names = __get_train_dataset_names(format=prompt_style)
     all_dataset_names = all_dataset_names[: len(all_dataset_names) // 2]
     tr, vl, _ = get_combined_dataset(
         all_dataset_names=all_dataset_names,
@@ -234,7 +194,7 @@ def sub_200k(
 
 
 def cal_sub_200k(*args, max_n=200_000, prompt_style="choice", **kwargs):
-    all_dataset_names = get_all_datasets_list("all:train", prompt_style=prompt_style)
+    all_dataset_names = __get_train_dataset_names(format=prompt_style)
     all_dataset_names = all_dataset_names[: len(all_dataset_names) // 2]
     _, vl, _ = get_combined_dataset(
         all_dataset_names=all_dataset_names,
@@ -248,7 +208,7 @@ def cal_sub_200k(*args, max_n=200_000, prompt_style="choice", **kwargs):
 
 
 def sub_200k_c(*args, max_n=800_000, prompt_style="choice", **kwargs):
-    all_dataset_names = get_all_datasets_list("all:train", prompt_style=prompt_style)
+    all_dataset_names = __get_train_dataset_names(format=prompt_style)
     all_dataset_names = all_dataset_names[len(all_dataset_names) // 2 :]
 
     tr, _, _ = get_combined_dataset(
@@ -262,7 +222,7 @@ def sub_200k_c(*args, max_n=800_000, prompt_style="choice", **kwargs):
 
 
 def cal_sub_200k_c(*args, max_n=800_000, prompt_style="choice", **kwargs):
-    all_dataset_names = get_all_datasets_list("all:train", prompt_style=prompt_style)
+    all_dataset_names = __get_train_dataset_names(format=prompt_style)
     all_dataset_names = all_dataset_names[len(all_dataset_names) // 2 :]
     _, vl, _ = get_combined_dataset(
         all_dataset_names=all_dataset_names,

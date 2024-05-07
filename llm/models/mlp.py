@@ -3,7 +3,7 @@ import torch.nn as nn
 from .registry import register_model
 
 
-def get_classifier(input_size=None, output_size=None, bias=False):
+def get_classifier(input_size=None, output_size=None, bias=False, **_):
     model = nn.Sequential(
         nn.Linear(input_size, 256),
         nn.ReLU(),
