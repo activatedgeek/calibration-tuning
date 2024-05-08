@@ -1,4 +1,10 @@
-from .registry import register_dataset, get_dataset, get_dataset_attrs, list_datasets
+from .registry import (
+    register_dataset,
+    get_data_dir,
+    get_dataset,
+    get_dataset_attrs,
+    list_datasets,
+)
 from .utils import get_loader, get_num_workers
 
 from .llm_data_utils import (
@@ -12,6 +18,7 @@ from .llm_utils_oe import prepare_uncertainty_query
 
 __all__ = [
     "register_dataset",
+    "get_data_dir",
     "get_dataset",
     "get_dataset_attrs",
     "list_datasets",
