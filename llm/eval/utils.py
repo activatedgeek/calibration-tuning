@@ -3,33 +3,39 @@ from functools import partial
 
 from ..logging import Timer
 from ..datasets import get_dataset, get_loader
-from .choice import (
-    evaluate_contextual_calibration_choice,
-    evaluate_candidate_choice,
-    evaluate_classifier_choice,
-)
-from .oe import (
-    evaluate_classifier_oe,
-    evaluate_uncertainty_sampling_oe,
-    evaluate_verbal_elicitation_oe,
-)
+from .oe import evaluate_uncertainty_sampling_oe, evaluate_verbal_elicitation_oe
 from .query import evaluate_query
+from .classifier import evaluate_classifier
 
 EVALUATE_MODE_FN_MAP = {
-    "cc_choice": evaluate_contextual_calibration_choice,
-    "cand_choice": evaluate_candidate_choice,
-    "class_choice": evaluate_classifier_choice,
     "us_oe": evaluate_uncertainty_sampling_oe,
-    "class_oe": evaluate_classifier_oe,
     "ve_oe": evaluate_verbal_elicitation_oe,
-    ## New functions.
-    "query": partial(evaluate_query, max_new_tokens=100),
-    "query_choice": partial(evaluate_query, max_new_tokens=1),
+    "query": partial(
+        evaluate_query,
+        max_new_tokens=100,
+        grade_strategy="fuzzy_gpt-3.5-turbo-1106",
+    ),
+    "query_choice": partial(
+        evaluate_query,
+        max_new_tokens=1,
+        grade_strategy="substring",
+    ),
+    "class": partial(
+        evaluate_classifier,
+        max_new_tokens=100,
+        grade_strategy="fuzzy_gpt-3.5-turbo-1106",
+    ),
+    "class_choice": partial(
+        evaluate_classifier,
+        max_new_tokens=1,
+        grade_strategy="substring",
+    ),
 }
 
-## NOTE: For compatibility
+## NOTE: For backward compatibility.
 EVALUATE_MODE_FN_MAP["choice"] = EVALUATE_MODE_FN_MAP["query_choice"]
 EVALUATE_MODE_FN_MAP["oe"] = EVALUATE_MODE_FN_MAP["query"]
+EVALUATE_MODE_FN_MAP["class_oe"] = EVALUATE_MODE_FN_MAP["class"]
 
 
 VERBAL_ELICITATION_MAP = {
@@ -160,10 +166,6 @@ def evaluate_dataset(
 ):
     if dataset is not None:
         with accelerator.main_process_first():
-            _extra_args = dict()
-            ## NOTE: Conditional to avoid overriding default kshot specification in dataset definition.
-            if eval_kshot is not None:
-                _extra_args["eval_kshot"] = eval_kshot
             data_splits = get_dataset(
                 dataset,
                 root=data_dir,
@@ -172,7 +174,6 @@ def evaluate_dataset(
                 num_workers=num_workers,
                 use_cache=use_cache,
                 prompt_style=prompt_style,
-                **_extra_args,
             )
     else:
         if (val_data is not None) and (test_data is not None):

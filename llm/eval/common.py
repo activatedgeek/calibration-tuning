@@ -10,10 +10,10 @@ from ..datasets.llm_utils_oe import sanitize_generations
 from .third_party.calibration import calibration
 
 
-METRICS_FILE_NAME = "metrics.bin"
+DATA_FILE_NAME = "data.bin"
 
 
-def save_metrics_data(data, log_dir=None, filename=METRICS_FILE_NAME):
+def save_metrics_data(data, log_dir=None, filename=DATA_FILE_NAME):
     if log_dir is None:
         return
 
@@ -51,7 +51,7 @@ def compute_uncertainty_metrics(labels, logits, prefix=""):
         logging.exception("AUROC calculation failed.", exc_info=True)
 
     return {
-        f"{prefix}N": labels.size(0),
+        "N": labels.size(0),
         f"{prefix}acc": acc.item(),
         f"{prefix}auroc": auroc,
         f"{prefix}ece": ece,

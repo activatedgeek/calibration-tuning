@@ -46,6 +46,8 @@ def get_model_fn(name):
 
 
 def get_model(model_name, **kwargs):
+    kwargs = {k: v for k, v in kwargs.items() if v is not None}
+
     model_fn = get_model_fn(model_name)
 
     model = model_fn(model_str=model_name, **kwargs)

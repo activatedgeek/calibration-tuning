@@ -69,6 +69,8 @@ def get_data_dir(data_dir=None):
 
 
 def get_dataset(dataset, root=None, seed=42, **kwargs):
+    kwargs = {k: v for k, v in kwargs.items() if v is not None}
+
     dataset_fn = get_dataset_fn(dataset)
 
     root = get_data_dir(data_dir=root)

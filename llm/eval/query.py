@@ -19,6 +19,7 @@ def get_query_generations(
     targets,
     outputs,
     query_labels=None,
+    strategy="substring",
     query_format="roman_choice",
     adapter_name="query",
 ):
@@ -27,9 +28,9 @@ def get_query_generations(
         lmtext_inputs,
         targets,
         outputs,
-        strategy="substring",
-        format=query_format,
+        strategy=strategy,
         query_labels=query_labels,
+        format=query_format,
     )
 
     collate_fn = LabeledStringDataCollator(tokenizer)
@@ -63,10 +64,11 @@ def evaluate_query(
     loader,
     log_dir=None,
     max_new_tokens=None,
+    grade_strategy=None,
     **_,
 ):
-    query_eval_data = OrderedDict([("q_logits", []), ("q_labels", [])])
-    eval_data = OrderedDict([("logits", []), ("labels", [])])
+    eval_data = OrderedDict([("q_logits", []), ("q_labels", [])])
+    logits_eval_data = OrderedDict([("logits", []), ("labels", [])])
 
     for inputs in tqdm(loader):
         extra_inputs = {
@@ -91,9 +93,9 @@ def evaluate_query(
                 labels = tokenizer(targets, return_tensors="pt").get("input_ids")[:, 1]
 
                 [
-                    eval_data[k].append(v.cpu())
+                    logits_eval_data[k].append(v.cpu())
                     for k, v in zip(
-                        eval_data.keys(),
+                        logits_eval_data.keys(),
                         accelerator.gather_for_metrics((logits, labels)),
                     )
                 ]
@@ -105,38 +107,38 @@ def evaluate_query(
             inputs,
             targets,
             outputs,
+            strategy=grade_strategy,
             query_labels=q_labels,
         )
 
         [
-            query_eval_data[k].append(v.cpu())
+            eval_data[k].append(v.cpu())
             for k, v in zip(
-                query_eval_data.keys(),
+                eval_data.keys(),
                 accelerator.gather_for_metrics((q_logits, q_labels)),
             )
         ]
 
-    query_eval_data = OrderedDict(
-        {k: torch.cat(v, dim=0) for k, v in query_eval_data.items()}
-    )
+    eval_data = OrderedDict({k: torch.cat(v, dim=0) for k, v in eval_data.items()})
 
     all_metrics = compute_uncertainty_metrics(
-        query_eval_data.get("q_labels"),
-        query_eval_data.get("q_logits"),
+        eval_data.get("q_labels"),
+        eval_data.get("q_logits"),
         prefix="unc_",
     )
-    save_metrics_data(query_eval_data, log_dir=log_dir, filename="query_metrics.bin")
+    all_metrics["acc"] = eval_data.get("q_labels").float().mean(dim=0).item()
+    save_metrics_data(eval_data, log_dir=log_dir, filename="query_data.bin")
 
-    eval_data = OrderedDict(
-        {k: torch.cat(v, dim=0) for k, v in eval_data.items() if len(v)}
+    logits_eval_data = OrderedDict(
+        {k: torch.cat(v, dim=0) for k, v in logits_eval_data.items() if len(v)}
     )
-    if eval_data:
+    if logits_eval_data:
         metrics = compute_uncertainty_metrics(
-            eval_data.get("labels"),
-            eval_data.get("logits"),
+            logits_eval_data.get("labels"),
+            logits_eval_data.get("logits"),
             prefix="logits_",
         )
-        save_metrics_data(eval_data, log_dir=log_dir, filename="logit_metrics.bin")
+        save_metrics_data(logits_eval_data, log_dir=log_dir, filename="logits_data.bin")
 
         all_metrics.update(metrics)
 

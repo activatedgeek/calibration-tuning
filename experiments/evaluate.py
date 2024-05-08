@@ -56,10 +56,7 @@ def main(
     if accelerator.is_main_process:
         wandb.config.update(config)
 
-    tokenizer, model = get_model(
-        model_name,
-        device_map="auto",
-    )
+    tokenizer, model = get_model(model_name, device_map="auto")
 
     model = get_lora_model(
         model,
