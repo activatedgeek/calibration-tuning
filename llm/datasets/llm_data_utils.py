@@ -23,7 +23,6 @@ class LMText:
     target: str = ""
 
     ## Misc.
-    source_dataset: str = None
     output: str = None
     query_label: int = None
 
@@ -34,6 +33,10 @@ class LMText:
 
     def to_pydict(self):
         return {k: v for k, v in dataclassasdict(self).items() if v is not None}
+
+    @staticmethod
+    def field_names():
+        return [f.name for f in dataclasses.fields(LMText)]
 
     @staticmethod
     def from_(instance):

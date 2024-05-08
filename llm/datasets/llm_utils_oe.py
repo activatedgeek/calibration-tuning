@@ -157,9 +157,10 @@ def prepare_uncertainty_query(
 
     contexts = [str(LMText.from_(inp)) for inp in inputs]
 
-    query_labels = query_labels or grade_oe_preds(
-        targets, predictions, contexts, strategy, mode="answer-key"
-    )
+    if query_labels is None:
+        query_labels = grade_oe_preds(
+            targets, predictions, contexts, strategy, mode="answer-key"
+        )
 
     if format == "roman_choice":
         query_inputs = [

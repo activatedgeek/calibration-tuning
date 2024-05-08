@@ -12,172 +12,10 @@ from sklearn.metrics import roc_auc_score
 from ..random import FixedSeed
 from ..datasets import LMText, LabeledStringDataCollator, prepare_uncertainty_query
 from ..datasets.llm_utils_oe import (
-    grade_oe_preds,
     equivalency_grading,
     sanitize_generations,
 )
 from .third_party.calibration import calibration
-from ..utils.generate_utils import generate_output
-
-
-@torch.inference_mode()
-def evaluate_oe(
-    accelerator,
-    model,
-    tokenizer,
-    loader,
-    query_format="roman_choice",
-    comparison_strategies=None,
-    max_new_tokens=100,
-    log_dir=None,
-    **_,
-):
-    generation_config = GenerationConfig(
-        pad_token_id=tokenizer.pad_token_id,
-        bos_token_id=tokenizer.bos_token_id,
-        eos_token_id=tokenizer.eos_token_id,
-        max_new_tokens=max_new_tokens,
-        do_sample=False,
-    )
-
-    collate_fn = LabeledStringDataCollator(tokenizer)
-
-    cs_q_labels = {c: [] for c in comparison_strategies}
-    cs_q_logits = {c: [] for c in comparison_strategies}
-
-    all_data = {
-        "rows": [],
-        "evals": {c: {"q_labels": [], "q_logits": []} for c in comparison_strategies},
-    }
-
-    for inputs in tqdm(loader):
-        inputs.pop("embedding", None)
-        inputs = [dict(zip(inputs.keys(), vals)) for vals in zip(*inputs.values())]
-        targets = [inp.pop("target") for inp in inputs]
-
-        if "output" in inputs[0]:
-            generations = [inp.pop("output") for inp in inputs]
-        else:
-            generation_inputs = {
-                k: v.to(accelerator.device) for k, v in collate_fn(inputs).items()
-            }
-
-            if isinstance(model, PeftModel):
-                model.set_adapter("default")
-
-            generation_outputs = model.generate(
-                **generation_inputs, generation_config=generation_config
-            )
-
-            generations = tokenizer.batch_decode(
-                generation_outputs[:, generation_inputs.get("input_ids").size(-1) :],
-                skip_special_tokens=True,
-                clean_up_tokenization_spaces=False,
-            )
-
-            generations = sanitize_generations(generations)
-
-        all_data["rows"].extend(
-            [
-                {**inp, "target": tgt, "output": out}
-                for inp, tgt, out in zip(inputs, targets, generations)
-            ]
-        )
-
-        if isinstance(model, PeftModel) and "query" in model.peft_config:
-            model.set_adapter("query")
-
-        for cs in comparison_strategies:
-            q_labels = (
-                [inp.pop("query_label").item() for inp in inputs]
-                if "query_label" in inputs[0]
-                else None
-            )
-            q_inputs, q_labels, q_token_vec = prepare_uncertainty_query(
-                tokenizer,
-                inputs,
-                targets,
-                generations,
-                strategy=cs,
-                format=query_format,
-                query_labels=q_labels,
-            )
-            q_labels = q_labels.to(accelerator.device)
-
-            q_generation_inputs = {
-                k: v.to(accelerator.device) for k, v in collate_fn(q_inputs).items()
-            }
-
-            q_generation_outputs = model(**q_generation_inputs)
-            q_logits = q_generation_outputs.logits[..., -1, q_token_vec]
-
-            if hasattr(model, "query_temperature_model"):
-                q_logits = model.query_temperature_model(q_logits)
-
-            all_data["evals"][cs]["q_labels"].append(q_labels.detach())
-            all_data["evals"][cs]["q_logits"].append(q_logits.detach())
-
-            [
-                l.append(v.cpu())
-                for l, v in zip(
-                    (cs_q_labels[cs], cs_q_logits[cs]),
-                    accelerator.gather_for_metrics((q_labels, q_logits)),
-                )
-            ]
-
-    metrics_dict = {}
-    for cs in comparison_strategies:
-        q_labels = torch.cat(cs_q_labels[cs], dim=0)
-        q_p = torch.cat(cs_q_logits[cs], dim=0).softmax(dim=-1)
-
-        acc = q_labels.float().mean(dim=0)
-        q_pred = q_p.argmax(dim=-1)
-        q_acc = (q_pred == q_labels).float().mean(dim=0)
-
-        q_ece, _ = calibration(
-            q_labels,
-            q_pred,
-            q_p[torch.arange(q_p.size(0)), q_pred].float(),
-        )
-
-        try:
-            q_auroc = roc_auc_score(
-                q_labels.cpu(),
-                q_p[torch.arange(q_p.size(0)), 1].float().cpu(),
-            )
-        except ValueError:
-            q_auroc = float("nan")
-            logging.exception("AUROC calculation failed.", exc_info=True)
-
-        metrics_dict.update(
-            {
-                "N": q_labels.size(0),
-                f"{cs}_acc": acc.item(),
-                f"{cs}_unc_acc": q_acc.item(),
-                f"{cs}_unc_auroc": q_auroc,
-                f"{cs}_unc_ece": q_ece,
-            }
-        )
-
-    if log_dir is not None:
-        os.makedirs(log_dir, exist_ok=True)
-
-        all_data["evals"] = {
-            k: {qk: torch.cat(qv, dim=0) for qk, qv in v.items()}
-            for k, v in all_data["evals"].items()
-        }
-
-        pd.DataFrame(all_data["rows"]).to_csv(
-            f"{log_dir}/rows_{accelerator.process_index}.csv", index=False
-        )
-        with open(f"{log_dir}/q_{accelerator.process_index}.pt", "wb") as f:
-            torch.save(all_data["evals"], f)
-
-        logging.debug(
-            f"Data saved to '{log_dir}' from process {accelerator.process_index}."
-        )
-
-    return metrics_dict
 
 
 @torch.inference_mode()
@@ -678,7 +516,7 @@ def parse_verbal_elicitation_oe(
         prob = float(output_string.split(":")[-1].strip())
     except:
         prob = 0.5
- 
+
     y = torch.tensor([prob > 0.5])
     logits = torch.tensor([[1 - prob, prob]]).log()
 
@@ -728,14 +566,14 @@ def evaluate_verbal_elicitation_oe(
             generations = [inp.pop("output") for inp in inputs]
         else:
             pass
-        
+
         all_data["rows"].extend(
             [
                 {**inp, "target": tgt, "output": out}
                 for inp, tgt, out in zip(inputs, targets, generations)
             ]
         )
-        
+
         for cs in comparison_strategies:
             q_labels = (
                 [inp.pop("query_label").item() for inp in inputs]
@@ -747,7 +585,7 @@ def evaluate_verbal_elicitation_oe(
             uncertainty_prompt = VERBAL_ELICITATION_UNC_QUERIES
 
             contexts = [str(LMText.from_(inp)) for inp in inputs]
-            
+
             q_inputs = [
                 {
                     "context": f"{c + ' ' + p.strip()}\n\n",
@@ -755,15 +593,17 @@ def evaluate_verbal_elicitation_oe(
                 }
                 for c, p in zip(contexts, generations)
             ]
-            
+
             gen_inputs = {
                 k: v.to(accelerator.device) for k, v in collate_fn(q_inputs).items()
             }
 
-            gen_output = model.generate(**gen_inputs, generation_config=generation_config)
-            
+            gen_output = model.generate(
+                **gen_inputs, generation_config=generation_config
+            )
+
             gen_output = [
-                o[i.size(0):] for o,i in zip(gen_output, gen_inputs["input_ids"])
+                o[i.size(0) :] for o, i in zip(gen_output, gen_inputs["input_ids"])
             ]
 
             gen_output = tokenizer.batch_decode(
@@ -788,7 +628,6 @@ def evaluate_verbal_elicitation_oe(
                     accelerator.gather_for_metrics((q_labels, q_logits)),
                 )
             ]
-        
 
     metrics_dict = {}
     for cs in comparison_strategies:

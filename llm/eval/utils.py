@@ -6,26 +6,31 @@ from ..datasets import get_dataset, get_loader
 from .choice import (
     evaluate_contextual_calibration_choice,
     evaluate_candidate_choice,
-    evaluate_choice,
     evaluate_classifier_choice,
 )
 from .oe import (
-    evaluate_oe,
     evaluate_classifier_oe,
     evaluate_uncertainty_sampling_oe,
     evaluate_verbal_elicitation_oe,
 )
+from .query import evaluate_query
 
 EVALUATE_MODE_FN_MAP = {
-    "choice": evaluate_choice,
     "cc_choice": evaluate_contextual_calibration_choice,
     "cand_choice": evaluate_candidate_choice,
     "class_choice": evaluate_classifier_choice,
-    "oe": evaluate_oe,
     "us_oe": evaluate_uncertainty_sampling_oe,
     "class_oe": evaluate_classifier_oe,
     "ve_oe": evaluate_verbal_elicitation_oe,
+    ## New functions.
+    "query": partial(evaluate_query, max_new_tokens=100),
+    "query_choice": partial(evaluate_query, max_new_tokens=1),
 }
+
+## NOTE: For compatibility
+EVALUATE_MODE_FN_MAP["choice"] = EVALUATE_MODE_FN_MAP["query_choice"]
+EVALUATE_MODE_FN_MAP["oe"] = EVALUATE_MODE_FN_MAP["query"]
+
 
 VERBAL_ELICITATION_MAP = {
     "1s1g": {
@@ -133,19 +138,6 @@ VERBAL_ELICITATION_MAP = {
         "target_prompt": "\nG1: ",
     },
 }
-
-## HOTFIX: avoid long metrics dump paths.
-def _dataset_log_name(dataset: str):
-    log_name = dataset
-    if log_name.startswith("mmlu_oe_offline"):
-        _, b = log_name.split(":")
-        b = b.split("/")[-1]
-        log_name = f"mmlu:{b}"
-    elif log_name.startswith("offline"):
-        _, b = log_name.split(":")
-        b = b.split("/")[-1]
-        log_name = f"offline"
-    return log_name
 
 
 def evaluate_dataset(
@@ -299,15 +291,3 @@ def evaluate_dataset(
         all_metrics.append(metrics)
 
     return all_metrics
-
-def _dataset_log_name(dataset: str):
-    log_name = dataset
-    if log_name.startswith("mmlu_oe_offline"):
-        _, b = log_name.split(":")
-        b = b.split("/")[-1]
-        log_name = f"mmlu:{b}"
-    elif log_name.startswith("offline"):
-        _, b = log_name.split(":")
-        b = b.split("/")[-1]
-        log_name = f"offline"
-    return log_name
