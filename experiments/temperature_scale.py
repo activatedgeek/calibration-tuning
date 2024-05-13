@@ -22,25 +22,48 @@ class LogitsDataset(Dataset):
 
 
 @register_dataset(attrs=dict(unlisted=True))
-def offline_logits(root=None, **_):
-    data_dir = Path(root) / "offline_logits"
+def offline_logits(root=None, dataset_str=None, **_):
+    try:
+        _, kind = dataset_str.split(":")
+    except ValueError:
+        logging.exception(f"Dataset format should be offline_logits:<kind>.")
+        raise
+
+    data_dir = Path(root) / "offline_logits" / kind
 
     data_splits = dict()
-    for split in ["validation", "test"]:
+    for split in ["train", "validation", "test"]:
         data_path = data_dir / split
-        data_path = next(data_path.glob("*.bin"))
+
+        if not data_path.is_dir():
+            continue
+
+        # data = [
+        #     torch.load(path, map_location="cpu")["fuzzy_gpt-3.5-turbo-1106"]
+        #     for path in data_path.glob("*.pt")
+        # ]   
+        # data = {k: torch.cat([v[k] for v in data], dim=0) for k in data[0].keys()}
+        # with open(data_path / "metrics.bin", "wb") as f:
+        #     torch.save(data, f)
+
+        try:
+            data_path = next(data_path.glob("*.bin"))
+        except StopIteration:
+            logging.exception(f".bin file not found at {data_path}")
+            raise
 
         data = torch.load(data_path, map_location="cpu")
 
-        logits = data.pop("logits")
-        labels = data.pop("labels")
+        logits = data.pop("q_logits")
+        labels = data.pop("q_labels").long()
 
         data_splits[split] = LogitsDataset(logits, labels)
+    
+    train_data = data_splits.pop("train", None)
+    val_data = data_splits.pop("validation", None)
+    test_data = data_splits.pop("test", None)
 
-    val_data = data_splits.pop("validation")
-    test_data = data_splits.pop("test")
-
-    return None, val_data, test_data
+    return train_data, val_data, test_data
 
 
 @entrypoint(with_accelerator=True)
@@ -52,7 +75,7 @@ def main(
     data_dir=None,
     num_workers=4,
     batch_size=64,
-    lr=1e-2,
+    lr=1e-3,
     weight_decay=1e-2,
     max_steps=2000,
 ):
@@ -71,11 +94,10 @@ def main(
         num_workers=num_workers,
         pin_memory=True,
         accelerator=accelerator,
+        shuffle=True,
     )
 
-    model, optimizer, scheduler, loader = accelerator.prepare(
-        model, optimizer, scheduler, loader
-    )
+    model, optimizer, scheduler = accelerator.prepare(model, optimizer, scheduler)
 
     criterion = torch.nn.CrossEntropyLoss()
 
@@ -104,6 +126,7 @@ def main(
 
         log_metrics = {
             "loss": loss.detach().item(),
+            "log_temperature": model.log_temperature.data.item(),
             "temperature": model.log_temperature.data.exp().item(),
         }
 
