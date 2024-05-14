@@ -4,7 +4,7 @@ from functools import partial
 from ..logging import Timer
 from ..datasets import get_dataset, get_loader
 from .oe import evaluate_uncertainty_sampling_oe, evaluate_verbal_elicitation_oe
-from .query import evaluate_query
+from .query import evaluate_query, evaluate_query_logits
 from .classifier import evaluate_classifier
 
 EVALUATE_MODE_FN_MAP = {
@@ -20,6 +20,7 @@ EVALUATE_MODE_FN_MAP = {
         max_new_tokens=1,
         grade_strategy="substring",
     ),
+    "query_logits": evaluate_query_logits,
     "class": partial(
         evaluate_classifier,
         max_new_tokens=100,

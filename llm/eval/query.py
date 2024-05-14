@@ -143,3 +143,38 @@ def evaluate_query(
         all_metrics.update(metrics)
 
     return all_metrics
+
+
+@torch.inference_mode()
+def evaluate_query_logits(
+    accelerator,
+    model,
+    tokenizer,
+    loader,
+    log_dir=None,
+    T=1.0,
+    **_,
+):
+    eval_data = OrderedDict([("q_logits", []), ("q_labels", [])])
+
+    for q_logits, q_labels in tqdm(loader):
+        q_logits = q_logits / T
+
+        [
+            eval_data[k].append(v.cpu())
+            for k, v in zip(
+                eval_data.keys(),
+                accelerator.gather_for_metrics((q_logits, q_labels)),
+            )
+        ]
+
+    eval_data = OrderedDict({k: torch.cat(v, dim=0) for k, v in eval_data.items()})
+
+    all_metrics = compute_uncertainty_metrics(
+        eval_data.get("q_labels"),
+        eval_data.get("q_logits"),
+        prefix="unc_",
+    )
+    all_metrics["acc"] = eval_data.get("q_labels").float().mean(dim=0).item()
+
+    return all_metrics

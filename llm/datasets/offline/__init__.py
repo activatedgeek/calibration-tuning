@@ -5,6 +5,7 @@ def __setup():
         "combined",
         "mmlu_offline",
         "modiste",
+        "offline_logits",
         "offline",
     ]:
         import_module(f".{n}", __name__)
