@@ -5,7 +5,7 @@ from ..logging import Timer
 from ..datasets import get_dataset, get_loader
 from .oe import evaluate_uncertainty_sampling_oe, evaluate_verbal_elicitation_oe
 from .query import evaluate_query, evaluate_query_logits
-from .classifier import evaluate_classifier
+from .classifier import evaluate_classifier, evaluate_classifier_logits
 
 EVALUATE_MODE_FN_MAP = {
     "us_oe": evaluate_uncertainty_sampling_oe,
@@ -15,17 +15,18 @@ EVALUATE_MODE_FN_MAP = {
         max_new_tokens=100,
         grade_strategy="fuzzy_gpt-3.5-turbo-1106",
     ),
+    "query_logits": evaluate_query_logits,
     "query_choice": partial(
         evaluate_query,
         max_new_tokens=1,
         grade_strategy="substring",
     ),
-    "query_logits": evaluate_query_logits,
     "class": partial(
         evaluate_classifier,
         max_new_tokens=100,
         grade_strategy="fuzzy_gpt-3.5-turbo-1106",
     ),
+    "class_logits": evaluate_classifier_logits,
     "class_choice": partial(
         evaluate_classifier,
         max_new_tokens=1,

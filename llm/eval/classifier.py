@@ -120,3 +120,41 @@ def evaluate_classifier(
     save_metrics_data(eval_data, log_dir=log_dir, filename="classifier_data.bin")
 
     return all_metrics
+
+
+@torch.inference_mode()
+def evaluate_classifier_logits(
+    accelerator,
+    model,
+    tokenizer,
+    loader,
+    log_dir=None,
+    **_,
+):
+    eval_data = OrderedDict([("logits", []), ("labels", [])])
+
+    for inputs in tqdm(loader):
+        class_inputs = inputs.pop("embedding", None)
+        class_labels = inputs.pop("query_label", None)
+
+        class_logits = model(class_inputs)
+
+        [
+            eval_data[k].append(v.cpu())
+            for k, v in zip(
+                eval_data.keys(),
+                accelerator.gather_for_metrics((class_logits, class_labels)),
+            )
+        ]
+
+    eval_data = OrderedDict({k: torch.cat(v, dim=0) for k, v in eval_data.items()})
+
+    all_metrics = compute_uncertainty_metrics(
+        eval_data.get("labels"),
+        eval_data.get("logits"),
+        prefix="unc_",
+    )
+    all_metrics["acc"] = eval_data.get("labels").float().mean(dim=0).item()
+    save_metrics_data(eval_data, log_dir=log_dir, filename="classifier_data.bin")
+
+    return all_metrics
