@@ -70,6 +70,8 @@ def evaluate_query(
     eval_data = OrderedDict([("q_logits", []), ("q_labels", [])])
     logits_eval_data = OrderedDict([("logits", []), ("labels", [])])
 
+    # modiste_data = OrderedDict([("output", []), ("example_idx", []), ("orig_example_idx", [])])
+
     for inputs in tqdm(loader):
         extra_inputs = {
             k: v for k, v in inputs.items() if k not in LMText.field_names()
@@ -119,6 +121,12 @@ def evaluate_query(
             )
         ]
 
+        # [
+        #     modiste_data[k].extend(v.cpu().numpy().tolist())
+        #     for k, v in extra_inputs.items()
+        # ]
+        # modiste_data["output"].extend(outputs)
+
     eval_data = OrderedDict({k: torch.cat(v, dim=0) for k, v in eval_data.items()})
 
     all_metrics = compute_uncertainty_metrics(
@@ -141,6 +149,9 @@ def evaluate_query(
         save_metrics_data(logits_eval_data, log_dir=log_dir, filename="logits_data.bin")
 
         all_metrics.update(metrics)
+
+    # modiste_data["p"] = eval_data.get("q_logits").softmax(dim=-1)[:, 1].cpu().numpy().tolist()
+    # save_metrics_data(modiste_data, log_dir=log_dir, filename="modiste_data.bin")
 
     return all_metrics
 

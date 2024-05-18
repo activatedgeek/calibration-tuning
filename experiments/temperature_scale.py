@@ -13,7 +13,7 @@ def main(
     accelerator=None,
     seed=137,
     log_dir=None,
-    dataset="offline_logits",
+    dataset=None,
     data_dir=None,
     num_workers=4,
     batch_size=64,
@@ -21,7 +21,7 @@ def main(
     weight_decay=1e-2,
     max_steps=2000,
 ):
-    _, val_data, test_data = get_dataset(dataset, root=data_dir)
+    _, val_data, test_data = get_dataset(dataset, seed=seed, root=data_dir)
     if val_data is None:
         val_data = test_data
 

@@ -139,6 +139,25 @@ def main(
         if scale_temp is not None:
             raise NotImplementedError
 
+    # model = torch.nn.Sequential(
+    #     get_classifier_head(
+    #         input_size=4096,
+    #         is_trainable=False,
+    #     ),
+    #     get_temperature_head(is_trainable=False),
+    # ).to(accelerator.device)
+
+    # model = get_classifier_head(
+    #     input_size=8192,
+    #     is_trainable=False,
+    # ).to(accelerator.device)
+
+    # if query_peft_dir is not None:
+    #     ckpt_path = f"{get_last_checkpoint_path(query_peft_dir)}/{ClassificationTuner.WEIGHTS_NAME}"
+    #     model.load_state_dict(torch.load(ckpt_path))
+
+    #     logging.info(f"Loaded checkpoint from {ckpt_path}")
+
     model.eval()
 
     if get_dataset_attrs(dataset).get("collection", False):
