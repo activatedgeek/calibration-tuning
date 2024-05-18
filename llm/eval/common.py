@@ -2,6 +2,7 @@ import os
 import logging
 from sklearn.metrics import roc_auc_score
 import torch
+import torch.nn.functional as F
 from transformers import GenerationConfig
 from peft import PeftModel
 
@@ -24,6 +25,20 @@ def save_metrics_data(data, log_dir=None, filename=DATA_FILE_NAME):
     logging.info(f'Metrics data saved to "{log_dir}/{filename}".')
 
 
+def compute_auroc(labels, probs, multi_class="ovr", **kwargs):
+    one_hot_labels = (
+        F.one_hot(labels, num_classes=probs.size(-1)) if labels.ndim == 1 else labels
+    )
+
+    try:
+        auroc = roc_auc_score(one_hot_labels, probs, multi_class=multi_class, **kwargs)
+    except ValueError:
+        auroc = float("nan")
+        logging.exception("AUROC calculation failed.", exc_info=True)
+
+    return auroc
+
+
 def compute_uncertainty_metrics(labels, logits, prefix=""):
     """
     Arguments:
@@ -41,14 +56,7 @@ def compute_uncertainty_metrics(labels, logits, prefix=""):
         p[torch.arange(p.size(0)), pred].float(),
     )
 
-    try:
-        auroc = roc_auc_score(
-            labels,
-            p[torch.arange(p.size(0)), 1].float().cpu(),
-        )
-    except ValueError:
-        auroc = float("nan")
-        logging.exception("AUROC calculation failed.", exc_info=True)
+    auroc = compute_auroc(labels, p)
 
     return {
         "N": labels.size(0),

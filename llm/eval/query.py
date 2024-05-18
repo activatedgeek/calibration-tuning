@@ -3,7 +3,12 @@ import torch
 from collections import OrderedDict
 from peft import PeftModel
 
-from ..datasets import LabeledStringDataCollator, LMText, prepare_uncertainty_query
+from ..datasets import (
+    LabeledStringDataCollator,
+    LMText,
+    prepare_uncertainty_query,
+    get_token_vec,
+)
 from .common import (
     get_model_generations,
     compute_uncertainty_metrics,
@@ -91,8 +96,16 @@ def evaluate_query(
 
             ## Token-level metrics only for single-token generation.
             if max_new_tokens == 1:
-                logits = __generations.logits[-1]
+                choice_vec = get_token_vec(tokenizer, format="choice")
+
                 labels = tokenizer(targets, return_tensors="pt").get("input_ids")[:, 1]
+                labels = (
+                    (labels.unsqueeze(dim=-1) == choice_vec.unsqueeze(dim=0))
+                    .long()
+                    .argmax(dim=-1)
+                )
+
+                logits = __generations.logits[-1][..., choice_vec]
 
                 [
                     logits_eval_data[k].append(v.cpu())
@@ -141,6 +154,8 @@ def evaluate_query(
         {k: torch.cat(v, dim=0) for k, v in logits_eval_data.items() if len(v)}
     )
     if logits_eval_data:
+        logits_eval_data["choice_vec"] = choice_vec
+
         metrics = compute_uncertainty_metrics(
             logits_eval_data.get("labels"),
             logits_eval_data.get("logits"),
