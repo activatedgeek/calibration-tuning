@@ -100,6 +100,8 @@ def get_all(
     complement=False,
     **kwargs,
 ):
+    kwargs.pop("dataset_str", None)
+
     dataset_names = __get_train_dataset_names(format=prompt_style)
 
     tr, vl, _ = get_combined_dataset(
