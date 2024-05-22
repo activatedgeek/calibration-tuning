@@ -7,65 +7,65 @@ from ..registry import register_dataset, DatasetTag
 from ..llm_data_utils import LMText, PromptFormat
 
 
-__TASKS = [
-    "abstract_algebra",
-    "anatomy",
-    "astronomy",
-    "business_ethics",
-    "clinical_knowledge",
-    "college_biology",
-    "college_chemistry",
-    "college_computer_science",
-    "college_mathematics",
-    "college_medicine",
-    "college_physics",
-    "computer_security",
-    "conceptual_physics",
-    "econometrics",
-    "electrical_engineering",
-    "elementary_mathematics",
-    "formal_logic",
-    "global_facts",
-    "high_school_biology",
-    "high_school_chemistry",
-    "high_school_computer_science",
-    "high_school_european_history",
-    "high_school_geography",
-    "high_school_government_and_politics",
-    "high_school_macroeconomics",
-    "high_school_mathematics",
-    "high_school_microeconomics",
-    "high_school_physics",
-    "high_school_psychology",
-    "high_school_statistics",
-    "high_school_us_history",
-    "high_school_world_history",
-    "human_aging",
-    "human_sexuality",
-    "international_law",
-    "jurisprudence",
-    "logical_fallacies",
-    "machine_learning",
-    "management",
-    "marketing",
-    "medical_genetics",
-    "miscellaneous",
-    "moral_disputes",
-    "moral_scenarios",
-    "nutrition",
-    "philosophy",
-    "prehistory",
-    "professional_accounting",
-    "professional_law",
-    "professional_medicine",
-    "professional_psychology",
-    "public_relations",
-    "security_studies",
-    "sociology",
-    "us_foreign_policy",
-    "virology",
-    "world_religions",
-]
+__TASK_CATEGORIES = {
+    "abstract_algebra": "STEM",
+    "anatomy": "STEM",
+    "astronomy": "STEM",
+    "business_ethics": "Other",
+    "clinical_knowledge": "Other",
+    "college_biology": "STEM",
+    "college_chemistry": "STEM",
+    "college_computer_science": "STEM",
+    "college_mathematics": "STEM",
+    "college_medicine": "Other",
+    "college_physics": "STEM",
+    "computer_security": "STEM",
+    "conceptual_physics": "STEM",
+    "econometrics": "Social Sciences",
+    "electrical_engineering": "STEM",
+    "elementary_mathematics": "STEM",
+    "formal_logic": "Humanities",
+    "global_facts": "Other",
+    "high_school_biology": "STEM",
+    "high_school_chemistry": "STEM",
+    "high_school_computer_science": "STEM",
+    "high_school_european_history": "Humanities",
+    "high_school_geography": "Social Sciences",
+    "high_school_government_and_politics": "Social Sciences",
+    "high_school_macroeconomics": "Social Sciences",
+    "high_school_mathematics": "STEM",
+    "high_school_microeconomics": "Social Sciences",
+    "high_school_physics": "STEM",
+    "high_school_psychology": "Social Sciences",
+    "high_school_statistics": "STEM",
+    "high_school_us_history": "Humanities",
+    "high_school_world_history": "Humanities",
+    "human_aging": "Other",
+    "human_sexuality": "Social Sciences",
+    "international_law": "Humanities",
+    "jurisprudence": "Humanities",
+    "logical_fallacies": "Humanities",
+    "machine_learning": "STEM",
+    "management": "Other",
+    "marketing": "Other",
+    "medical_genetics": "Other",
+    "miscellaneous": "Other",
+    "moral_disputes": "Humanities",
+    "moral_scenarios": "Humanities",
+    "nutrition": "Other",
+    "philosophy": "Humanities",
+    "prehistory": "Humanities",
+    "professional_accounting": "Other",
+    "professional_law": "Humanities",
+    "professional_medicine": "Other",
+    "professional_psychology": "Social Sciences",
+    "public_relations": "Social Sciences",
+    "security_studies": "Social Sciences",
+    "sociology": "Social Sciences",
+    "us_foreign_policy": "Social Sciences",
+    "virology": "Other",
+    "world_religions": "Humanities",
+}
 
 
 def format_sample(sample, format):
@@ -184,12 +184,14 @@ def get_mmlu(
     return train_data, val_data, test_data
 
 
-@register_dataset(attrs=dict(tasks=__TASKS, tags=[DatasetTag.EVAL_ONLY]))
+@register_dataset(
+    attrs=dict(task_categories=__TASK_CATEGORIES, tags=[DatasetTag.EVAL_ONLY])
+)
 def mmlu(*args, dataset_str=None, **kwargs):
     try:
         _, task = dataset_str.split(":")
 
-        assert task in __TASKS
+        assert task in __TASK_CATEGORIES.keys()
     except ValueError:
         logging.exception(
             f'Dataset string should be formatted as "mmlu:<task>" (Got {dataset_str})',
@@ -206,4 +208,4 @@ def mmlu(*args, dataset_str=None, **kwargs):
 
 @register_dataset(attrs=dict(unlisted=True, collection=True))
 def mmlu_all(*args, **kwargs):
-    return [f"mmlu:{task}" for task in __TASKS]
+    return [f"mmlu:{task}" for task in __TASK_CATEGORIES.keys()]

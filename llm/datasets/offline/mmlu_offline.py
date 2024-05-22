@@ -1,19 +1,21 @@
 import logging
 
-from ..registry import register_dataset, get_dataset_attrs, DatasetTag
-from ..hf.mmlu import __TASKS
+from ..registry import register_dataset, DatasetTag
+from ..hf.mmlu import __TASK_CATEGORIES
 from .offline import get_offline
 from .offline_logits import get_offline_logits
 
 
-@register_dataset(attrs=dict(tasks=__TASKS, tags=[DatasetTag.EVAL_ONLY]))
+@register_dataset(
+    attrs=dict(task_categories=__TASK_CATEGORIES, tags=[DatasetTag.EVAL_ONLY])
+)
 def mmlu_offline(
     root=None, dataset_str=None, prompt_style=None, eval_kshot=5, **kwargs
 ):
     try:
         _, name, task = dataset_str.split(":")
 
-        assert task in get_dataset_attrs("mmlu").get("tasks")
+        assert task in __TASK_CATEGORIES.keys()
     except ValueError:
         logging.exception(
             f'Dataset string should be formatted as "mmlu_offline:<name>:<task>" (Got {dataset_str})',
@@ -40,10 +42,12 @@ def mmlu_offline_all(dataset_str=None, **_):
         )
         raise
 
-    return [f"mmlu_offline:{name}:{task}" for task in __TASKS]
+    return [f"mmlu_offline:{name}:{task}" for task in __TASK_CATEGORIES.keys()]
 
 
-@register_dataset(attrs=dict(tasks=__TASKS, tags=[DatasetTag.EVAL_ONLY]))
+@register_dataset(
+    attrs=dict(task_categories=__TASK_CATEGORIES, tags=[DatasetTag.EVAL_ONLY])
+)
 def mmlu_offline_query_logits(root=None, dataset_str=None, **kwargs):
     name, kind, dataset = dataset_str.split(":")
 
@@ -62,10 +66,14 @@ def mmlu_offline_query_logits_all(dataset_str=None, **_):
         )
         raise
 
-    return [f"mmlu_offline_query_logits:{name}:{task}" for task in __TASKS]
+    return [
+        f"mmlu_offline_query_logits:{name}:{task}" for task in __TASK_CATEGORIES.keys()
+    ]
 
 
-@register_dataset(attrs=dict(tasks=__TASKS, tags=[DatasetTag.EVAL_ONLY]))
+@register_dataset(
+    attrs=dict(task_categories=__TASK_CATEGORIES, tags=[DatasetTag.EVAL_ONLY])
+)
 def mmlu_offline_ve_logits(root=None, dataset_str=None, **kwargs):
     name, kind, dataset = dataset_str.split(":")
 
@@ -84,4 +92,6 @@ def mmlu_offline_ve_logits_all(dataset_str=None, **_):
         )
         raise
 
-    return [f"mmlu_offline_ve_logits:{name}:{task}" for task in __TASKS]
+    return [
+        f"mmlu_offline_ve_logits:{name}:{task}" for task in __TASK_CATEGORIES.keys()
+    ]
