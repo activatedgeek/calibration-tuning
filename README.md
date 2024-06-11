@@ -209,3 +209,14 @@ Use `--scale-temp=probe` to use temperature scaling of the uncertainty query log
 # LICENSE
 
 Apache 2.0
+
+## Citation
+Please cite our work as:
+```bibtex
+@inproceedings{kapoor2024llmcalibration,
+    title={Large Language Models Must Be Taught to Know What They Don't Know},
+    author={Sanyam Kapoor, Nate Gruver, Manley Roberts, Katherine Collins, Arka Pal, Umang Bhatt, Adrian Weller, Samuel Dooley, Micah Goldblum, Andrew Gordon Wilson},
+    publisher={arXiv},
+    year={2024}
+}
+```
