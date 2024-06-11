@@ -3,7 +3,7 @@
 [![Arxiv Paper](https://img.shields.io/badge/arXiv-xxxx.yyyyy-red)](https://arxiv.org/abs/xxxx.yyyyy)
 [![Model on HF](./assets/model-on-hf-lg.svg)](https://huggingface.co/calibration-tuning)
 
-This repository contains the code for the paper Large Language Models Must Be Taught to Know What They Don't Know by Sanyam Kapoor<sup> *</sup>, Nate Gruver<sup> *</sup>, Manley Roberts, Katherine Collins, Arka Pal, Umang Bhatt, Adrian Weller, Samuel Dooley, Micah Goldblum, and Andrew Gordon Wilson.
+This repository contains the code for the paper Large Language Models Must Be Taught to Know What They Don't Know by Sanyam Kapoor<sup>*</sup>, Nate Gruver<sup>*</sup>, Manley Roberts, Katherine Collins, Arka Pal, Umang Bhatt, Adrian Weller, Samuel Dooley, Micah Goldblum, and Andrew Gordon Wilson.
 
 <figure>
   <img src="./assets/explainer_figure.png" alt="Image">
