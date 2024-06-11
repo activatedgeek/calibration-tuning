@@ -8,6 +8,10 @@ Fine-tuning uses a dataset of approximately 20,000 generations from each base mo
 At test/inference time, the probability of correctness defines the confidence defines the confidence of the model in its answer.
 For full details, please see our paper [Large Language Models Must Be Taught to Know What They Don't Know](https://arxiv.org/abs/xxxx.yyyyy).
 
+<figure>
+  <img src="./assets/explainer_figure.png" alt="Image">
+</figure>
+
 ## HuggingFace Release
 
 We release the following calibration-tuned models as [PEFT](https://huggingface.co/docs/peft) adapters via HuggingFace, along with the datasets used to train them.
