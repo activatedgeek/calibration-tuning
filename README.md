@@ -1,7 +1,7 @@
 # LLM Calibration
 
 [![Arxiv Paper](https://img.shields.io/badge/arXiv-xxxx.yyyyy-red)](https://arxiv.org/abs/xxxx.yyyyy)
-[![Model on HF](https://huggingface.co/datasets/huggingface/badges/resolve/main/model-on-hf-md.svg)](https://huggingface.co/calibration-tuning)
+[![Model on HF](https://huggingface.co/datasets/huggingface/badges/blob/main/dataset-on-hf-lg.svg)](https://huggingface.co/calibration-tuning)
 
 We fine-tune various large language models that estimate well-calibrated uncertainties for both multiple-choice and open-ended question answering settings.
 Fine-tuning uses a dataset of approximately 20,000 generations from each base model labeled for correctness. 
