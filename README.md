@@ -84,7 +84,7 @@ We release the following calibration-tuned models as [PEFT](https://huggingface.
 
 See [experiments/play.py](./experiments/play.py) for an example script of how to load and use the models.
 
-## Development Setup
+## Environment Setup
 
 Create a new environment and activate, e.g. with `conda`,
 
