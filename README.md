@@ -154,9 +154,9 @@ Use `--strategy=fuzzy_gpt-3.5-turbo-1106` for generating labels via GPT 3.5 Turb
 
 Checkpoints will be saved in an auto-generated directory `<train-log-dir>/checkpoint-<step>`, or can be configured via `--log-dir`.
 
-#### CT-Query
+#### LoRA + Prompt
 
-To use the labeled dataset for calibration-tuning (`CT-Query`),
+To use the labeled dataset for calibration-tuning (`LoRA + Prompt`),
 
 ```shell
 torchrun --nnodes=1 --nproc_per_node=auto experiments/calibration_tune.py --dataset=offline:<labels-log-dir>/labels --model-name=llama2:13b-chat --batch-size=4 --kl-decay=1.0 --max-steps=5000
@@ -166,22 +166,22 @@ Use `--scale-temp` for temperature scaling of the uncertainty query predictions.
 
 For other CLI arguments, see the `main` function of [experiments/calibration_tune.py](./experiments/calibration_tune.py).
 
-#### CT-Probe / CT-LoRA
+#### Probe / LoRA
 
-To use the labeled dataset for training a classifier head (`CT-Probe`),
+To use the labeled dataset for training a classifier head (`Probe`),
 
 ```shell
 torchrun --nnodes=1 --nproc_per_node=auto experiments/classifier_tune.py --dataset=offline:<labels-log-dir>/labels --model-name=llama2:13b-chat --batch-size=4 --max-steps=5000
 ```
 
 Use `--scale-temp` for temperature scaling of the classifier. 
-Use `--with-lora` to enable trainable LoRA parameters (`CT-LoRA`).
+Use `--with-lora` to enable trainable LoRA parameters (`LoRA`).
 
 For other CLI arguments, see the `main` function of [experiments/classifier_tune.py](./experiments/calibration_tune.py).
 
 ### Evaluation
 
-#### CT-Query
+#### LoRA + Prompt
 
 For open-ended generation evaluations,
 
@@ -197,7 +197,7 @@ torchrun --nnodes=1 --nproc_per_node=auto experiments/evaluate.py --dataset=eval
 
 Use `--scale-temp=query` to use temperature scaling of the uncertainty query logits.
 
-#### CT-Probe / CT-LoRA
+#### Probe / LoRA
 
 For open-ended generation evaluations,
 
