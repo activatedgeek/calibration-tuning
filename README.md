@@ -3,7 +3,7 @@
 [![Arxiv Paper](https://img.shields.io/badge/arXiv-xxxx.yyyyy-red)](https://arxiv.org/abs/xxxx.yyyyy)
 [![Model on HF](./assets/model-on-hf-md.svg)](https://huggingface.co/calibration-tuning)
 
-This repository contains the code for the paper Large Language Models Must Be Taught to Know What They Don't Know by Sanyam Kapoor<sup>* </sup>, Nate Gruver<sup>* </sup>, Manley Roberts, Katherine Collins, Arka Pal, Umang Bhatt, Adrian Weller, Samuel Dooley, Micah Goldblum, and Andrew Gordon Wilson.
+This repository contains the code for the paper [Large Language Models Must Be Taught to Know What They Don't Know](https://arxiv.org/abs/xxxx.yyyyy) by Sanyam Kapoor<sup>* </sup>, Nate Gruver<sup>* </sup>, Manley Roberts, Katherine Collins, Arka Pal, Umang Bhatt, Adrian Weller, Samuel Dooley, Micah Goldblum, and Andrew Gordon Wilson.
 
 <figure>
   <img src="./assets/explainer_figure.png" alt="Image">
@@ -12,7 +12,6 @@ This repository contains the code for the paper Large Language Models Must Be Ta
 We fine-tune various large language models that estimate well-calibrated uncertainties for both multiple-choice and open-ended question answering settings.
 Fine-tuning uses a dataset of approximately 20,000 generations from each base model labeled for correctness. 
 At test/inference time, the probability of correctness defines the confidence defines the confidence of the model in its answer.
-For full details, please see our paper [Large Language Models Must Be Taught to Know What They Don't Know](https://arxiv.org/abs/xxxx.yyyyy).
 
 ## HuggingFace Release
 
