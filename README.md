@@ -1,9 +1,9 @@
 # LLM Calibration
 
-[![Arxiv Paper](https://img.shields.io/badge/arXiv-xxxx.yyyyy-red)](https://arxiv.org/abs/xxxx.yyyyy)
+[![Arxiv Paper](https://img.shields.io/badge/arXiv-xxxx.yyyyy-red)](https://arxiv.org/abs/2406.08391)
 [![Model on HF](./assets/model-on-hf-md.svg)](https://huggingface.co/calibration-tuning)
 
-This repository contains the code for the paper [Large Language Models Must Be Taught to Know What They Don't Know](https://arxiv.org/abs/xxxx.yyyyy) by Sanyam Kapoor<sup>* </sup>, Nate Gruver<sup>* </sup>, Manley Roberts, Katherine Collins, Arka Pal, Umang Bhatt, Adrian Weller, Samuel Dooley, Micah Goldblum, and Andrew Gordon Wilson.
+This repository contains the code for the paper [Large Language Models Must Be Taught to Know What They Don't Know](https://arxiv.org/abs/2406.08391) by Sanyam Kapoor<sup>* </sup>, Nate Gruver<sup>* </sup>, Manley Roberts, Katherine Collins, Arka Pal, Umang Bhatt, Adrian Weller, Samuel Dooley, Micah Goldblum, and Andrew Gordon Wilson.
 
 <figure>
   <img src="./assets/explainer_figure.png" alt="Image">
