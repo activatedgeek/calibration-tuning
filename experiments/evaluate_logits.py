@@ -36,7 +36,7 @@ def main(
         batch_size=batch_size,
     )
     if accelerator.is_main_process:
-        wandb.config.update(config)
+        wandb.config.update(config, allow_val_change=True)
 
     if get_dataset_attrs(dataset).get("collection", False):
         all_datasets = get_dataset(dataset)

@@ -7,7 +7,6 @@ import torch.nn.functional as F
 from torch.utils.data import default_collate
 from transformers.trainer import (
     logger,
-    unwrap_model,
     TRAINING_ARGS_NAME,
     Trainer,
     TrainingArguments,
@@ -72,7 +71,7 @@ class CalibrationTuner(Trainer):
     def _wrap_model(self, *args, **kwargs):
         if self.args.scale_temp:
             if (
-                unwrap_model(self.query_temperature_model)
+                self.accelerator.unwrap_model(self.query_temperature_model)
                 is self.query_temperature_model
             ):
                 self.query_temperature_model = self.accelerator.prepare(
@@ -295,6 +294,8 @@ class CalibrationTuner(Trainer):
 
         if self.args.scale_temp:
             torch.save(
-                unwrap_model(self.query_temperature_model).state_dict(),
+                self.accelerator.unwrap_model(
+                    self.query_temperature_model
+                ).state_dict(),
                 os.path.join(output_dir, self.TEMPERATURE_WEIGHTS_NAME),
             )

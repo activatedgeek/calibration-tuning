@@ -8,7 +8,6 @@ from peft import PeftModel
 from transformers.trainer import (
     TRAINING_ARGS_NAME,
     logger,
-    unwrap_model,
     Trainer,
     TrainingArguments,
 )
@@ -64,7 +63,10 @@ class EmbeddingTuner(Trainer):
         )
 
     def _wrap_model(self, *args, **kwargs):
-        if unwrap_model(self.classifier_model) is self.classifier_model:
+        if (
+            self.accelerator.unwrap_model(self.classifier_model)
+            is self.classifier_model
+        ):
             self.classifier_model = self.accelerator.prepare(self.classifier_model)
 
         return super()._wrap_model(*args, **kwargs)
@@ -83,7 +85,7 @@ class EmbeddingTuner(Trainer):
                 for k, v in self._collate_fn(inputs).items()
             }
 
-            unwrapped_model = unwrap_model(model)
+            unwrapped_model = self.accelerator.unwrap_model(model)
             if isinstance(unwrapped_model, PeftModel):
                 unwrapped_model.disable_adapter_layers()
 
@@ -210,6 +212,6 @@ class EmbeddingTuner(Trainer):
         torch.save(self.args, os.path.join(output_dir, TRAINING_ARGS_NAME))
 
         torch.save(
-            unwrap_model(self.classifier_model).state_dict(),
+            self.accelerator.unwrap_model(self.classifier_model).state_dict(),
             os.path.join(output_dir, self.WEIGHTS_NAME),
         )

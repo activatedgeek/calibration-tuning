@@ -54,7 +54,7 @@ def main(
         batch_size=batch_size,
     )
     if accelerator.is_main_process:
-        wandb.config.update(config)
+        wandb.config.update(config, allow_val_change=True)
 
     tokenizer, model = get_model(model_name, device_map="auto")
 

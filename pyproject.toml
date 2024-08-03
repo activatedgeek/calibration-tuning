@@ -11,7 +11,11 @@ description = "LLM Calibration."
 readme = "README.md"
 license = {file = "LICENSE"}
 
-dynamic = ["version", "dependencies"]
+dynamic = [
+    "version",
+    "dependencies",
+    "optional-dependencies"
+]
 
 [tool.setuptools]
 include-package-data = false
@@ -19,6 +23,7 @@ include-package-data = false
 [tool.setuptools.dynamic]
 version = { attr = "llm.__init__.__version__" }
 dependencies = {file = ["requirements-base.txt", "requirements.txt"]}
+optional-dependencies.dev = {file = ["requirements-dev.txt"]}
 
 [tool.setuptools.packages.find]
 exclude = [

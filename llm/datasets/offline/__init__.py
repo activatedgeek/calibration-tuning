@@ -4,6 +4,7 @@ def __setup():
     for n in [
         "combined",
         "mmlu_offline",
+        "mmlu_pro_offline",
         "modiste",
         "offline_logits",
         "offline",

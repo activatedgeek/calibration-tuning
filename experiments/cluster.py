@@ -86,7 +86,7 @@ def main(
         max_steps=max_steps,
     )
     if accelerator.is_main_process:
-        wandb.config.update(config)
+        wandb.config.update(config, allow_val_change=True)
 
     supercategories = get_dataset_attrs("mmlu").get("task_categories")
     slabels = {v: idx for idx, v in enumerate(set(supercategories.values()))}

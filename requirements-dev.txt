@@ -1,0 +1,6 @@
+black[jupyter]
+ipywidgets
+jupyterlab
+nvitop
+seaborn
+palettable

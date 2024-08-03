@@ -13,6 +13,7 @@ def __setup():
         "hellaswag",
         "math_qa",
         "mmlu",
+        "mmlu_pro",
         "multirc",
         "obqa",
         "piqa",

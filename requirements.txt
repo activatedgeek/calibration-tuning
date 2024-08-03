@@ -8,4 +8,4 @@ sentence-transformers
 tiktoken
 torch
 torchvision
-transformers
+transformers<=4.42

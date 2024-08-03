@@ -1,31 +1,56 @@
+import os
+from datetime import timedelta
+import torch
 import torch.distributed as torchdist
+from torch.distributed.fsdp import (
+    ShardingStrategy,
+    BackwardPrefetch,
+    StateDictType,
+    CPUOffload,
+)
 from accelerate import (
     Accelerator as __HFAccelerator,
     PartialState as __HFAcceleratorState,
     DeepSpeedPlugin,
+    FullyShardedDataParallelPlugin,
+    InitProcessGroupKwargs,
 )
+from accelerate.utils import PrecisionType
 
 
 class Accelerator(__HFAccelerator):
-    """Use with torchrun.
+    def __init__(self, *args, **kwargs):
+        deepspeed_plugin = None
+        if os.getenv("ACCELERATE_USE_DEEPSPEED", "false") == "true":
+            deepspeed_plugin = DeepSpeedPlugin(zero3_init_flag=True)
 
-    Usage:
-        torchrun --nnodes=${__NNODES} \
-                 --nproc_per_node=${__NPROC_PER_NODE} \
-                 --rdzv_endpoint=${__IP}:${__PORT} \
-                 "${@}"
-    """
+        fsdp_plugin = None
+        if os.getenv("ACCELERATE_USE_FSDP", "false") == "true":
+            os.environ["FSDP_CPU_RAM_EFFICIENT_LOADING"] = "true"
 
-    def __init__(self, *args, deepspeed_config=None, **kwargs):
-        deepspeed_plugin = (
-            None
-            if deepspeed_config is None
-            else DeepSpeedPlugin(
-                hf_ds_config=deepspeed_config,
-                zero3_init_flag=True,
+            fsdp_plugin = FullyShardedDataParallelPlugin(
+                sharding_strategy=ShardingStrategy.FULL_SHARD,
+                backward_prefetch=BackwardPrefetch.BACKWARD_PRE,
+                sync_module_states=True,
+                use_orig_params=True,
+                forward_prefetch=False,
+                auto_wrap_policy="TRANSFORMER_BASED_WRAP",
+                cpu_offload=CPUOffload(offload_params=False),
+                state_dict_type=StateDictType.SHARDED_STATE_DICT,
             )
+
+        super().__init__(
+            *args,
+            **kwargs,
+            mixed_precision=(
+                PrecisionType.BF16
+                if torch.cuda.is_bf16_supported()
+                else PrecisionType.FP16
+            ),
+            fsdp_plugin=fsdp_plugin,
+            deepspeed_plugin=deepspeed_plugin,
+            kwargs_handlers=[InitProcessGroupKwargs(timeout=timedelta(seconds=600))]
         )
-        super().__init__(*args, **kwargs, deepspeed_plugin=deepspeed_plugin)
 
     def sync_object(self, obj):
         if self.num_processes == 1:

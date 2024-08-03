@@ -81,7 +81,7 @@ def main(
         max_steps=max_steps,
     )
     if accelerator.is_main_process:
-        wandb.config.update(config)
+        wandb.config.update(config, allow_val_change=True)
 
     train_data, val_data, test_data = get_dataset(
         dataset,

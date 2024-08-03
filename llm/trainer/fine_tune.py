@@ -6,7 +6,6 @@ from torch.utils.data import default_collate
 from transformers.trainer import (
     Trainer,
     logger,
-    unwrap_model,
     TRAINING_ARGS_NAME,
     TrainingArguments,
 )
@@ -135,6 +134,6 @@ class FineTuner(Trainer):
 
         if self.args.scale_temp:
             torch.save(
-                unwrap_model(self.model).lm_head[-1].state_dict(),
+                self.accelerator.unwrap_model(self.model).lm_head[-1].state_dict(),
                 os.path.join(output_dir, self.TEMPERATURE_WEIGHTS_NAME),
             )

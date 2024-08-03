@@ -15,6 +15,7 @@ from llm.datasets import (
     prepare_uncertainty_query,
     LMText,
 )
+from llm.datasets.llm_utils_oe import sanitize_generations
 from llm.logging import entrypoint
 from llm.models import get_model
 from llm.utils.generate_utils import generate_output
@@ -45,7 +46,7 @@ def generate_outputs_main(
         "max_new_tokens": max_new_tokens,
     }
     if accelerator.is_main_process:
-        wandb.config.update(config)
+        wandb.config.update(config, allow_val_change=True)
 
     ## @HOTFIX: for hanging processes in dataset map.
     # import multiprocess.context as ctx
@@ -118,7 +119,7 @@ def generate_query_label(
             tokenizer,
             inputs,
             targets,
-            outputs,
+            sanitize_generations(outputs),
             format=query_format,
             strategy=strategy,
         )
@@ -155,7 +156,7 @@ def generate_labels_main(
         "strategy": strategy,
     }
     if accelerator.is_main_process:
-        wandb.config.update(config)
+        wandb.config.update(config, allow_val_change=True)
 
     tokenizer, model = get_model(model_name)
 
@@ -226,7 +227,7 @@ def generate_embeddings_main(
         "model_name": model_name,
     }
     if accelerator.is_main_process:
-        wandb.config.update(config)
+        wandb.config.update(config, allow_val_change=True)
 
     embedding_model = get_model(model_name, device_map="auto")
 
