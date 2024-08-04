@@ -31,7 +31,7 @@ def compute_auroc(labels, probs, multi_class="ovr", **kwargs):
     )
 
     try:
-        auroc = roc_auc_score(one_hot_labels, probs, multi_class=multi_class, **kwargs)
+        auroc = roc_auc_score(one_hot_labels, probs.float(), multi_class=multi_class, **kwargs)
     except ValueError:
         auroc = float("nan")
         logging.exception("AUROC calculation failed.", exc_info=True)
