@@ -19,6 +19,7 @@ def __setup():
         "mistral",
         "mpnet",
         "openai",
+        "qwen",
     ]:
         import_module(f".{n}", __name__)
 

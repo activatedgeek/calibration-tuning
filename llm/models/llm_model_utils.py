@@ -5,7 +5,7 @@ def resize_token_embeddings(tokenizer, model):
     extra_token_count = len(tokenizer) - model.get_input_embeddings().weight.data.size(
         0
     )
-    if extra_token_count:
+    if extra_token_count > 0:
         model.resize_token_embeddings(len(tokenizer))
 
         input_embeddings = model.get_input_embeddings().weight.data

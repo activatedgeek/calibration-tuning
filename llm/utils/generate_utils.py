@@ -10,14 +10,15 @@ from llm.datasets import LabeledStringDataCollator
 def wrapped_generate_output(model, tokenizer, generation_inputs, generation_config):
     while True:
         try:
-            terminators = [
-                tokenizer.eos_token_id,
-                tokenizer.convert_tokens_to_ids("<|eot_id|>")
-            ]
+            terminators = [tokenizer.eos_token_id] + (
+                [tokenizer.convert_tokens_to_ids("<|eot_id|>")]
+                if "<|eot_id|>" in tokenizer.vocab
+                else []
+            )
             generation_outputs = model.generate(
-                **generation_inputs, 
+                **generation_inputs,
                 eos_token_id=terminators,
-                generation_config=generation_config
+                generation_config=generation_config,
             )
             return generation_outputs
         except Exception as e:
@@ -28,6 +29,7 @@ def wrapped_generate_output(model, tokenizer, generation_inputs, generation_conf
                 _outputs = wrapped_generate_output(model, inputs, generation_config)
                 generation_outputs.append(_outputs)
             return torch.cat(generation_outputs, dim=0)
+
 
 def generate_output(
     accelerator,
@@ -53,7 +55,7 @@ def generate_output(
 
         if isinstance(model, PeftModel):
             model.set_adapter("default")
-        
+
         generation_outputs = wrapped_generate_output(
             model, tokenizer, generation_inputs, generation_config
         )
@@ -63,7 +65,7 @@ def generate_output(
             skip_special_tokens=True,
             clean_up_tokenization_spaces=False,
         )
-        
+
         # for x in generations:
         #     print(x)
 
