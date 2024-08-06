@@ -123,7 +123,7 @@ def get_piqa(
 ):
     format = PromptFormat(prompt_style)
 
-    dataset = load_dataset("piqa")
+    dataset = load_dataset("piqa", trust_remote_code=True)
     if not use_cache:
         dataset.cleanup_cache_files()
     dataset.pop("test", None)  ## NOTE: "test" split has no labels.

@@ -183,13 +183,13 @@ For other CLI arguments, see the `main` function of [experiments/classifier_tune
 For open-ended generation evaluations,
 
 ```shell
-torchrun --nnodes=1 --nproc_per_node=auto experiments/evaluate.py --dataset=eval:mmlu --prompt-style=oe --model-name=llama2:13b-chat --query-peft-dir=<train-log-dir>/checkpoint-<step> --mode=query
+python experiments/evaluate.py --dataset=eval:mmlu --prompt-style=oe --model-name=llama2:13b-chat --query-peft-dir=<train-log-dir>/checkpoint-<step> --mode=query
 ```
 
 For multiple-choice question-answering evaluations,
 
 ```shell
-torchrun --nnodes=1 --nproc_per_node=auto experiments/evaluate.py --dataset=eval:mmlu --prompt-style=choice --model-name=llama2:13b-chat --query-peft-dir=<train-log-dir>/checkpoint-<step> --mode=query_choice
+python experiments/evaluate.py --dataset=eval:mmlu --prompt-style=choice --model-name=llama2:13b-chat --query-peft-dir=<train-log-dir>/checkpoint-<step> --mode=query_choice
 ```
 
 Use `--scale-temp=query` to use temperature scaling of the uncertainty query logits.
@@ -199,13 +199,13 @@ Use `--scale-temp=query` to use temperature scaling of the uncertainty query log
 For open-ended generation evaluations,
 
 ```shell
-torchrun --nnodes=1 --nproc_per_node=auto experiments/evaluate.py --dataset=eval:mmlu --prompt-style=oe --model-name=llama2:13b-chat --query-peft-dir=<train-log-dir>/checkpoint-<step> --mode=class --with-classifier
+python experiments/evaluate.py --dataset=eval:mmlu --prompt-style=oe --model-name=llama2:13b-chat --query-peft-dir=<train-log-dir>/checkpoint-<step> --mode=class --with-classifier
 ```
 
 For multiple-choice question-answering evaluations,
 
 ```shell
-torchrun --nnodes=1 --nproc_per_node=auto experiments/evaluate.py --dataset=eval:mmlu --prompt-style=choice --model-name=llama2:13b-chat --query-peft-dir=<train-log-dir>/checkpoint-<step> --mode=class_choice --with-classifier
+python experiments/evaluate.py --dataset=eval:mmlu --prompt-style=choice --model-name=llama2:13b-chat --query-peft-dir=<train-log-dir>/checkpoint-<step> --mode=class_choice --with-classifier
 ```
 
 Use `--scale-temp=probe` to use temperature scaling of the uncertainty query logits.

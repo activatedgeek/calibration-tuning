@@ -6,6 +6,7 @@ import numpy as np
 from datasets import load_dataset, Features, Value, DatasetDict
 
 from ..registry import register_dataset
+from ..llm_utils_oe import sanitize_generations
 
 
 CSV_DATASET_FEATURES = Features(
@@ -97,7 +98,7 @@ def get_offline(
             )
             for split, ds in dataset.items()
         }
-    )
+    ).map(lambda s: {"output": sanitize_generations([s["output"].strip()])[0]})
 
     train_data = data_splits.pop("train", None)
     val_data = data_splits.pop("validation", None)

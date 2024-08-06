@@ -129,7 +129,7 @@ def get_winogrande(
 ):
     format = PromptFormat(prompt_style)
 
-    dataset = load_dataset("winogrande", "winogrande_xl")
+    dataset = load_dataset("winogrande", "winogrande_xl", trust_remote_code=True)
     if not use_cache:
         dataset.cleanup_cache_files()
     dataset.pop("test", None)  ## NOTE: Test has no labels.

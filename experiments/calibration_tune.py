@@ -29,6 +29,7 @@ def main(
     warmup_ratio=0.0,
     kl_decay=0.0,
     max_steps=1,
+    **_,
 ):
     accelerator = AcceleratorState()
 
@@ -82,22 +83,22 @@ def main(
 
     model = get_lora_model(
         model,
-        peft_id_or_dir=peft_dir,
-        lora_rank=lora_rank,
-        lora_alpha=lora_alpha,
-        lora_dropout=lora_dropout,
-        is_trainable=not scale_temp,
-        adapter_name="default",
-    )
-
-    model = get_lora_model(
-        model,
         peft_id_or_dir=ref_peft_dir or peft_dir,
         lora_rank=lora_rank,
         lora_alpha=lora_alpha,
         lora_dropout=lora_dropout,
         is_trainable=False,
         adapter_name="_ref",
+    )
+
+    model = get_lora_model(
+        model,
+        peft_id_or_dir=peft_dir,
+        lora_rank=lora_rank,
+        lora_alpha=lora_alpha,
+        lora_dropout=lora_dropout,
+        is_trainable=not scale_temp,
+        adapter_name="default",
     )
 
     if scale_temp:

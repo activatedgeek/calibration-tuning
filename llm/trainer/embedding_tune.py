@@ -28,7 +28,7 @@ class EmbeddingTuner(Trainer):
         bf16: bool = field(default=torch.cuda.is_bf16_supported())
         ddp_find_unused_parameters: bool = field(default=False)
         log_on_each_node: bool = field(default=False)
-        evaluation_strategy: str = field(default="steps")
+        eval_strategy: str = field(default="steps")
         dataloader_num_workers: int = field(default=4)
         optim: str = field(default="adamw_torch")
         lr: float = field(default=1e-4)
