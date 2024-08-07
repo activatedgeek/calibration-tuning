@@ -432,8 +432,6 @@ def evaluate_verbal_elicitation_oe(
                 clean_up_tokenization_spaces=False,
             )
 
-            print(gen_output)
-
             q_logits = torch.cat(
                 [parse_verbal_elicitation_oe(x)[1] for x in gen_output]
             ).to(accelerator.device)

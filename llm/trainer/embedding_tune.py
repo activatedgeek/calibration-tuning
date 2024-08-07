@@ -24,6 +24,9 @@ class EmbeddingTuner(Trainer):
 
     @dataclass
     class Args(TrainingArguments):
+        accelerator_config: dict = field(
+            default_factory=lambda: dict(use_configured_state=True)
+        )
         fp16: bool = field(default=not torch.cuda.is_bf16_supported())
         bf16: bool = field(default=torch.cuda.is_bf16_supported())
         ddp_find_unused_parameters: bool = field(default=False)

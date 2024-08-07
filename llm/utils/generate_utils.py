@@ -66,9 +66,6 @@ def generate_output(
             clean_up_tokenization_spaces=False,
         )
 
-        # for x in generations:
-        #     print(x)
-
         outputs = [
             {**inp, "target": tgt, "output": gen}
             for inp, tgt, gen in zip(inputs, targets, generations)
